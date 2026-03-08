@@ -9,6 +9,8 @@ import { prisma } from "@/lib/db"
 import { getProducts } from "@/lib/actions/product-actions"
 import { getSiteSettings } from "@/lib/site-settings"
 import { parseProductImages } from "@/lib/product-images"
+import { access } from "fs/promises"
+import path from "path"
 
 export const dynamic = 'force-dynamic'
 
@@ -20,6 +22,24 @@ function rotateByOffset<T>(items: T[], offset: number) {
 
 function parseMainImage(images: string) {
   return parseProductImages(images)[0] || "/placeholder.jpg"
+}
+
+function normalizeImagePath(value: string | null | undefined) {
+  const image = typeof value === "string" ? value.trim() : ""
+  if (!image) return null
+  const [withoutQuery] = image.split("?")
+  return withoutQuery || null
+}
+
+async function hasLocalPublicFile(publicPath: string) {
+  const cleaned = publicPath.replace(/^\/+/, "")
+  const absolute = path.join(process.cwd(), "public", cleaned)
+  try {
+    await access(absolute)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function getDescendantCategorySlugs(
@@ -66,21 +86,26 @@ export default async function HomePage() {
     getSiteSettings(),
   ])
 
-  const categoryList = (categories as Array<{
-    id: string
-    title: string
-    slug: string
-    image?: string | null
-    parentId?: string | null
-  }>).filter((category) => !category.parentId && category.image)
-
-  const allCategories = categories as Array<{
+  const rawCategories = categories as Array<{
     id: string
     title: string
     slug: string
     image?: string | null
     parentId?: string | null
   }>
+  const allCategories = await Promise.all(
+    rawCategories.map(async (category) => {
+      const normalizedImage = normalizeImagePath(category.image)
+      if (!normalizedImage) return { ...category, image: null }
+      if (!normalizedImage.startsWith("/uploads/")) {
+        return { ...category, image: normalizedImage }
+      }
+      const exists = await hasLocalPublicFile(normalizedImage)
+      return { ...category, image: exists ? normalizedImage : null }
+    })
+  )
+
+  const categoryList = allCategories.filter((category) => !category.parentId && category.image)
 
   const categoryMap = new Map(allCategories.map((category) => [category.id, category]))
   const configuredHomeCategories = (siteSettings.shopByCategoryIds || [])
@@ -144,13 +169,14 @@ export default async function HomePage() {
       categories?: Array<{ id: string; title: string; slug: string }>
     }> = []
     let dailyBannerImage: string | null = null
+    const fallbackCandidates = [
+      ...configuredHomeCategories,
+      ...categoryList,
+      ...allCategories.filter((category) => Boolean(category.slug)),
+    ]
     const dailyCandidatesBase = selectedPromoCategory
-      ? [selectedPromoCategory]
-      : [
-          ...configuredHomeCategories,
-          ...categoryList,
-          ...allCategories.filter((category) => Boolean(category.slug)),
-        ]
+      ? [selectedPromoCategory, ...fallbackCandidates]
+      : fallbackCandidates
     const dailyCandidates = Array.from(
       new Map(dailyCandidatesBase.filter((category) => Boolean(category.slug)).map((category) => [category.id, category])).values()
     )
