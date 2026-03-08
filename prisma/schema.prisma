@@ -1,0 +1,373 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String?
+  emailVerifiedAt DateTime?
+  emailVerificationTokenHash String?
+  emailVerificationExpiresAt DateTime?
+  name      String?
+  role      String   @default("CUSTOMER") // SUPER_USER, ADMIN, EDITOR, MANAGER, STAFF, CUSTOMER
+  phone     String?
+  isBlocked Boolean  @default(false)
+  provider  String?  // LOCAL | GOOGLE | APPLE
+  providerAccountId String?
+  marketingOptIn      Boolean @default(true)
+  notifyOrderUpdates  Boolean @default(true)
+  notifyDiscounts     Boolean @default(true)
+  notifyNewProducts   Boolean @default(true)
+  notifyNewCategories Boolean @default(true)
+  lastLoginAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders           Order[]
+  customerMessages CustomerMessage[]
+  supportTickets   SupportTicket[]
+  customerProfile  CustomerProfile?
+  reviewAccesses   ReviewAccess[]
+
+  @@unique([provider, providerAccountId])
+}
+
+model SupportFaq {
+  id          String   @id @default(uuid())
+  category    String
+  question    String
+  answerShort String
+  answerLong  String
+  tags        String   @default("[]") // JSON array of tags
+  isFeatured  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category, isFeatured, updatedAt(sort: Desc)])
+}
+
+model SupportTicket {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  category    String
+  subType     String?
+  orderNumber String?
+  email       String
+  name        String?
+  payload     String   @default("{}")
+  attachments String   @default("[]")
+  faqViewed   String   @default("[]")
+  status      String   @default("NEW") // NEW | OPEN | PENDING | SOLVED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([email, createdAt(sort: Desc)])
+  @@index([category, status, createdAt(sort: Desc)])
+}
+
+model CustomerProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  avatarUrl    String?
+  firstName    String?
+  lastName     String?
+  nickname     String?
+  displayName  String?
+  website      String?
+  bioEn        String?
+  bioTr        String?
+  locale       String?  @default("en_US")
+  disableSyntaxHighlighting Boolean @default(false)
+  enableKeyboardShortcuts   Boolean @default(false)
+  showToolbar               Boolean @default(true)
+  adminColorScheme          String  @default("default")
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  country      String?
+  accentColor  String   @default("#0f766e")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  sku         String?
+  title       String
+  description String?
+  price       Decimal  @default(0)
+  compareAtPrice Decimal? @default(0)
+  images      String   @default("[]") // JSON array
+  isStock     Boolean  @default(true)
+  stockCount  Int      @default(1)
+  isFeatured  Boolean  @default(false)
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  categories  Category[]
+
+  // SEO Fields
+  seoTitle       String?
+  seoDescription String?
+  seoKeywords    String?
+
+  types       Type[]
+  styles      Style[]
+  colors      Color[]
+  sizes       Size[]
+  ages        Age[]
+  reviews     ProductReview[]
+}
+
+model ProductReview {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name      String
+  email     String?
+  rating    Int
+  comment   String
+  photoUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId, createdAt(sort: Desc)])
+}
+
+model ReviewAccess {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  remainingReviews Int     @default(0)
+  approved        Boolean  @default(false)
+  approvedAt      DateTime?
+  approvedBy      String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([approved, updatedAt(sort: Desc)])
+  @@index([userId, updatedAt(sort: Desc)])
+}
+
+model DesignSettings {
+  id        String   @id @default(cuid())
+  key       String   @unique // e.g., 'global_defaults'
+  config    String   @default("{}") // JSON content
+  updatedAt DateTime @updatedAt
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  sortOrder   Int      @default(0)
+  description String?
+  image       String?
+  parentId    String?
+  parent      Category? @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryHierarchy")
+  products    Product[]
+}
+
+model Type {
+  id       String    @id @default(cuid())
+  slug     String    @unique
+  name     String
+  products Product[]
+}
+
+model Style {
+  id       String    @id @default(cuid())
+  slug     String    @unique
+  name     String
+  products Product[]
+}
+
+model Color {
+  id       String    @id @default(cuid())
+  slug     String    @unique
+  name     String
+  hex      String?
+  products Product[]
+}
+
+model Size {
+  id       String    @id @default(cuid())
+  slug     String    @unique
+  name     String
+  products Product[]
+}
+
+model Age {
+  id       String    @id @default(cuid())
+  slug     String    @unique
+  name     String
+  products Product[]
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  orderNumber   String      @unique // e.g. ORD-001
+  userId        String?
+  user          User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  customerEmail String
+  customerName  String?
+  total         Decimal     @default(0)
+  status        String      @default("PENDING") // PENDING, PAID, FULFILLED, CANCELLED
+  trackingCarrier String?
+  trackingNumber String?
+  trackingUrl    String?
+  shipmentStatus String    @default("PENDING") // PENDING | SHIPPED | IN_TRANSIT | DELIVERED
+  estimatedDelivery DateTime?
+  deliveredAt DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  items         OrderItem[]
+  events        OrderEvent[]
+  customerMessages CustomerMessage[]
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id])
+  productId String?
+  title     String
+  quantity  Int
+  price     Decimal
+}
+
+model OrderEvent {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  type        String   // CREATED, PAYMENT, STATUS, NOTE, etc.
+  title       String
+  description String?
+  actorType   String   // SYSTEM, ADMIN, CUSTOMER
+  isAdmin     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model Page {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  content     String?
+  featuredImage String?
+  excerpt     String?
+  status      String   @default("DRAFT") // DRAFT, PUBLISHED, TRASH
+  
+  metaTitle       String?
+  metaDescription String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Menu {
+  id        String     @id @default(cuid())
+  title     String
+  slug      String     @unique
+  location  String?
+  items     MenuItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model MenuItem {
+  id        String   @id @default(cuid())
+  menuId    String
+  menu      Menu     @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  parentId  String?
+  parent    MenuItem? @relation("MenuItemHierarchy", fields: [parentId], references: [id])
+  children  MenuItem[] @relation("MenuItemHierarchy")
+  
+  type      String
+  label     String
+  url       String?
+  
+  referenceId String?
+  
+  sortOrder Int      @default(0)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Message {
+  id          String    @id @default(cuid())
+  source      String    // WHATSAPP | EMAIL | CONTACT
+  status      String    @default("NEW") // NEW | OPEN | RESOLVED
+  
+  // Contact Information
+  name        String?
+  email       String?
+  phone       String?
+  
+  // Message Content
+  subject     String?
+  content     String    // Required field
+  
+  // Metadata (JSON): whatsapp messageId, email messageId, contact page route, ip, userAgent, etc.
+  metadata    String    @default("{}")
+  
+  // Attachments (JSON array): [{type, url, filename, size}]
+  attachments String    @default("[]")
+  
+  // Admin Notes
+  notes       String?
+  
+  // Timestamps
+  receivedAt  DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime? // Soft delete
+  
+  // Indexes for performance
+  @@index([source, status, receivedAt(sort: Desc)])
+  @@index([email])
+  @@index([phone])
+  @@index([deletedAt])
+}
+
+model CustomerMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId   String?
+  order     Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  kind      String   @default("SYSTEM") // SYSTEM | ORDER | DISCOUNT | NEW_PRODUCT | NEW_CATEGORY
+  title     String
+  content   String
+  ctaLabel  String?
+  ctaUrl    String?
+  metadata  String   @default("{}")
+  isRead    Boolean  @default(false)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, isRead, createdAt(sort: Desc)])
+  @@index([kind, createdAt(sort: Desc)])
+}

@@ -1,0 +1,968 @@
+"use server"
+
+import { prisma as db } from "@/lib/db"
+import { productFormSchema, ProductFormValues } from "@/lib/validations/product"
+import { revalidatePath } from "next/cache"
+import { Prisma } from "@prisma/client"
+import { z } from "zod"
+import { notifyNewProduct, notifyProductDiscount } from "@/lib/customer-messaging"
+import { getSessionUser } from "@/lib/auth"
+import { syncProductToInventory } from "@/lib/inventory-sync"
+import { normalizeProductImageRecords } from "@/lib/product-images"
+
+async function ensureSkuColumn() {
+    const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
+    const hasSku = columns.some((column) => column.name === "sku")
+    if (!hasSku) {
+        await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "sku" TEXT`)
+    }
+}
+
+async function getSkuByProductId(productId: string) {
+    await ensureSkuColumn()
+    const rows = await db.$queryRawUnsafe<Array<{ sku: string | null }>>(
+        `SELECT "sku" FROM "Product" WHERE "id" = ? LIMIT 1`,
+        productId
+    )
+    return rows[0]?.sku ?? null
+}
+
+async function setSkuByProductId(productId: string, sku: string | null | undefined) {
+    await ensureSkuColumn()
+    const normalizedSku = sku && sku.trim().length > 0 ? sku.trim() : null
+    await db.$executeRawUnsafe(
+        `UPDATE "Product" SET "sku" = ? WHERE "id" = ?`,
+        normalizedSku,
+        productId
+    )
+}
+
+async function ensureFeaturedColumn() {
+    const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
+    const hasColumn = columns.some((column) => column.name === "isFeatured")
+    if (!hasColumn) {
+        await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "isFeatured" BOOLEAN NOT NULL DEFAULT 0`)
+    }
+}
+
+function parseSqliteBoolean(value: unknown) {
+    if (value === true || value === 1 || value === "1") return true
+    if (value === false || value === 0 || value === "0" || value === null || value === undefined) return false
+    if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase()
+        return normalized === "true" || normalized === "yes"
+    }
+    return Boolean(value)
+}
+
+async function getFeaturedByProductId(productId: string) {
+    await ensureFeaturedColumn()
+    const rows = await db.$queryRawUnsafe<Array<{ isFeatured: number | boolean | null }>>(
+        `SELECT "isFeatured" FROM "Product" WHERE "id" = ? LIMIT 1`,
+        productId
+    )
+    return parseSqliteBoolean(rows[0]?.isFeatured)
+}
+
+async function setFeaturedByProductId(productId: string, featured: boolean) {
+    await ensureFeaturedColumn()
+    await db.$executeRawUnsafe(
+        `UPDATE "Product" SET "isFeatured" = ? WHERE "id" = ?`,
+        featured ? 1 : 0,
+        productId
+    )
+}
+
+async function ensureDeletedAtColumn() {
+    const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
+    const hasColumn = columns.some((column) => column.name === "deletedAt")
+    if (!hasColumn) {
+        await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "deletedAt" DATETIME`)
+    }
+}
+
+async function ensureProductCreatorColumns() {
+    const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
+    const hasCreatorId = columns.some((column) => column.name === "createdById")
+    const hasCreatorName = columns.some((column) => column.name === "createdByName")
+    if (!hasCreatorId) {
+        await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "createdById" TEXT`)
+    }
+    if (!hasCreatorName) {
+        await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "createdByName" TEXT`)
+    }
+}
+
+async function setProductCreatorByProductId(productId: string, creator: { id: string | null; name: string | null }) {
+    await ensureProductCreatorColumns()
+    await db.$executeRawUnsafe(
+        `UPDATE "Product" SET "createdById" = ?, "createdByName" = ? WHERE "id" = ?`,
+        creator.id,
+        creator.name,
+        productId
+    )
+}
+
+async function purgeExpiredTrashedProducts() {
+    await ensureDeletedAtColumn()
+    await db.$executeRawUnsafe(
+        `DELETE FROM "Product" WHERE "deletedAt" IS NOT NULL AND "deletedAt" <= datetime('now', '-30 days')`
+    )
+}
+
+type CustomAttribute = {
+    name: string
+    values: string[]
+    visible: boolean
+}
+
+function slugifyText(input: string) {
+    const normalized = input
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+    return normalized || "product"
+}
+
+async function ensureUniqueProductSlug(baseSlug: string, productId?: string) {
+    const normalizedBase = slugifyText(baseSlug)
+    let candidate = normalizedBase
+    let index = 2
+
+    while (true) {
+        const existing = await db.product.findUnique({
+            where: { slug: candidate },
+            select: { id: true },
+        })
+        if (!existing || (productId && existing.id === productId)) {
+            return candidate
+        }
+        candidate = `${normalizedBase}-${index}`
+        index += 1
+    }
+}
+
+function buildSlugBaseWithSku(baseSlug: string, sku?: string | null) {
+    const normalizedBase = slugifyText(baseSlug)
+    const normalizedSku = sku && sku.trim().length > 0 ? slugifyText(sku) : ""
+    if (!normalizedSku) return normalizedBase
+    if (normalizedBase === normalizedSku || normalizedBase.endsWith(`-${normalizedSku}`)) {
+        return normalizedBase
+    }
+    return `${normalizedBase}-${normalizedSku}`
+}
+
+function stripHtml(input: string) {
+    return input
+        .replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+}
+
+function buildSeoFields(input: {
+    title: string
+    description?: string
+    seoTitle?: string
+    seoDescription?: string
+    seoKeywords?: string
+    categoryTitles?: string[]
+}) {
+    const title = input.title.trim()
+    const plainDescription = stripHtml(input.description || "")
+    const providedSeoTitle = (input.seoTitle || "").trim()
+    const providedSeoDescription = (input.seoDescription || "").trim()
+    const providedSeoKeywords = (input.seoKeywords || "").trim()
+
+    const seoTitle = providedSeoTitle || title
+    const seoDescription = providedSeoDescription || plainDescription || `${title} | Turkish Rug House`
+    const keywordSeed = input.categoryTitles && input.categoryTitles.length > 0
+        ? [title, ...input.categoryTitles]
+        : [title]
+    const seoKeywords = providedSeoKeywords || Array.from(new Set(keywordSeed)).join(", ")
+
+    return {
+        // Keep user-provided content intact. Limit only auto-generated fallbacks.
+        seoTitle: providedSeoTitle ? providedSeoTitle : seoTitle.slice(0, 60),
+        seoDescription: providedSeoDescription ? providedSeoDescription : seoDescription.slice(0, 160),
+        seoKeywords: providedSeoKeywords ? providedSeoKeywords : seoKeywords.slice(0, 300),
+    }
+}
+
+function normalizeCustomAttributes(input: unknown): CustomAttribute[] {
+    if (!Array.isArray(input)) return []
+    return input
+        .map((item) => {
+            if (!item || typeof item !== "object") return null
+            const name = typeof (item as { name?: unknown }).name === "string" ? (item as { name: string }).name.trim() : ""
+            const rawValues = Array.isArray((item as { values?: unknown }).values) ? (item as { values: unknown[] }).values : []
+            const values = rawValues
+                .filter((value): value is string => typeof value === "string")
+                .map((value) => value.trim())
+                .filter(Boolean)
+            if (!name || values.length === 0) return null
+            const visible = (item as { visible?: unknown }).visible !== false
+            return { name, values, visible }
+        })
+        .filter((value): value is CustomAttribute => Boolean(value))
+}
+
+async function ensureCustomAttributesColumn() {
+    const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
+    const hasColumn = columns.some((column) => column.name === "customAttributes")
+    if (!hasColumn) {
+        await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "customAttributes" TEXT`)
+    }
+}
+
+async function getCustomAttributesByProductId(productId: string): Promise<CustomAttribute[]> {
+    await ensureCustomAttributesColumn()
+    const rows = await db.$queryRawUnsafe<Array<{ customAttributes: string | null }>>(
+        `SELECT "customAttributes" FROM "Product" WHERE "id" = ? LIMIT 1`,
+        productId
+    )
+    const raw = rows[0]?.customAttributes
+    if (!raw) return []
+    try {
+        return normalizeCustomAttributes(JSON.parse(raw))
+    } catch {
+        return []
+    }
+}
+
+async function setCustomAttributesByProductId(productId: string, attributes: CustomAttribute[] | undefined) {
+    await ensureCustomAttributesColumn()
+    const normalized = normalizeCustomAttributes(attributes || [])
+    const payload = normalized.length > 0 ? JSON.stringify(normalized) : null
+    await db.$executeRawUnsafe(
+        `UPDATE "Product" SET "customAttributes" = ? WHERE "id" = ?`,
+        payload,
+        productId
+    )
+}
+
+export async function getProducts(
+    page = 1,
+    limit = 20,
+    query = "",
+    status?: string, // 'published' | 'draft'
+    sort?: 'latest' | 'oldest' | 'price-asc' | 'price-desc', // Add sort option
+    categorySlug?: string,
+    filters?: {
+        types?: string[],
+        styles?: string[],
+        colors?: string[],
+        sizes?: string[],
+        ages?: string[],
+        priceMin?: number,
+        priceMax?: number,
+        inStock?: boolean,
+        stockStatus?: "instock" | "outofstock",
+        productIds?: string[],
+        featuredOnly?: boolean,
+        trashOnly?: boolean,
+        scheduledDate?: string
+    }
+) {
+    await ensureSkuColumn()
+    await ensureFeaturedColumn()
+    await ensureDeletedAtColumn()
+    await purgeExpiredTrashedProducts()
+    const skip = (page - 1) * limit
+
+    const orderBy: Prisma.ProductOrderByWithRelationInput =
+        sort === 'latest' ? { createdAt: 'desc' } :
+            sort === 'oldest' ? { createdAt: 'asc' } :
+                sort === 'price-asc' ? { price: 'asc' } :
+                    sort === 'price-desc' ? { price: 'desc' } :
+                        { updatedAt: 'desc' } // Default
+
+    const stockFilter =
+        filters?.stockStatus === "instock"
+            ? true
+            : filters?.stockStatus === "outofstock"
+                ? false
+                : filters?.inStock === true
+                    ? true
+                    : undefined
+
+    let idFilter = filters?.productIds?.length ? [...filters.productIds] : undefined
+
+    const trashRows = await db.$queryRawUnsafe<Array<{ id: string }>>(
+        filters?.trashOnly
+            ? `SELECT "id" FROM "Product" WHERE "deletedAt" IS NOT NULL`
+            : `SELECT "id" FROM "Product" WHERE "deletedAt" IS NULL`
+    )
+    const trashScopedIds = trashRows.map((row) => row.id)
+    if (idFilter) {
+        const allowed = new Set(trashScopedIds)
+        idFilter = idFilter.filter((id) => allowed.has(id))
+    } else {
+        idFilter = trashScopedIds
+    }
+
+    if (filters?.featuredOnly) {
+        const featuredRows = await db.$queryRawUnsafe<Array<{ id: string }>>(
+            `SELECT "id" FROM "Product" WHERE "isFeatured" = 1 AND "deletedAt" IS NULL`
+        )
+        const featuredIds = featuredRows.map((row) => row.id)
+        if (idFilter) {
+            const featuredIdSet = new Set(featuredIds)
+            idFilter = idFilter.filter((id) => featuredIdSet.has(id))
+        } else {
+            idFilter = featuredIds
+        }
+    }
+
+    const scheduleDateValue = filters?.scheduledDate?.trim()
+    const scheduleDateRange =
+        scheduleDateValue && /^\d{4}-\d{2}-\d{2}$/.test(scheduleDateValue)
+            ? {
+                start: new Date(`${scheduleDateValue}T00:00:00.000Z`),
+                end: new Date(`${scheduleDateValue}T23:59:59.999Z`),
+            }
+            : null
+
+    const where: Prisma.ProductWhereInput = {
+        OR: query ? [
+            { title: { contains: query } },
+            { slug: { contains: query } },
+        ] : undefined,
+        isPublished: status === 'published' ? true : status === 'draft' ? false : undefined,
+        categories: categorySlug ? {
+            some: {
+                slug: categorySlug
+            }
+        } : undefined,
+        // --- Filters ---
+        types: filters?.types?.length ? { some: { slug: { in: filters.types } } } : undefined,
+        styles: filters?.styles?.length ? { some: { slug: { in: filters.styles } } } : undefined,
+        colors: filters?.colors?.length ? { some: { slug: { in: filters.colors } } } : undefined,
+        sizes: filters?.sizes?.length ? { some: { slug: { in: filters.sizes } } } : undefined,
+        ages: filters?.ages?.length ? { some: { slug: { in: filters.ages } } } : undefined,
+        price: (filters?.priceMin !== undefined || filters?.priceMax !== undefined) ? {
+            gte: filters.priceMin,
+            lte: filters.priceMax
+        } : undefined,
+        isStock: stockFilter,
+        id: idFilter ? { in: idFilter } : undefined,
+        createdAt: scheduleDateRange
+            ? {
+                gte: scheduleDateRange.start,
+                lte: scheduleDateRange.end,
+            }
+            : undefined,
+    }
+
+    const [products, total] = await Promise.all([
+        db.product.findMany({
+            where,
+            skip,
+            take: limit,
+            orderBy,
+            include: {
+                categories: {
+                    include: {
+                        parent: true
+                    }
+                },
+            }
+        }),
+        db.product.count({ where })
+    ])
+
+    const productIds = products.map((product) => product.id)
+    const dynamicRows = productIds.length > 0
+        ? await db.$queryRawUnsafe<Array<{ id: string; sku: string | null; isFeatured: number | boolean | null; deletedAt: string | null }>>(
+            `SELECT "id", "sku", "isFeatured", "deletedAt" FROM "Product" WHERE "id" IN (${productIds.map(() => "?").join(",")})`,
+            ...productIds
+        )
+        : []
+    const dynamicMap = new Map(dynamicRows.map((row) => [row.id, row]))
+
+    const serializedProducts = products.map(product => ({
+        ...product,
+        sku: dynamicMap.get(product.id)?.sku ?? null,
+        isFeatured: parseSqliteBoolean(dynamicMap.get(product.id)?.isFeatured),
+        deletedAt: dynamicMap.get(product.id)?.deletedAt ?? null,
+        price: product.price.toNumber(),
+        compareAtPrice: product.compareAtPrice ? product.compareAtPrice.toNumber() : null,
+    }))
+
+    return {
+        products: serializedProducts,
+        metadata: {
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit)
+        }
+    }
+}
+
+export async function getProductAdminStats(query = "") {
+    await ensureFeaturedColumn()
+    await ensureDeletedAtColumn()
+    await purgeExpiredTrashedProducts()
+    const baseWhere: Prisma.ProductWhereInput = query
+        ? {
+            OR: [
+                { title: { contains: query } },
+                { slug: { contains: query } },
+            ],
+        }
+        : {}
+
+    const featuredPromise = query
+        ? db.$queryRawUnsafe<Array<{ count: number }>>(
+            `SELECT COUNT(*) as count FROM "Product" WHERE "isFeatured" = 1 AND "deletedAt" IS NULL AND ("title" LIKE ? OR "slug" LIKE ?)`,
+            `%${query}%`,
+            `%${query}%`
+        )
+        : db.$queryRawUnsafe<Array<{ count: number }>>(
+            `SELECT COUNT(*) as count FROM "Product" WHERE "isFeatured" = 1 AND "deletedAt" IS NULL`
+        )
+
+    const trashPromise = query
+        ? db.$queryRawUnsafe<Array<{ count: number }>>(
+            `SELECT COUNT(*) as count FROM "Product" WHERE "deletedAt" IS NOT NULL AND ("title" LIKE ? OR "slug" LIKE ?)`,
+            `%${query}%`,
+            `%${query}%`
+        )
+        : db.$queryRawUnsafe<Array<{ count: number }>>(
+            `SELECT COUNT(*) as count FROM "Product" WHERE "deletedAt" IS NOT NULL`
+        )
+
+    const activeIdsPromise = query
+        ? db.$queryRawUnsafe<Array<{ id: string }>>(
+            `SELECT "id" FROM "Product" WHERE "deletedAt" IS NULL AND ("title" LIKE ? OR "slug" LIKE ?)`,
+            `%${query}%`,
+            `%${query}%`
+        )
+        : db.$queryRawUnsafe<Array<{ id: string }>>(
+            `SELECT "id" FROM "Product" WHERE "deletedAt" IS NULL`
+        )
+
+    const activeIds = (await activeIdsPromise).map((row) => row.id)
+
+    const activeWhere: Prisma.ProductWhereInput = {
+        ...baseWhere,
+        id: { in: activeIds },
+    }
+
+    const [all, published, draft, featuredRows, trashRows] = await Promise.all([
+        db.product.count({ where: activeWhere }),
+        db.product.count({ where: { ...activeWhere, isPublished: true } }),
+        db.product.count({ where: { ...activeWhere, isPublished: false } }),
+        featuredPromise,
+        trashPromise,
+    ])
+
+    return {
+        all,
+        published,
+        draft,
+        featured: Number(featuredRows[0]?.count || 0),
+        trash: Number(trashRows[0]?.count || 0),
+        schedule: all,
+        sorting: all,
+    }
+}
+
+export async function setProductFeatured(productId: string, featured: boolean) {
+    try {
+        await setFeaturedByProductId(productId, featured)
+        revalidatePath("/dashboard/products")
+        revalidatePath("/products")
+        return { success: true as const }
+    } catch (error) {
+        console.error("setProductFeatured error:", error)
+        return { success: false as const, error: "Failed to update featured flag" }
+    }
+}
+
+export async function getProduct(id: string) {
+    await ensureFeaturedColumn()
+    await ensureDeletedAtColumn()
+    const deletedRows = await db.$queryRawUnsafe<Array<{ deletedAt: string | null }>>(
+        `SELECT "deletedAt" FROM "Product" WHERE "id" = ? LIMIT 1`,
+        id
+    )
+    if (deletedRows[0]?.deletedAt) return null
+
+    const product = await db.product.findUnique({
+        where: { id },
+        include: {
+            categories: true,
+            types: true,
+            styles: true,
+            colors: true,
+            sizes: true,
+            ages: true,
+        }
+    })
+
+    if (!product) return null
+    const sku = await getSkuByProductId(product.id)
+    const isFeatured = await getFeaturedByProductId(product.id)
+    const customAttributes = await getCustomAttributesByProductId(product.id)
+
+    return {
+        ...product,
+        sku,
+        isFeatured,
+        customAttributes,
+        price: product.price.toNumber(),
+        compareAtPrice: product.compareAtPrice ? product.compareAtPrice.toNumber() : null,
+    }
+}
+
+export async function createProduct(data: ProductFormValues) {
+    const validated = productFormSchema.parse(data)
+
+    // Helper to connect relationships
+    const connect = (ids: string[]) => ids.map(id => ({ id }))
+
+    try {
+        const actor = await getSessionUser("admin")
+        const uniqueSlug = await ensureUniqueProductSlug(
+            buildSlugBaseWithSku(validated.slug || validated.title, validated.sku)
+        )
+        const categoryRows = validated.categoryIds.length > 0
+            ? await db.category.findMany({
+                where: { id: { in: validated.categoryIds } },
+                select: { id: true, slug: true, title: true },
+            })
+            : []
+        const seo = buildSeoFields({
+            title: validated.title,
+            description: validated.description,
+            seoTitle: validated.seoTitle,
+            seoDescription: validated.seoDescription,
+            seoKeywords: validated.seoKeywords,
+            categoryTitles: categoryRows.map((item) => item.title),
+        })
+
+        const created = await db.product.create({
+            data: {
+                title: validated.title,
+                slug: uniqueSlug,
+                description: validated.description,
+                price: validated.price,
+                compareAtPrice: validated.compareAtPrice,
+                stockCount: validated.stockCount,
+                isStock: validated.isStock,
+                isPublished: validated.isPublished,
+                images: JSON.stringify(normalizeProductImageRecords(validated.images)),
+                seoTitle: seo.seoTitle,
+                seoDescription: seo.seoDescription,
+                seoKeywords: seo.seoKeywords,
+                categories: { connect: connect(validated.categoryIds) },
+                types: { connect: connect(validated.typeIds) },
+                styles: { connect: connect(validated.styleIds) },
+                colors: { connect: connect(validated.colorIds) },
+                sizes: { connect: connect(validated.sizeIds) },
+                ages: { connect: connect(validated.ageIds) },
+            }
+        })
+        await setSkuByProductId(created.id, validated.sku || null)
+        await setFeaturedByProductId(created.id, validated.isFeatured)
+        await setCustomAttributesByProductId(created.id, validated.customAttributes)
+        await setProductCreatorByProductId(created.id, {
+            id: actor?.id || null,
+            name: actor?.name || actor?.email || "Unknown",
+        })
+
+        if (validated.isPublished) {
+            await notifyNewProduct({
+                id: created.id,
+                title: validated.title,
+                slug: uniqueSlug,
+            })
+            if (validated.compareAtPrice && validated.compareAtPrice > validated.price && validated.compareAtPrice > 0) {
+                const discountPercent = Math.max(
+                    1,
+                    Math.round(((validated.compareAtPrice - validated.price) / validated.compareAtPrice) * 100)
+                )
+                await notifyProductDiscount({
+                    id: created.id,
+                    title: validated.title,
+                    slug: uniqueSlug,
+                    discountPercent,
+                })
+            }
+        }
+        try {
+            await syncProductToInventory({
+                event: "created",
+                product: {
+                    id: created.id,
+                    slug: uniqueSlug,
+                    title: validated.title,
+                    description: validated.description,
+                    sku: validated.sku || null,
+                    price: validated.price,
+                    compareAtPrice: validated.compareAtPrice ?? null,
+                    stockCount: validated.stockCount,
+                    isStock: validated.isStock,
+                    isPublished: validated.isPublished,
+                    isFeatured: validated.isFeatured,
+                    seoTitle: seo.seoTitle,
+                    seoDescription: seo.seoDescription,
+                    seoKeywords: seo.seoKeywords,
+                    images: validated.images,
+                    customAttributes: validated.customAttributes,
+                    categories: categoryRows.map((c) => ({ id: c.id, slug: c.slug, title: c.title })),
+                },
+            })
+        } catch (syncError) {
+            console.error("Inventory sync (create) failed:", syncError)
+        }
+        revalidatePath("/dashboard/products")
+        return { success: true }
+    } catch (error) {
+        console.error("Create Product Error:", error)
+        if (error instanceof z.ZodError) {
+            return { success: false, error: error.issues.map((issue) => issue.message).join(", ") }
+        }
+        return { success: false, error: (error as Error).message || "Failed to create product" }
+    }
+}
+
+export async function updateProduct(id: string, data: ProductFormValues) {
+    const validated = productFormSchema.parse(data)
+    const connect = (ids: string[]) => ids.map(id => ({ id }))
+
+    try {
+        const before = await db.product.findUnique({
+            where: { id },
+            select: { compareAtPrice: true, price: true, isPublished: true },
+        })
+        const uniqueSlug = await ensureUniqueProductSlug(
+            buildSlugBaseWithSku(validated.slug || validated.title, validated.sku),
+            id
+        )
+        const categoryRows = validated.categoryIds.length > 0
+            ? await db.category.findMany({
+                where: { id: { in: validated.categoryIds } },
+                select: { id: true, slug: true, title: true },
+            })
+            : []
+        const seo = buildSeoFields({
+            title: validated.title,
+            description: validated.description,
+            seoTitle: validated.seoTitle,
+            seoDescription: validated.seoDescription,
+            seoKeywords: validated.seoKeywords,
+            categoryTitles: categoryRows.map((item) => item.title),
+        })
+
+        // Disconnect all first then connect new to handle "replace" logic for m-n
+        // Or strictly set. set is cleaner for m-n in Prisma.
+
+        await db.product.update({
+            where: { id },
+            data: {
+                title: validated.title,
+                slug: uniqueSlug,
+                description: validated.description,
+                price: validated.price,
+                compareAtPrice: validated.compareAtPrice,
+                stockCount: validated.stockCount,
+                isStock: validated.isStock,
+                isPublished: validated.isPublished,
+                images: JSON.stringify(normalizeProductImageRecords(validated.images)),
+                seoTitle: seo.seoTitle,
+                seoDescription: seo.seoDescription,
+                seoKeywords: seo.seoKeywords,
+                categories: { set: connect(validated.categoryIds) },
+                types: { set: connect(validated.typeIds) },
+                styles: { set: connect(validated.styleIds) },
+                colors: { set: connect(validated.colorIds) },
+                sizes: { set: connect(validated.sizeIds) },
+                ages: { set: connect(validated.ageIds) },
+            }
+        })
+        await setSkuByProductId(id, validated.sku || null)
+        await setFeaturedByProductId(id, validated.isFeatured)
+        await setCustomAttributesByProductId(id, validated.customAttributes)
+
+        const hadDiscount = Boolean(
+            before?.isPublished &&
+            before.compareAtPrice &&
+            Number(before.compareAtPrice) > Number(before.price)
+        )
+        const hasDiscountNow = Boolean(
+            validated.isPublished &&
+            validated.compareAtPrice &&
+            validated.compareAtPrice > validated.price
+        )
+        if (!hadDiscount && hasDiscountNow && validated.compareAtPrice && validated.compareAtPrice > 0) {
+            const discountPercent = Math.max(
+                1,
+                Math.round(((validated.compareAtPrice - validated.price) / validated.compareAtPrice) * 100)
+            )
+            await notifyProductDiscount({
+                id,
+                title: validated.title,
+                slug: uniqueSlug,
+                discountPercent,
+            })
+        }
+        try {
+            await syncProductToInventory({
+                event: "updated",
+                product: {
+                    id,
+                    slug: uniqueSlug,
+                    title: validated.title,
+                    description: validated.description,
+                    sku: validated.sku || null,
+                    price: validated.price,
+                    compareAtPrice: validated.compareAtPrice ?? null,
+                    stockCount: validated.stockCount,
+                    isStock: validated.isStock,
+                    isPublished: validated.isPublished,
+                    isFeatured: validated.isFeatured,
+                    seoTitle: seo.seoTitle,
+                    seoDescription: seo.seoDescription,
+                    seoKeywords: seo.seoKeywords,
+                    images: validated.images,
+                    customAttributes: validated.customAttributes,
+                    categories: categoryRows.map((c) => ({ id: c.id, slug: c.slug, title: c.title })),
+                },
+            })
+        } catch (syncError) {
+            console.error("Inventory sync (update) failed:", syncError)
+        }
+        revalidatePath("/dashboard/products")
+        revalidatePath(`/dashboard/products/${id}`)
+        return { success: true }
+    } catch (error) {
+        console.error("Update Product Error:", error)
+        return { success: false, error: (error as Error).message || "Failed to update product" }
+    }
+}
+
+export async function deleteProduct(id: string, permanent = false) {
+    try {
+        await ensureDeletedAtColumn()
+        if (permanent) {
+            await db.product.delete({ where: { id } })
+        } else {
+            await db.$executeRawUnsafe(
+                `UPDATE "Product" SET "deletedAt" = datetime('now') WHERE "id" = ?`,
+                id
+            )
+        }
+        revalidatePath("/dashboard/products")
+        return { success: true }
+    } catch {
+        return { success: false, error: "Failed to delete product" }
+    }
+}
+
+export async function duplicateProduct(id: string) {
+    const original = await getProduct(id)
+    if (!original) return { success: false, error: "Product not found" }
+
+    try {
+        const actor = await getSessionUser("admin")
+        const newSlug = await ensureUniqueProductSlug(
+            buildSlugBaseWithSku(`copy-${original.title}`, original.sku)
+        )
+        const newProduct = await db.product.create({
+            data: {
+                title: `Copy of ${original.title}`,
+                slug: newSlug,
+                description: original.description,
+                price: original.price,
+                compareAtPrice: original.compareAtPrice,
+                stockCount: original.stockCount,
+                isStock: original.isStock,
+                isPublished: false, // Default to draft
+                images: original.images,
+                seoTitle: original.seoTitle,
+                seoDescription: original.seoDescription,
+                seoKeywords: original.seoKeywords,
+                categories: { connect: original.categories.map((c: { id: string }) => ({ id: c.id })) },
+                types: { connect: original.types.map((t: { id: string }) => ({ id: t.id })) },
+                styles: { connect: original.styles.map((s: { id: string }) => ({ id: s.id })) },
+                colors: { connect: original.colors.map((c: { id: string }) => ({ id: c.id })) },
+                sizes: { connect: original.sizes.map((s: { id: string }) => ({ id: s.id })) },
+                ages: { connect: original.ages.map((a: { id: string }) => ({ id: a.id })) },
+            }
+        })
+        await setSkuByProductId(newProduct.id, original.sku || null)
+        await setFeaturedByProductId(newProduct.id, Boolean(original.isFeatured))
+        await setCustomAttributesByProductId(newProduct.id, original.customAttributes || [])
+        await setProductCreatorByProductId(newProduct.id, {
+            id: actor?.id || null,
+            name: actor?.name || actor?.email || "Unknown",
+        })
+        revalidatePath("/dashboard/products")
+        return { success: true, newId: newProduct.id }
+    } catch (error) {
+        console.error("Duplicate Error", error)
+        return { success: false, error: "Failed to duplicate" }
+    }
+}
+
+export async function bulkDeleteProducts(ids: string[]) {
+    try {
+        await ensureDeletedAtColumn()
+        if (ids.length === 0) return { success: true }
+        await db.$executeRawUnsafe(
+            `UPDATE "Product" SET "deletedAt" = datetime('now') WHERE "id" IN (${ids.map(() => "?").join(",")})`,
+            ...ids
+        )
+        revalidatePath("/dashboard/products")
+        return { success: true }
+    } catch {
+        return { success: false, error: "Bulk delete failed" }
+    }
+}
+
+export async function bulkDeleteProductsPermanently(ids: string[]) {
+    try {
+        if (ids.length === 0) return { success: true }
+        await db.product.deleteMany({
+            where: { id: { in: ids } },
+        })
+        revalidatePath("/dashboard/products")
+        return { success: true }
+    } catch {
+        return { success: false, error: "Bulk permanent delete failed" }
+    }
+}
+
+export async function restoreProduct(id: string) {
+    try {
+        await ensureDeletedAtColumn()
+        await db.$executeRawUnsafe(
+            `UPDATE "Product" SET "deletedAt" = NULL WHERE "id" = ?`,
+            id
+        )
+        revalidatePath("/dashboard/products")
+        return { success: true }
+    } catch {
+        return { success: false, error: "Failed to restore product" }
+    }
+}
+
+export async function bulkRestoreProducts(ids: string[]) {
+    try {
+        await ensureDeletedAtColumn()
+        if (ids.length === 0) return { success: true }
+        await db.$executeRawUnsafe(
+            `UPDATE "Product" SET "deletedAt" = NULL WHERE "id" IN (${ids.map(() => "?").join(",")})`,
+            ...ids
+        )
+        revalidatePath("/dashboard/products")
+        return { success: true }
+    } catch {
+        return { success: false, error: "Bulk restore failed" }
+    }
+}
+
+export async function emptyProductTrash() {
+    try {
+        await ensureDeletedAtColumn()
+        await db.$executeRawUnsafe(`DELETE FROM "Product" WHERE "deletedAt" IS NOT NULL`)
+        revalidatePath("/dashboard/products")
+        return { success: true }
+    } catch {
+        return { success: false, error: "Failed to empty trash" }
+    }
+}
+
+export async function bulkPublishProducts(ids: string[], isPublished: boolean) {
+    try {
+        await db.product.updateMany({
+            where: { id: { in: ids } },
+            data: { isPublished }
+        })
+        revalidatePath("/dashboard/products")
+        return { success: true }
+    } catch {
+        return { success: false, error: "Bulk update failed" }
+    }
+}
+
+export async function getProductOptions() {
+    const [categories, types, styles, colors, sizes, ages, categoriesWithProducts] = await Promise.all([
+        db.category.findMany(),
+        db.type.findMany(),
+        db.style.findMany(),
+        db.color.findMany(),
+        db.size.findMany(),
+        db.age.findMany(),
+        db.category.findMany({
+            select: {
+                id: true,
+                products: {
+                    select: {
+                        id: true,
+                        types: { select: { id: true } },
+                        styles: { select: { id: true } },
+                        colors: { select: { id: true } },
+                        sizes: { select: { id: true } },
+                        ages: { select: { id: true } },
+                    }
+                }
+            }
+        })
+    ])
+
+    const categoryAttributeMap: Record<string, {
+        typeIds: string[]
+        styleIds: string[]
+        colorIds: string[]
+        sizeIds: string[]
+        ageIds: string[]
+    }> = {}
+    const categoryProductCountMap: Record<string, number> = {}
+
+    categoriesWithProducts.forEach((category) => {
+        const typeIds = new Set<string>()
+        const styleIds = new Set<string>()
+        const colorIds = new Set<string>()
+        const sizeIds = new Set<string>()
+        const ageIds = new Set<string>()
+        const productIds = new Set<string>()
+
+        category.products.forEach((product) => {
+            productIds.add(product.id)
+            product.types.forEach((t) => typeIds.add(t.id))
+            product.styles.forEach((s) => styleIds.add(s.id))
+            product.colors.forEach((c) => colorIds.add(c.id))
+            product.sizes.forEach((s) => sizeIds.add(s.id))
+            product.ages.forEach((a) => ageIds.add(a.id))
+        })
+
+        categoryAttributeMap[category.id] = {
+            typeIds: Array.from(typeIds),
+            styleIds: Array.from(styleIds),
+            colorIds: Array.from(colorIds),
+            sizeIds: Array.from(sizeIds),
+            ageIds: Array.from(ageIds),
+        }
+        // Product-based unique count per category.
+        categoryProductCountMap[category.id] = productIds.size
+    })
+
+    const categoriesWithCount = categories.map((category) => ({
+        ...category,
+        productCount: categoryProductCountMap[category.id] ?? 0,
+    }))
+
+    return {
+        categories: categoriesWithCount,
+        types,
+        styles,
+        colors,
+        sizes,
+        ages,
+        categoryAttributeMap,
+    }
+}
