@@ -130,7 +130,7 @@ export default async function HomePage() {
 
   for (const section of promoSectionsConfig) {
     const selectedPromoCategory = section.categoryId ? categoryMap.get(section.categoryId) || null : null
-    let dailyCategory: (typeof allCategories)[number] | null = selectedPromoCategory
+    let dailyCategory: (typeof allCategories)[number] | null = null
     let dailyProducts: Array<{
       id: string
       title: string
@@ -202,7 +202,7 @@ export default async function HomePage() {
       break
     }
 
-    if (!dailyCategory) continue
+    if (!dailyCategory || dailyProducts.length === 0) continue
     promoSections.push({
       id: section.id,
       title: section.title,
