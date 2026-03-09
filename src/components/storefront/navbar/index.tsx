@@ -5,7 +5,7 @@ import { MainHeader } from "./main-header"
 
 export function Header() {
     return (
-        <header className="relative z-50 flex flex-col">
+        <header className="sticky top-0 z-[310] flex flex-col bg-white">
             <TopBar />
             <MainHeader />
         </header>

@@ -265,10 +265,10 @@ export function Footer() {
         <footer className="mt-10 border-t border-slate-200 bg-[#f3f5f8] text-slate-800">
             <div className="w-full px-[3vw] py-10">
                 <div
-                    className="grid grid-cols-1 gap-8 lg:gap-0 lg:[grid-template-columns:repeat(var(--footer-cols),minmax(0,1fr))]"
+                    className="grid grid-cols-2 gap-x-6 gap-y-8 lg:gap-y-0 lg:[grid-template-columns:repeat(var(--footer-cols),minmax(0,1fr))]"
                     style={{ ["--footer-cols" as string]: String(desktopColumnCount) }}
                 >
-                    <div className="w-full space-y-4 text-left lg:pr-6 lg:border-r lg:border-slate-200">
+                    <div className="col-span-2 w-full space-y-4 border-b border-slate-200 pb-5 text-left lg:col-span-1 lg:border-b-0 lg:pb-0 lg:pr-6 lg:border-r">
                         <h3 className="font-serif text-xl font-bold text-slate-900">{siteName}</h3>
                         <p className="max-w-xs text-[13px] leading-6 text-slate-600">
                             {tagline}
@@ -296,24 +296,24 @@ export function Footer() {
                     </div>
 
                     {renderedSections.map((section, index) => (
-                        <div key={`${section.title}-${index}`} className="w-full text-center lg:px-4 lg:border-r lg:border-slate-200">
+                        <div key={`${section.title}-${index}`} className="w-full border-b border-slate-200 pb-4 text-center lg:border-b-0 lg:pb-0 lg:px-4 lg:border-r">
                             <h4 className="text-sm font-semibold tracking-wide text-slate-700">{section.title}</h4>
                             {renderLinks(section.links)}
                         </div>
                     ))}
 
-                    <div className="w-full text-left lg:pl-6">
-                        <h4 className="text-center text-sm font-semibold tracking-wide text-slate-700">Recently Viewed</h4>
+                    <div className="col-span-2 w-full border-b border-slate-200 pb-4 text-left lg:col-span-1 lg:border-b-0 lg:pb-0 lg:pl-6">
+                        <h4 className="text-center text-sm font-semibold tracking-wide text-slate-700 lg:text-left">Recently Viewed</h4>
                         {recentlyViewed.length === 0 ? (
                             <p className="mt-3 text-xs text-slate-500">No viewed products yet.</p>
                         ) : (
-                            <div className="mt-3 space-y-2">
+                            <div className="mt-3 space-y-1.5 lg:ml-auto lg:max-w-[230px]">
                                 {recentlyViewed.map((item) => (
-                                    <Link key={item.id} href={`/product/${item.slug}`} className="flex items-center justify-start gap-2 rounded-md border border-slate-200 bg-white p-2 transition-colors hover:border-red-200 hover:bg-red-50/40">
-                                        <img src={item.image || "/placeholder.jpg"} alt={item.title} className="h-10 w-10 rounded object-cover border border-slate-200" />
+                                    <Link key={item.id} href={`/product/${item.slug}`} className="flex items-center justify-start gap-2 rounded-md border border-slate-200 bg-white p-1.5 transition-colors hover:border-red-200 hover:bg-red-50/40">
+                                        <img src={item.image || "/placeholder.jpg"} alt={item.title} className="h-8 w-8 rounded object-cover border border-slate-200" />
                                         <div className="min-w-0 text-left">
-                                            <p className="line-clamp-1 text-xs font-medium text-slate-800 hover:text-red-600">{item.title}</p>
-                                            <p className="text-[11px] text-emerald-700">${item.price.toFixed(2)}</p>
+                                            <p className="line-clamp-1 text-[11px] font-medium text-slate-800 hover:text-red-600">{item.title}</p>
+                                            <p className="text-[10px] text-emerald-700">${item.price.toFixed(2)}</p>
                                         </div>
                                     </Link>
                                 ))}

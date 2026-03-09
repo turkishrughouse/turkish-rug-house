@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 
 export function RugHouseDropdown() {
-    const HOVER_OPEN_DELAY_MS = 50
+    const HOVER_OPEN_DELAY_MS = 400
     const [open, setOpen] = useState(false)
     const [guestOpen, setGuestOpen] = useState(false)
     const [guestModalMode, setGuestModalMode] = useState<null | "login" | "register">(null)

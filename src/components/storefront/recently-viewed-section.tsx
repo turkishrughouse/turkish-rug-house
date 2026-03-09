@@ -13,14 +13,6 @@ type RecentProduct = {
 
 const STORAGE_KEY = "rughouse_recently_viewed_products"
 
-const MOCK_RECENT_PRODUCT: RecentProduct = {
-  id: "mock-recent-rug",
-  slug: "mock-recent-rug",
-  title: "Mock Vintage Oushak Rug",
-  image: "/placeholder.jpg",
-  price: 1450,
-}
-
 export function RecentlyViewedSection() {
   const [products, setProducts] = useState<RecentProduct[]>([])
 
@@ -41,9 +33,9 @@ export function RecentlyViewedSection() {
             image: String(item.image || "/placeholder.jpg"),
             price: Number(item.price || 0),
           }))
-        setProducts(normalized.length > 0 ? normalized : [MOCK_RECENT_PRODUCT])
+        setProducts(normalized)
       } catch {
-        setProducts([MOCK_RECENT_PRODUCT])
+        setProducts([])
       }
     }
 
@@ -67,7 +59,7 @@ export function RecentlyViewedSection() {
     <section className="container mx-auto px-4 py-10">
       <div className="mb-6">
         <h2 className="text-2xl font-bold tracking-tight text-slate-900">Recently viewed items</h2>
-        <p className="mt-1 text-slate-500">Products your visitors looked at most recently.</p>
+        <p className="mt-1 text-slate-500">Shows automatically after the visitor views product pages.</p>
       </div>
 
       <div className="grid grid-cols-1 items-start gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">

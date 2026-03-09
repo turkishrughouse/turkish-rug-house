@@ -534,9 +534,9 @@ export default function CheckoutPage() {
       <section className="relative overflow-hidden border-b border-slate-200">
         <img src={bannerImage} alt="Checkout banner" className="absolute inset-0 h-full w-full object-cover object-center" />
         <div className="absolute inset-0 bg-black/35" />
-        <div className="relative mx-auto w-full max-w-[1200px] px-6 py-12 text-center">
-          <h1 className="text-4xl font-semibold text-white">Checkout</h1>
-          <div className="mt-2 flex items-center justify-center gap-3 text-sm text-slate-100 md:text-base">
+        <div className="relative mx-auto w-full max-w-[1200px] px-4 py-10 text-center sm:px-6 sm:py-12">
+          <h1 className="text-3xl font-semibold text-white sm:text-4xl">Checkout</h1>
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-sm text-slate-100 md:text-base">
             <Link href="/" className="inline-flex items-center gap-2 hover:text-white">
               <House className="h-4 w-4" />
               Home
@@ -549,7 +549,7 @@ export default function CheckoutPage() {
         </div>
       </section>
 
-      <div className="mx-auto w-full max-w-[1600px] px-6 py-10 lg:px-10">
+      <div className="mx-auto w-full max-w-[1600px] px-3 py-8 sm:px-4 sm:py-10 lg:px-10">
         <div className="border-t border-slate-200">
           <div className="border-b border-slate-200">
             <button type="button" onClick={() => setOpenStep(openStep === 1 ? null : 1)} className="flex h-16 w-full items-center justify-between text-left">
@@ -562,7 +562,7 @@ export default function CheckoutPage() {
                   <div>
                     <h3 className="text-2xl font-semibold leading-none text-slate-900">Returning Customer</h3>
                     <div className="mt-10 space-y-4">
-                      <div className="grid grid-cols-[150px_1fr] items-center gap-4">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">E-Mail</label>
                         <input
                           value={loginEmail}
@@ -571,7 +571,7 @@ export default function CheckoutPage() {
                           placeholder="E-Mail"
                         />
                       </div>
-                      <div className="grid grid-cols-[150px_1fr] items-center gap-4">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">Password</label>
                         <input
                           type="password"
@@ -651,19 +651,19 @@ export default function CheckoutPage() {
                   <div>
                     <h3 className="text-2xl font-semibold leading-none text-slate-900">Your Personal Details</h3>
                     <div className="mt-10 space-y-4">
-                      <div className="grid grid-cols-[150px_1fr] items-center gap-4">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">First Name *</label>
                         <input value={firstName} onChange={(e) => setFirstName(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="First Name" />
                       </div>
-                      <div className="grid grid-cols-[150px_1fr] items-center gap-4">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">Last Name *</label>
                         <input value={lastName} onChange={(e) => setLastName(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="Last Name" />
                       </div>
-                      <div className="grid grid-cols-[150px_1fr] items-center gap-4">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">E-Mail *</label>
                         <input value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} type="email" className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="E-Mail" />
                       </div>
-                      <div className="grid grid-cols-[150px_1fr] items-center gap-4">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">Telephone *</label>
                         <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="Telephone" />
                       </div>
@@ -673,19 +673,19 @@ export default function CheckoutPage() {
                   <div>
                     <h3 className="text-2xl font-semibold leading-none text-slate-900">Your Address</h3>
                     <div className="mt-10 space-y-4">
-                      <div className="grid grid-cols-[150px_1fr] items-center gap-4">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">Company</label>
                         <input value={company} onChange={(e) => setCompany(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="Company" />
                       </div>
-                      <div className="grid grid-cols-[150px_1fr] items-center gap-4">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">Address 1 *</label>
                         <input value={addressLine1} onChange={(e) => setAddressLine1(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="Address 1" />
                       </div>
-                      <div className="grid grid-cols-[150px_1fr] items-center gap-4">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">Address 2</label>
                         <input value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="Address 2" />
                       </div>
-                      <div className="grid grid-cols-[150px_1fr] items-center gap-4">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">City *</label>
                         {cityOptions.length > 0 ? (
                           <select value={city} onChange={(e) => setCity(e.target.value)} className="h-11 rounded border border-slate-300 bg-white px-4 text-base">
@@ -697,11 +697,11 @@ export default function CheckoutPage() {
                           <input value={city} onChange={(e) => setCity(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="City" />
                         )}
                       </div>
-                      <div className="grid grid-cols-[150px_1fr] items-center gap-4">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">Post Code *</label>
                         <input value={postcode} onChange={(e) => setPostcode(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="Post Code" />
                       </div>
-                      <div className="grid grid-cols-[150px_1fr] items-center gap-4">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">Country *</label>
                         <select
                           value={countryCode}
@@ -720,7 +720,7 @@ export default function CheckoutPage() {
                           )) : <option value={countryCode}>{country}</option>}
                         </select>
                       </div>
-                      <div className="grid grid-cols-[150px_1fr] items-center gap-4">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">Region / State *</label>
                         {stateOptions.length > 0 ? (
                           <select value={regionState} onChange={(e) => setRegionState(e.target.value)} className="h-11 rounded border border-slate-300 bg-white px-4 text-base">
@@ -894,6 +894,8 @@ export default function CheckoutPage() {
             {openStep === 6 ? (
               <div className="pb-8">
                 <div className="overflow-hidden border border-slate-300">
+                  <div className="overflow-x-auto">
+                  <div className="min-w-[760px]">
                   <div className="grid grid-cols-[2.2fr_1fr_0.9fr_0.9fr_0.9fr] bg-slate-50 text-[15px] font-semibold text-slate-700">
                     <div className="border-r border-slate-300 p-3">Product Name</div>
                     <div className="border-r border-slate-300 p-3">Model</div>
@@ -933,6 +935,8 @@ export default function CheckoutPage() {
                   <div className="grid grid-cols-[4.1fr_0.9fr] border-t border-slate-300 text-[18px] font-semibold">
                     <div className="border-r border-slate-300 p-3 text-right text-slate-700">Total:</div>
                     <div className="p-3 text-right">{formatCurrency(total, currencySettings)}</div>
+                  </div>
+                  </div>
                   </div>
                 </div>
                 <button

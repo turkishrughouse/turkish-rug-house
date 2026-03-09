@@ -1,15 +1,29 @@
 import { Header } from "@/components/storefront/navbar"
 import { Footer } from "@/components/storefront/footer"
 import { ActivityPing } from "@/components/storefront/activity-ping"
-import { GlobalShopByCategory } from "@/components/storefront/global-shop-by-category"
+import { getSiteSettings } from "@/lib/site-settings"
+import { MaintenanceScreen } from "@/components/public/maintenance-screen"
 
 export const dynamic = "force-dynamic"
 
-export default function PublicLayout({
+export default async function PublicLayout({
     children,
 }: {
     children: React.ReactNode
 }) {
+    const settings = await getSiteSettings()
+
+    if (settings.maintenanceMode) {
+        return (
+            <MaintenanceScreen
+                title={settings.maintenanceTitle}
+                message={settings.maintenanceMessage}
+                imageUrl={settings.maintenanceImageUrl}
+                socialLinks={settings.footerSocialLinks}
+            />
+        )
+    }
+
     return (
         <>
             <Header />
@@ -30,7 +44,6 @@ export default function PublicLayout({
             {/* Main Content - Padded top for fixed header (36px TopBar + ~138px MainHeader = ~174px) */}
             <main className="min-h-screen">
                 {children}
-                <GlobalShopByCategory />
             </main>
             <Footer />
         </>

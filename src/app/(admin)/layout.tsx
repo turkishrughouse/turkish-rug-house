@@ -20,7 +20,13 @@ export default async function AdminLayout({
 }: {
     children: React.ReactNode
 }) {
-    const user = await getSessionUser("admin")
+    let user: Awaited<ReturnType<typeof getSessionUser>> = null
+    try {
+        user = await getSessionUser("admin")
+    } catch (error) {
+        console.error("[admin-layout] failed to resolve admin session", error)
+        user = null
+    }
     if (!user || !isAdminRole(user.role)) {
         redirect("/rughouse/login")
     }

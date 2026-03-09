@@ -76,19 +76,17 @@ export function CategoryCheckboxTree({ categories, selectedIds, onChange }: Cate
         return tree.map(filterNode).filter((n): n is TreeNode => n !== null)
     }, [tree, searchTerm])
 
-    // Auto-expand on search
-    useMemo(() => {
-        if (searchTerm) {
-            const allIds = new Set<string>()
-            const collectIds = (nodes: TreeNode[]) => {
-                nodes.forEach(n => {
-                    allIds.add(n.id)
-                    collectIds(n.children)
-                })
-            }
-            collectIds(filteredTree)
-            setExpandedIds(allIds)
+    const searchExpandedIds = useMemo(() => {
+        if (!searchTerm) return null
+        const allIds = new Set<string>()
+        const collectIds = (nodes: TreeNode[]) => {
+            nodes.forEach(n => {
+                allIds.add(n.id)
+                collectIds(n.children)
+            })
         }
+        collectIds(filteredTree)
+        return allIds
     }, [searchTerm, filteredTree])
 
 
@@ -110,7 +108,7 @@ export function CategoryCheckboxTree({ categories, selectedIds, onChange }: Cate
     // Render Helper
     const renderNode = (node: TreeNode, level = 0) => {
         const hasChildren = node.children.length > 0
-        const isExpanded = expandedIds.has(node.id)
+        const isExpanded = searchExpandedIds ? searchExpandedIds.has(node.id) : expandedIds.has(node.id)
 
         return (
             <div key={node.id} className="select-none">

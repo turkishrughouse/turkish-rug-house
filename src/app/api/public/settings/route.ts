@@ -8,9 +8,15 @@ export async function GET() {
     const data = await getSiteSettings()
     return NextResponse.json({
       siteName: data.siteName,
+      brandPrimary: data.brandPrimary,
+      brandSecondary: data.brandSecondary,
       siteTagline: data.siteTagline,
       supportEmail: data.supportEmail,
       supportPhone: data.supportPhone,
+      maintenanceMode: data.maintenanceMode,
+      maintenanceTitle: data.maintenanceTitle,
+      maintenanceMessage: data.maintenanceMessage,
+      maintenanceImageUrl: data.maintenanceImageUrl,
       footerSocialLinks: data.footerSocialLinks,
       shopByCategoryIds: data.shopByCategoryIds,
       categoryCardRadiusLinked: data.categoryCardRadiusLinked,
@@ -18,6 +24,7 @@ export async function GET() {
       categoryCardRadiusTopRight: data.categoryCardRadiusTopRight,
       categoryCardRadiusBottomRight: data.categoryCardRadiusBottomRight,
       categoryCardRadiusBottomLeft: data.categoryCardRadiusBottomLeft,
+      homeFeatureItems: data.homeFeatureItems,
       defaultCurrency: data.defaultCurrency,
       currencyPosition: data.currencyPosition,
       thousandSeparator: data.thousandSeparator,

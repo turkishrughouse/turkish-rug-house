@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { ChevronDown } from "lucide-react"
 
 export function DiscoveryCapsule() {
-    const HOVER_OPEN_DELAY_MS = 50
+    const HOVER_OPEN_DELAY_MS = 400
     // State to track which tab is active (open)
     const [activeTab, setActiveTab] = useState<'categories' | 'information' | null>(null)
     const openTimeoutRef = useRef<NodeJS.Timeout | null>(null)

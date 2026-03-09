@@ -12,6 +12,13 @@ export type HomePromoSection = {
   categoryId: string
 }
 
+export type HomeFeatureItem = {
+  id: string
+  icon: "plane" | "cart" | "support" | "truck"
+  title: string
+  subtitle: string
+}
+
 export type SiteSettings = {
   siteName: string
   brandPrimary: string
@@ -31,6 +38,9 @@ export type SiteSettings = {
   defaultLanguage: string
   defaultCurrency: string
   maintenanceMode: boolean
+  maintenanceTitle: string
+  maintenanceMessage: string
+  maintenanceImageUrl: string
   shopByCategoryIds: string[]
   categoryCardRadiusLinked: boolean
   categoryCardRadiusTopLeft: number
@@ -42,6 +52,7 @@ export type SiteSettings = {
   reviewShowcaseEnabled: boolean
   reviewShowcaseTitle: string
   reviewShowcaseSubtitle: string
+  homeFeatureItems: HomeFeatureItem[]
   homePromoSections: HomePromoSection[]
   homePromoSectionTitle: string
   homePromoCategoryId: string
@@ -162,6 +173,9 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   defaultLanguage: "English",
   defaultCurrency: "USD",
   maintenanceMode: false,
+  maintenanceTitle: "Web sitemiz yapim asamasindadir",
+  maintenanceMessage: "Daha guclu bir deneyim icin altyapimizi guncelliyoruz. Lutfen kisa bir sure sonra tekrar ziyaret edin.",
+  maintenanceImageUrl: "/uploads/pages/maintenance-default.jpg",
   shopByCategoryIds: [],
   categoryCardRadiusLinked: true,
   categoryCardRadiusTopLeft: 15,
@@ -173,6 +187,12 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   reviewShowcaseEnabled: false,
   reviewShowcaseTitle: "Over 210,000 Five-Star Reviews",
   reviewShowcaseSubtitle: "Explore the rugs everyone's raving about.",
+  homeFeatureItems: [
+    { id: "feature-shipping", icon: "plane", title: "Worldwide Free", subtitle: "Shipping" },
+    { id: "feature-price", icon: "cart", title: "Best Price", subtitle: "Commitment" },
+    { id: "feature-support", icon: "support", title: "7/24 Support", subtitle: "" },
+    { id: "feature-return", icon: "truck", title: "Easy Return", subtitle: "" },
+  ],
   homePromoSections: [],
   homePromoSectionTitle: "Most Popular",
   homePromoCategoryId: "",
@@ -350,6 +370,18 @@ function normalizeSettings(input: unknown): SiteSettings {
     defaultLanguage: typeof raw.defaultLanguage === "string" && raw.defaultLanguage.trim() ? raw.defaultLanguage.trim() : DEFAULT_SITE_SETTINGS.defaultLanguage,
     defaultCurrency: typeof raw.defaultCurrency === "string" && raw.defaultCurrency.trim() ? raw.defaultCurrency.trim() : DEFAULT_SITE_SETTINGS.defaultCurrency,
     maintenanceMode: Boolean(raw.maintenanceMode),
+    maintenanceTitle:
+      typeof raw.maintenanceTitle === "string" && raw.maintenanceTitle.trim().length > 0
+        ? raw.maintenanceTitle.trim()
+        : DEFAULT_SITE_SETTINGS.maintenanceTitle,
+    maintenanceMessage:
+      typeof raw.maintenanceMessage === "string" && raw.maintenanceMessage.trim().length > 0
+        ? raw.maintenanceMessage.trim()
+        : DEFAULT_SITE_SETTINGS.maintenanceMessage,
+    maintenanceImageUrl:
+      typeof raw.maintenanceImageUrl === "string" && raw.maintenanceImageUrl.trim().length > 0
+        ? raw.maintenanceImageUrl.trim()
+        : DEFAULT_SITE_SETTINGS.maintenanceImageUrl,
     shopByCategoryIds: Array.isArray(raw.shopByCategoryIds)
       ? Array.from(new Set(raw.shopByCategoryIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0))).slice(0, 8)
       : Array.isArray((raw as { homeCategoryIds?: unknown }).homeCategoryIds)
@@ -404,6 +436,29 @@ function normalizeSettings(input: unknown): SiteSettings {
       typeof raw.reviewShowcaseSubtitle === "string" && raw.reviewShowcaseSubtitle.trim().length > 0
         ? raw.reviewShowcaseSubtitle.trim()
         : DEFAULT_SITE_SETTINGS.reviewShowcaseSubtitle,
+    homeFeatureItems: Array.isArray((raw as { homeFeatureItems?: unknown }).homeFeatureItems)
+      ? (raw as { homeFeatureItems: unknown[] }).homeFeatureItems
+          .map((item, index) => {
+            if (!item || typeof item !== "object") return null
+            const id = (item as { id?: unknown }).id
+            const icon = (item as { icon?: unknown }).icon
+            const title = (item as { title?: unknown }).title
+            const subtitle = (item as { subtitle?: unknown }).subtitle
+            const fallback = DEFAULT_SITE_SETTINGS.homeFeatureItems[index] || DEFAULT_SITE_SETTINGS.homeFeatureItems[0]
+            const normalizedIcon =
+              icon === "plane" || icon === "cart" || icon === "support" || icon === "truck"
+                ? icon
+                : fallback.icon
+            return {
+              id: typeof id === "string" && id.trim().length > 0 ? id.trim() : `feature-${index + 1}`,
+              icon: normalizedIcon,
+              title: typeof title === "string" && title.trim().length > 0 ? title.trim() : fallback.title,
+              subtitle: typeof subtitle === "string" ? subtitle.trim() : fallback.subtitle,
+            } as HomeFeatureItem
+          })
+          .filter((item): item is HomeFeatureItem => Boolean(item))
+          .slice(0, 4)
+      : DEFAULT_SITE_SETTINGS.homeFeatureItems,
     homePromoSections: Array.isArray(raw.homePromoSections)
       ? raw.homePromoSections
           .map((item) => {

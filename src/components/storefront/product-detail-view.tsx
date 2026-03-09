@@ -124,6 +124,14 @@ export function ProductDetailView({
   const [expandedBottomDesc, setExpandedBottomDesc] = useState(false)
   const [expandedShipping, setExpandedShipping] = useState(false)
   const [activeInfoTab, setActiveInfoTab] = useState<"description" | "shipping" | "attributes">("description")
+  const [askQuestionOpen, setAskQuestionOpen] = useState(false)
+  const [askSubmitting, setAskSubmitting] = useState(false)
+  const [askForm, setAskForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    message: "",
+  })
 
   const verticalThumbs = gallery.slice(0, 5)
   const bottomThumbs = gallery.slice(5)
@@ -199,9 +207,109 @@ export function ProductDetailView({
     return window.location.href
   }
 
+  const handleAddToBasket = () => {
+    if (product.stockCount <= 0 || !product.isStock) {
+      toast.error("This product is out of stock.")
+      return
+    }
+    if (safeQty <= 0) {
+      toast.error("Quantity must be at least 1.")
+      return
+    }
+    const result = addToCart({
+      productId: product.id,
+      slug: product.slug,
+      title: product.title,
+      sku: product.sku,
+      price: product.price,
+      compareAtPrice: product.compareAtPrice,
+      image: gallery[0] || "/placeholder.jpg",
+      stockCount: product.stockCount,
+      quantity: safeQty,
+    })
+    if (!result.ok) {
+      toast.error(result.message)
+      return
+    }
+    toast.success(`Added ${safeQty} item(s) to basket`)
+  }
+
+  const handleBuyNow = () => {
+    if (product.stockCount <= 0 || !product.isStock) {
+      toast.error("This product is out of stock.")
+      return
+    }
+    if (safeQty <= 0) {
+      toast.error("Quantity must be at least 1.")
+      return
+    }
+    const result = addToCart({
+      productId: product.id,
+      slug: product.slug,
+      title: product.title,
+      sku: product.sku,
+      price: product.price,
+      compareAtPrice: product.compareAtPrice,
+      image: gallery[0] || "/placeholder.jpg",
+      stockCount: product.stockCount,
+      quantity: safeQty,
+    })
+    if (!result.ok) {
+      toast.error(result.message)
+      return
+    }
+    router.push("/basket")
+  }
+
+  const submitAskQuestion = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    const name = askForm.name.trim()
+    const email = askForm.email.trim()
+    const messageBody = askForm.message.trim()
+    if (!name || !email || messageBody.length < 10) {
+      toast.error("Please fill required fields. Message must be at least 10 characters.")
+      return
+    }
+
+    const productUrl = typeof window !== "undefined" ? window.location.href : `/product/${product.slug}`
+    const composedMessage = [
+      `Product: ${product.title}`,
+      `Product URL: ${productUrl}`,
+      "",
+      messageBody,
+    ].join("\n")
+
+    try {
+      setAskSubmitting(true)
+      const response = await fetch("/api/messages/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          email,
+          phone: askForm.phone.trim(),
+          subject: `Product question - ${product.title}`,
+          message: composedMessage,
+        }),
+      })
+      const payload = await response.json().catch(() => null as null | { error?: string })
+      if (!response.ok) {
+        throw new Error(payload?.error || "Failed to send your question.")
+      }
+      toast.success("Your question has been sent.")
+      setAskQuestionOpen(false)
+      setAskForm({ name: "", email: "", phone: "", message: "" })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to send your question.")
+    } finally {
+      setAskSubmitting(false)
+    }
+  }
+
   return (
     <div className="bg-white min-h-screen pb-20">
-      <div className="container mx-auto px-6 py-10">
+      <div className="container mx-auto px-4 sm:px-6 py-8 sm:py-10">
         <div className="mb-6 flex items-center justify-between gap-4">
           <div className="text-sm text-slate-500">
             <Link href="/" className="hover:text-slate-800">Home</Link>
@@ -270,14 +378,14 @@ export function ProductDetailView({
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-12">
           <section>
-            <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-4 items-start">
+            <div className="grid grid-cols-[72px_minmax(0,1fr)] sm:grid-cols-[92px_minmax(0,1fr)] gap-3 sm:gap-4 items-start">
               <div className="space-y-3">
                 {verticalThumbs.map((img, i) => (
                   <button
                     key={`${img}-${i}`}
                     type="button"
                     onClick={() => setSelectedImage(i)}
-                    className={`block h-20 w-20 rounded-md overflow-hidden border ${selectedImage === i ? "border-slate-900" : "border-[#dce3ed]"}`}
+                    className={`block h-14 w-14 sm:h-20 sm:w-20 rounded-md overflow-hidden border ${selectedImage === i ? "border-slate-900" : "border-[#dce3ed]"}`}
                   >
                     <img src={img} alt={product.title} className="h-full w-full object-cover" />
                   </button>
@@ -309,7 +417,7 @@ export function ProductDetailView({
             </div>
 
             {bottomThumbs.length > 0 ? (
-              <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-4 mt-4">
+              <div className="grid grid-cols-[72px_minmax(0,1fr)] sm:grid-cols-[92px_minmax(0,1fr)] gap-3 sm:gap-4 mt-4">
                 <div />
                 <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
                   {bottomThumbs.map((img, i) => {
@@ -357,117 +465,148 @@ export function ProductDetailView({
               ) : null}
             </div>
 
+            <div className="mt-7 border-y border-[#e6edf5]">
+              <div className="grid grid-cols-2 md:flex md:items-center md:gap-8">
+                {[
+                  { icon: "🧿", label: "One Of a Kind" },
+                  { icon: "🧶", label: "Handmade" },
+                  { icon: "🌿", label: "Natural Fiber" },
+                  { icon: "🚚", label: "Free Shipping" },
+                ].map((feature, index) => (
+                  <div
+                    key={feature.label}
+                    className={`flex items-center gap-2 px-3 py-3 ${
+                      index % 2 === 0 ? "border-r border-[#e6edf5]" : ""
+                    } ${index < 2 ? "border-b border-[#e6edf5]" : ""} md:border-0 md:px-0`}
+                  >
+                    <span className="text-xl leading-none">{feature.icon}</span>
+                    <span className="text-[16px] font-normal text-black">{feature.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="mt-8">
-              <div className="flex items-start gap-2 whitespace-nowrap">
-                <div className="inline-flex items-center rounded-md border border-[#dce3ed]">
-                  <button
-                    type="button"
-                    className="h-10 w-10 text-base text-slate-600 hover:bg-slate-50"
-                    onClick={() => setQty((prev) => Math.max(0, prev - 1))}
-                  >
-                    -
-                  </button>
-                  <input
-                    type="number"
-                    min={0}
-                    max={stockLimit}
-                    value={safeQty}
-                    onChange={(e) => {
-                      const raw = Number(e.target.value)
-                      const next = Number.isFinite(raw) ? raw : 0
-                      setQty(Math.min(Math.max(0, next), stockLimit))
-                    }}
-                    className="h-10 w-12 text-center border-x border-[#dce3ed] bg-white text-sm"
-                  />
-                  <button
-                    type="button"
-                    className="h-10 w-10 text-base text-slate-600 hover:bg-slate-50"
-                    onClick={() => setQty((prev) => Math.min(prev + 1, stockLimit))}
-                  >
-                    +
-                  </button>
+              <div className="grid grid-cols-1 gap-3 md:hidden">
+                <div className="grid grid-cols-[auto_1fr] items-start gap-3">
+                  <div>
+                    <div className="inline-flex items-center rounded-md border border-[#dce3ed]">
+                      <button
+                        type="button"
+                        className="h-10 w-10 text-base text-slate-600 hover:bg-slate-50"
+                        onClick={() => setQty((prev) => Math.max(0, prev - 1))}
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min={0}
+                        max={stockLimit}
+                        value={safeQty}
+                        onChange={(e) => {
+                          const raw = Number(e.target.value)
+                          const next = Number.isFinite(raw) ? raw : 0
+                          setQty(Math.min(Math.max(0, next), stockLimit))
+                        }}
+                        className="h-10 w-12 border-x border-[#dce3ed] bg-white text-center text-sm"
+                      />
+                      <button
+                        type="button"
+                        className="h-10 w-10 text-base text-slate-600 hover:bg-slate-50"
+                        onClick={() => setQty((prev) => Math.min(prev + 1, stockLimit))}
+                      >
+                        +
+                      </button>
+                    </div>
+                    <div className="mt-2 text-xs font-medium text-slate-500">
+                      Quantity - {safeQty} - SKU - {product.sku || "-"}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      className="h-10 rounded-md bg-emerald-600 px-2 text-xs font-semibold text-white hover:bg-emerald-700"
+                      onClick={handleAddToBasket}
+                    >
+                      Add to Basket
+                    </button>
+                    <button
+                      type="button"
+                      className="h-10 rounded-md border border-slate-800 bg-slate-900 px-2 text-xs font-semibold text-white hover:bg-slate-800"
+                      onClick={handleBuyNow}
+                    >
+                      Buy Now
+                    </button>
+                  </div>
                 </div>
-
                 <button
                   type="button"
-                  className="h-10 px-4 rounded-md bg-emerald-600 text-sm text-white font-semibold hover:bg-emerald-700"
-                  onClick={() => {
-                    if (product.stockCount <= 0 || !product.isStock) {
-                      toast.error("This product is out of stock.")
-                      return
-                    }
-                    if (safeQty <= 0) {
-                      toast.error("Quantity must be at least 1.")
-                      return
-                    }
-                    const result = addToCart({
-                      productId: product.id,
-                      slug: product.slug,
-                      title: product.title,
-                      sku: product.sku,
-                      price: product.price,
-                      compareAtPrice: product.compareAtPrice,
-                      image: gallery[0] || "/placeholder.jpg",
-                      stockCount: product.stockCount,
-                      quantity: safeQty,
-                    })
-                    if (!result.ok) {
-                      toast.error(result.message)
-                      return
-                    }
-                    toast.success(`Added ${safeQty} item(s) to basket`)
-                  }}
-                >
-                  Add to Basket
-                </button>
-
-                <button
-                  type="button"
-                  className="h-10 px-4 rounded-md border border-slate-800 bg-slate-900 text-sm text-white font-semibold hover:bg-slate-800"
-                  onClick={() => {
-                    if (product.stockCount <= 0 || !product.isStock) {
-                      toast.error("This product is out of stock.")
-                      return
-                    }
-                    if (safeQty <= 0) {
-                      toast.error("Quantity must be at least 1.")
-                      return
-                    }
-                    const result = addToCart({
-                      productId: product.id,
-                      slug: product.slug,
-                      title: product.title,
-                      sku: product.sku,
-                      price: product.price,
-                      compareAtPrice: product.compareAtPrice,
-                      image: gallery[0] || "/placeholder.jpg",
-                      stockCount: product.stockCount,
-                      quantity: safeQty,
-                    })
-                    if (!result.ok) {
-                      toast.error(result.message)
-                      return
-                    }
-                    router.push("/basket")
-                  }}
-                >
-                  Buy Now
-                </button>
-
-                <button
-                  type="button"
-                  className="h-10 px-4 rounded-md border border-emerald-700 bg-white text-sm text-emerald-700 font-semibold hover:bg-emerald-50"
-                  onClick={() => {
-                    const share = `${typeof window !== "undefined" ? window.location.href : `/product/${product.slug}`}`
-                    const message = `Hi, I want to ask about this product: ${product.title} - ${share}`
-                    openShare(`https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`)
-                  }}
+                  className="h-10 w-full rounded-md border border-emerald-700 bg-white text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+                  onClick={() => setAskQuestionOpen(true)}
                 >
                   Ask Question
                 </button>
               </div>
-              <div className="mt-2 text-xs font-medium text-slate-500">
-                Quantity - {safeQty} - SKU - {product.sku || "-"}
+
+              <div className="hidden md:block">
+                <div className="flex flex-wrap items-start gap-2">
+                  <div className="inline-flex items-center rounded-md border border-[#dce3ed]">
+                    <button
+                      type="button"
+                      className="h-10 w-10 text-base text-slate-600 hover:bg-slate-50"
+                      onClick={() => setQty((prev) => Math.max(0, prev - 1))}
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min={0}
+                      max={stockLimit}
+                      value={safeQty}
+                      onChange={(e) => {
+                        const raw = Number(e.target.value)
+                        const next = Number.isFinite(raw) ? raw : 0
+                        setQty(Math.min(Math.max(0, next), stockLimit))
+                      }}
+                      className="h-10 w-12 border-x border-[#dce3ed] bg-white text-center text-sm"
+                    />
+                    <button
+                      type="button"
+                      className="h-10 w-10 text-base text-slate-600 hover:bg-slate-50"
+                      onClick={() => setQty((prev) => Math.min(prev + 1, stockLimit))}
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="h-10 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700"
+                    onClick={handleAddToBasket}
+                  >
+                    Add to Basket
+                  </button>
+
+                  <button
+                    type="button"
+                    className="h-10 rounded-md border border-slate-800 bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800"
+                    onClick={handleBuyNow}
+                  >
+                    Buy Now
+                  </button>
+
+                  <button
+                    type="button"
+                    className="h-10 rounded-md border border-emerald-700 bg-white px-4 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+                    onClick={() => setAskQuestionOpen(true)}
+                  >
+                    Ask Question
+                  </button>
+                </div>
+                <div className="mt-2 text-xs font-medium text-slate-500">
+                  Quantity - {safeQty} - SKU - {product.sku || "-"}
+                </div>
               </div>
             </div>
 
@@ -713,6 +852,70 @@ export function ProductDetailView({
           </section>
         ) : null}
       </div>
+
+      {askQuestionOpen ? (
+        <div className="fixed inset-0 z-[1250] bg-black/45 p-4" onClick={() => setAskQuestionOpen(false)}>
+          <div className="mx-auto mt-[8vh] w-full max-w-xl rounded-xl bg-white p-5 shadow-2xl sm:p-6" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Ask a Question</h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Product: <span className="font-medium text-slate-800">{product.title}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
+                onClick={() => setAskQuestionOpen(false)}
+                aria-label="Close ask question form"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form className="space-y-3" onSubmit={submitAskQuestion}>
+              <input
+                value={askForm.name}
+                onChange={(event) => setAskForm((prev) => ({ ...prev, name: event.target.value }))}
+                placeholder="Your name"
+                className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-500"
+                required
+              />
+              <input
+                type="email"
+                value={askForm.email}
+                onChange={(event) => setAskForm((prev) => ({ ...prev, email: event.target.value }))}
+                placeholder="Your email"
+                className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-500"
+                required
+              />
+              <input
+                value={askForm.phone}
+                onChange={(event) => setAskForm((prev) => ({ ...prev, phone: event.target.value }))}
+                placeholder="Phone (optional)"
+                className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-500"
+              />
+              <textarea
+                value={askForm.message}
+                onChange={(event) => setAskForm((prev) => ({ ...prev, message: event.target.value }))}
+                placeholder="Write your question..."
+                className="min-h-[130px] w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-slate-500"
+                required
+              />
+              <p className="text-xs text-slate-500">
+                Product link will be included automatically in your message.
+              </p>
+              <button
+                type="submit"
+                disabled={askSubmitting}
+                className="inline-flex h-11 w-full items-center justify-center rounded-md bg-emerald-700 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {askSubmitting ? "Sending..." : "Send Question"}
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : null}
 
       {imageLightboxOpen ? (
         <div className="fixed inset-0 z-[1300] bg-black/80 p-4" onClick={() => setImageLightboxOpen(false)}>

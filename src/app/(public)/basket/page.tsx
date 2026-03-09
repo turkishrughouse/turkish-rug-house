@@ -167,13 +167,13 @@ export default function BasketPage() {
       <section className="relative overflow-hidden border-b border-[#e2e2e2]">
         <img src={heroImage} alt="Shopping cart banner" className="absolute inset-0 h-full w-full object-cover object-center" />
         <div className="absolute inset-0 bg-black/35" />
-        <div className="relative mx-auto flex w-full max-w-[1880px] flex-col items-center justify-center px-8 py-12 text-center">
-          <h1 className="text-[42px] font-semibold text-white">Shopping Cart</h1>
-          <p className="mt-2 text-[19px] text-slate-100">Home / Shopping Cart</p>
+        <div className="relative mx-auto flex w-full max-w-[1880px] flex-col items-center justify-center px-4 py-10 text-center sm:px-6 sm:py-12 md:px-8">
+          <h1 className="text-3xl font-semibold text-white sm:text-[42px]">Shopping Cart</h1>
+          <p className="mt-2 text-base text-slate-100 sm:text-[19px]">Home / Shopping Cart</p>
         </div>
       </section>
 
-      <div className="mx-auto w-full max-w-[1880px] px-8 py-8">
+      <div className="mx-auto w-full max-w-[1880px] px-3 py-6 sm:px-4 sm:py-8 lg:px-8">
         {items.length === 0 ? (
           <>
             <div className="rounded-md border border-slate-200 bg-white p-10 text-center">
@@ -188,90 +188,159 @@ export default function BasketPage() {
           </>
         ) : (
           <>
-            <div className="grid grid-cols-1 items-start gap-8 xl:grid-cols-[1.7fr_0.83fr]">
+            <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[1.7fr_0.83fr] xl:gap-8">
               <section className="overflow-hidden self-start border border-[#d8d8d8] bg-white xl:sticky xl:top-6">
-              <div className="grid grid-cols-[150px_1.35fr_0.85fr_1fr_0.75fr] border-b border-[#d8d8d8] bg-[#f7f7f7] px-4 py-2.5 text-center text-[14px] font-semibold text-[#4b5563]">
-                <span>Image</span>
-                <span className="text-left">Product Name</span>
-                <span>SKU</span>
-                <span>Quantity</span>
-                <span>Total</span>
-              </div>
-
-              {items.map((item) => (
-                <div
-                  key={item.productId}
-                  className="grid min-h-[116px] grid-cols-[150px_1.35fr_0.85fr_1fr_0.75fr] items-center border-b border-[#dfdfdf] px-4 py-2.5"
-                >
-                  <div className="mx-auto h-20 w-20 overflow-hidden border border-[#d8d8d8] bg-white">
-                    <img src={item.image || "/placeholder.jpg"} alt={item.title} className="h-full w-full object-cover" />
+                <div className="hidden md:block">
+                  <div className="grid grid-cols-[150px_1.35fr_0.85fr_1fr_0.75fr] border-b border-[#d8d8d8] bg-[#f7f7f7] px-4 py-2.5 text-center text-[14px] font-semibold text-[#4b5563]">
+                    <span>Image</span>
+                    <span className="text-left">Product Name</span>
+                    <span>SKU</span>
+                    <span>Quantity</span>
+                    <span>Total</span>
                   </div>
 
-                  <div className="min-w-0 pr-3 text-left">
-                    <Link href={`/product/${item.slug}`} className="line-clamp-2 text-[14px] font-medium leading-6 text-slate-900 hover:text-teal-700">
-                      {item.title}
-                    </Link>
-                  </div>
+                  {items.map((item) => (
+                    <div
+                      key={item.productId}
+                      className="grid min-h-[116px] grid-cols-[150px_1.35fr_0.85fr_1fr_0.75fr] items-center border-b border-[#dfdfdf] px-4 py-2.5"
+                    >
+                      <div className="mx-auto h-20 w-20 overflow-hidden border border-[#d8d8d8] bg-white">
+                        <img src={item.image || "/placeholder.jpg"} alt={item.title} className="h-full w-full object-cover" />
+                      </div>
 
-                  <p className="text-center text-[13px] text-slate-500">{item.sku || "-"}</p>
+                      <div className="min-w-0 pr-3 text-left">
+                        <Link href={`/product/${item.slug}`} className="line-clamp-2 text-[14px] font-medium leading-6 text-slate-900 hover:text-teal-700">
+                          {item.title}
+                        </Link>
+                      </div>
 
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="inline-grid grid-cols-3 items-center overflow-hidden rounded-md border border-[#6b7280]">
-                      <button
-                        type="button"
-                        className="h-8 w-8 cursor-pointer text-[15px] text-slate-600 hover:bg-slate-50"
-                        onClick={() => {
-                          const nextQty = item.quantity - 1
-                          if (nextQty < 1) return
-                          const result = updateCartItemQuantity(item.productId, nextQty)
-                          if (!result.ok) toast.error(result.message)
-                          refresh()
-                        }}
-                      >
-                        -
-                      </button>
-                      <span className="inline-flex h-8 w-8 items-center justify-center border-x border-[#6b7280] text-[14px]">{item.quantity}</span>
-                      <button
-                        type="button"
-                        className="h-8 w-8 cursor-pointer text-[15px] text-slate-600 hover:bg-slate-50"
-                        onClick={() => {
-                          const result = updateCartItemQuantity(item.productId, item.quantity + 1)
-                          if (!result.ok) toast.error(result.message)
-                          refresh()
-                        }}
-                      >
-                        +
-                      </button>
+                      <p className="text-center text-[13px] text-slate-500">{item.sku || "-"}</p>
+
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="inline-grid grid-cols-3 items-center overflow-hidden rounded-md border border-[#6b7280]">
+                          <button
+                            type="button"
+                            className="h-8 w-8 cursor-pointer text-[15px] text-slate-600 hover:bg-slate-50"
+                            onClick={() => {
+                              const nextQty = item.quantity - 1
+                              if (nextQty < 1) return
+                              const result = updateCartItemQuantity(item.productId, nextQty)
+                              if (!result.ok) toast.error(result.message)
+                              refresh()
+                            }}
+                          >
+                            -
+                          </button>
+                          <span className="inline-flex h-8 w-8 items-center justify-center border-x border-[#6b7280] text-[14px]">{item.quantity}</span>
+                          <button
+                            type="button"
+                            className="h-8 w-8 cursor-pointer text-[15px] text-slate-600 hover:bg-slate-50"
+                            onClick={() => {
+                              const result = updateCartItemQuantity(item.productId, item.quantity + 1)
+                              if (!result.ok) toast.error(result.message)
+                              refresh()
+                            }}
+                          >
+                            +
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-[#6b7280] text-slate-600 hover:bg-slate-50"
+                          onClick={refresh}
+                          aria-label="Refresh item"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-[#6b7280] text-slate-600 hover:bg-slate-50"
+                          onClick={() => {
+                            removeCartItem(item.productId)
+                            refresh()
+                          }}
+                          aria-label="Delete item"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+
+                      <p className="text-center text-[20px] font-semibold text-slate-900">
+                        {formatCurrency(item.price * item.quantity, currencySettings)}
+                      </p>
                     </div>
-                    <button
-                      type="button"
-                      className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-[#6b7280] text-slate-600 hover:bg-slate-50"
-                      onClick={refresh}
-                      aria-label="Refresh item"
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-[#6b7280] text-slate-600 hover:bg-slate-50"
-                      onClick={() => {
-                        removeCartItem(item.productId)
-                        refresh()
-                      }}
-                      aria-label="Delete item"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-
-                  <p className="text-center text-[20px] font-semibold text-slate-900">
-                    {formatCurrency(item.price * item.quantity, currencySettings)}
-                  </p>
+                  ))}
                 </div>
-              ))}
+
+                <div className="space-y-3 p-3 md:hidden">
+                  {items.map((item) => (
+                    <div key={item.productId} className="rounded-md border border-[#dfdfdf] p-3">
+                      <div className="flex gap-3">
+                        <div className="h-20 w-20 shrink-0 overflow-hidden border border-[#d8d8d8] bg-white">
+                          <img src={item.image || "/placeholder.jpg"} alt={item.title} className="h-full w-full object-cover" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <Link href={`/product/${item.slug}`} className="line-clamp-2 text-sm font-medium leading-5 text-slate-900 hover:text-teal-700">
+                            {item.title}
+                          </Link>
+                          <p className="mt-1 text-xs text-slate-500">SKU: {item.sku || "-"}</p>
+                          <p className="mt-1 text-lg font-semibold text-slate-900">{formatCurrency(item.price * item.quantity, currencySettings)}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <div className="inline-grid grid-cols-3 items-center overflow-hidden rounded-md border border-[#6b7280]">
+                          <button
+                            type="button"
+                            className="h-8 w-8 cursor-pointer text-[15px] text-slate-600 hover:bg-slate-50"
+                            onClick={() => {
+                              const nextQty = item.quantity - 1
+                              if (nextQty < 1) return
+                              const result = updateCartItemQuantity(item.productId, nextQty)
+                              if (!result.ok) toast.error(result.message)
+                              refresh()
+                            }}
+                          >
+                            -
+                          </button>
+                          <span className="inline-flex h-8 w-8 items-center justify-center border-x border-[#6b7280] text-[14px]">{item.quantity}</span>
+                          <button
+                            type="button"
+                            className="h-8 w-8 cursor-pointer text-[15px] text-slate-600 hover:bg-slate-50"
+                            onClick={() => {
+                              const result = updateCartItemQuantity(item.productId, item.quantity + 1)
+                              if (!result.ok) toast.error(result.message)
+                              refresh()
+                            }}
+                          >
+                            +
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-[#6b7280] text-slate-600 hover:bg-slate-50"
+                          onClick={refresh}
+                          aria-label="Refresh item"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-[#6b7280] text-slate-600 hover:bg-slate-50"
+                          onClick={() => {
+                            removeCartItem(item.productId)
+                            refresh()
+                          }}
+                          aria-label="Delete item"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </section>
 
-              <aside className="h-fit border border-[#d8d8d8] bg-[#f7f7f7] p-7">
+              <aside className="h-fit border border-[#d8d8d8] bg-[#f7f7f7] p-4 sm:p-6 lg:p-7">
               <h2 className="text-[22px] font-semibold leading-[1.25] text-[#111827]">What would you like to do next?</h2>
 
               {(["coupon", "shipping", "gift"] as ExpandKey[]).map((key) => {

@@ -143,7 +143,7 @@ export function SearchBar() {
 
     return (
         <div ref={rootRef} className="relative group w-full h-full">
-            <Search className="absolute left-6 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 transition-colors" />
+            <Search className="absolute left-3 md:left-6 top-1/2 -translate-y-1/2 h-4 w-4 md:h-5 md:w-5 text-slate-400 transition-colors" />
             <Input
                 placeholder="Search rugs, kilims, styles…"
                 value={query}
@@ -152,15 +152,15 @@ export function SearchBar() {
                     if (query.trim().length >= 1) setOpen(true)
                 }}
                 onKeyDown={handleEnter}
-                className="pl-14 pr-28 h-full bg-transparent border-none shadow-none focus-visible:ring-0 rounded-none text-base placeholder:text-slate-400 w-full"
+                className="pl-10 md:pl-14 pr-14 md:pr-28 h-full bg-transparent border-none shadow-none focus-visible:ring-0 rounded-none text-sm md:text-base placeholder:text-slate-400 w-full"
             />
             <button
                 type="button"
                 onClick={handleSearchClick}
-                className="absolute right-2 top-1/2 inline-flex h-12 -translate-y-1/2 items-center gap-1.5 rounded-md border border-[#93b1aa] bg-[#a6c2bb] px-4 text-sm font-semibold text-slate-900 transition-colors hover:bg-[#93b1aa]"
+                className="absolute right-2 top-1/2 inline-flex h-9 md:h-12 -translate-y-1/2 items-center gap-1.5 rounded-md border border-[#93b1aa] bg-[#a6c2bb] px-2 md:px-4 text-xs md:text-sm font-semibold text-slate-900 transition-colors hover:bg-[#93b1aa]"
             >
                 <Search className="h-4 w-4" />
-                Search
+                <span className="hidden md:inline">Search</span>
             </button>
 
             {open && (

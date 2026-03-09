@@ -8,6 +8,13 @@ const homePromoSectionSchema = z.object({
   categoryId: z.string().optional(),
 })
 
+const homeFeatureItemSchema = z.object({
+  id: z.string().min(1),
+  icon: z.enum(["plane", "cart", "support", "truck"]),
+  title: z.string().min(1),
+  subtitle: z.string().optional(),
+})
+
 const settingsSchema = z.object({
   siteName: z.string().min(1).optional(),
   brandPrimary: z.string().min(1).optional(),
@@ -31,6 +38,9 @@ const settingsSchema = z.object({
   defaultLanguage: z.string().min(1).optional(),
   defaultCurrency: z.string().min(1).optional(),
   maintenanceMode: z.boolean().optional(),
+  maintenanceTitle: z.string().optional(),
+  maintenanceMessage: z.string().optional(),
+  maintenanceImageUrl: z.string().optional(),
   shopByCategoryIds: z.array(z.string()).max(8).optional(),
   categoryCardRadiusLinked: z.boolean().optional(),
   categoryCardRadiusTopLeft: z.number().int().min(0).max(200).optional(),
@@ -42,6 +52,7 @@ const settingsSchema = z.object({
   reviewShowcaseEnabled: z.boolean().optional(),
   reviewShowcaseTitle: z.string().optional(),
   reviewShowcaseSubtitle: z.string().optional(),
+  homeFeatureItems: z.array(homeFeatureItemSchema).max(4).optional(),
   homePromoSections: z.array(homePromoSectionSchema).optional(),
   homePromoSectionTitle: z.string().optional(),
   homePromoCategoryId: z.string().optional(),

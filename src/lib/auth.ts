@@ -92,10 +92,16 @@ export async function getSessionUser(portal: SessionPortal = "customer"): Promis
     const payload = verifySessionToken(raw)
     if (!payload) continue
 
-    const user = await prisma.user.findUnique({
-      where: { id: payload.id },
-      select: { id: true, email: true, name: true, role: true },
-    })
+    let user: { id: string; email: string; name: string | null; role: string } | null = null
+    try {
+      user = await prisma.user.findUnique({
+        where: { id: payload.id },
+        select: { id: true, email: true, name: true, role: true },
+      })
+    } catch (error) {
+      console.error("[auth] failed to resolve session user", error)
+      continue
+    }
 
     if (user) return user
   }

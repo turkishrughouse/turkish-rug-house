@@ -513,7 +513,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
                                         <Link href={`/category/${slug}${buildQuery((p) => p.set("view", "4"))}`} className={`rounded border p-1.5 ${viewMode === "4" ? "bg-slate-900 text-white border-slate-900" : "text-slate-500 border-slate-200"}`}><LayoutGrid className="h-4 w-4" /></Link>
                                         <Link href={`/category/${slug}${buildQuery((p) => p.set("view", "list"))}`} className={`rounded border p-1.5 ${viewMode === "list" ? "bg-slate-900 text-white border-slate-900" : "text-slate-500 border-slate-200"}`}><List className="h-4 w-4" /></Link>
                                     </div>
-                                    <form method="get" action={`/category/${slug}`} className="flex items-center gap-2">
+                                    <form method="get" action={`/category/${slug}`} className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
                                         {Object.entries(resolvedSearchParams).flatMap(([key, value]) => {
                                             if (key === "sort" || value === undefined) return []
                                             if (Array.isArray(value)) {
@@ -523,7 +523,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
                                             }
                                             return <input key={key} type="hidden" name={key} value={value} />
                                         })}
-                                        <select name="sort" defaultValue={sortValue} className="h-9 min-w-[190px] rounded border border-slate-200 bg-white px-3 text-sm text-slate-700">
+                                        <select name="sort" defaultValue={sortValue} className="h-9 w-full min-w-0 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 sm:min-w-[190px]">
                                             <option value="latest">Default sorting</option>
                                             <option value="price-asc">Price: low to high</option>
                                             <option value="price-desc">Price: high to low</option>

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
-import type { HomePromoSection, SiteSettings } from "@/lib/site-settings"
+import type { HomeFeatureItem, HomePromoSection, SiteSettings } from "@/lib/site-settings"
 
 type CategoryNode = {
     id: string
@@ -59,6 +59,13 @@ function createPromoSection(): HomePromoSection {
     }
 }
 
+const DEFAULT_HOME_FEATURE_ITEMS: HomeFeatureItem[] = [
+    { id: "feature-shipping", icon: "plane", title: "Worldwide Free", subtitle: "Shipping" },
+    { id: "feature-price", icon: "cart", title: "Best Price", subtitle: "Commitment" },
+    { id: "feature-support", icon: "support", title: "7/24 Support", subtitle: "" },
+    { id: "feature-return", icon: "truck", title: "Easy Return", subtitle: "" },
+]
+
 export function ShopByCategoryMenuEditor() {
     const [categories, setCategories] = useState<FlatCategory[]>([])
     const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -73,6 +80,7 @@ export function ShopByCategoryMenuEditor() {
     const [reviewShowcaseEnabled, setReviewShowcaseEnabled] = useState(false)
     const [reviewShowcaseTitle, setReviewShowcaseTitle] = useState("Over 210,000 Five-Star Reviews")
     const [reviewShowcaseSubtitle, setReviewShowcaseSubtitle] = useState("Explore the rugs everyone's raving about.")
+    const [homeFeatureItems, setHomeFeatureItems] = useState<HomeFeatureItem[]>(DEFAULT_HOME_FEATURE_ITEMS)
     const [homePromoSections, setHomePromoSections] = useState<HomePromoSection[]>([])
     const [promoAddOpen, setPromoAddOpen] = useState(false)
     const [promoDraft, setPromoDraft] = useState<HomePromoSection>(createPromoSection())
@@ -103,6 +111,19 @@ export function ShopByCategoryMenuEditor() {
                 setReviewShowcaseEnabled(Boolean(settings.reviewShowcaseEnabled))
                 setReviewShowcaseTitle((settings.reviewShowcaseTitle || "Over 210,000 Five-Star Reviews").trim() || "Over 210,000 Five-Star Reviews")
                 setReviewShowcaseSubtitle((settings.reviewShowcaseSubtitle || "Explore the rugs everyone's raving about.").trim() || "Explore the rugs everyone's raving about.")
+                const loadedFeatures = Array.isArray(settings.homeFeatureItems) && settings.homeFeatureItems.length > 0
+                    ? settings.homeFeatureItems
+                    : DEFAULT_HOME_FEATURE_ITEMS
+                setHomeFeatureItems(
+                    DEFAULT_HOME_FEATURE_ITEMS.map((fallback, index) => {
+                        const item = loadedFeatures[index] || fallback
+                        return {
+                            ...fallback,
+                            ...item,
+                            id: item.id || fallback.id || `feature-${index + 1}`,
+                        }
+                    })
+                )
                 const loadedPromoSections = Array.isArray(settings.homePromoSections) && settings.homePromoSections.length > 0
                     ? settings.homePromoSections
                     : [{
@@ -170,6 +191,10 @@ export function ShopByCategoryMenuEditor() {
         setPromoAddOpen(false)
     }
 
+    const updateHomeFeatureItem = (id: string, patch: Partial<HomeFeatureItem>) => {
+        setHomeFeatureItems((prev) => prev.map((item) => item.id === id ? { ...item, ...patch } : item))
+    }
+
     const save = async () => {
         setSaving(true)
         try {
@@ -191,6 +216,12 @@ export function ShopByCategoryMenuEditor() {
                 reviewShowcaseEnabled,
                 reviewShowcaseTitle: reviewShowcaseTitle.trim() || "Over 210,000 Five-Star Reviews",
                 reviewShowcaseSubtitle: reviewShowcaseSubtitle.trim() || "Explore the rugs everyone's raving about.",
+                homeFeatureItems: homeFeatureItems.slice(0, 4).map((item, index) => ({
+                    id: item.id || DEFAULT_HOME_FEATURE_ITEMS[index]?.id || `feature-${index + 1}`,
+                    icon: item.icon || DEFAULT_HOME_FEATURE_ITEMS[index]?.icon || "plane",
+                    title: item.title?.trim() || DEFAULT_HOME_FEATURE_ITEMS[index]?.title || "Feature",
+                    subtitle: item.subtitle?.trim() || "",
+                })),
                 homePromoSections,
                 homePromoSectionTitle: (homePromoSections[0]?.title || "Most Popular").trim() || "Most Popular",
                 homePromoCategoryId: homePromoSections[0]?.categoryId || "",
@@ -213,6 +244,18 @@ export function ShopByCategoryMenuEditor() {
             setReviewShowcaseEnabled(Boolean(saved.reviewShowcaseEnabled))
             setReviewShowcaseTitle((saved.reviewShowcaseTitle || "Over 210,000 Five-Star Reviews").trim() || "Over 210,000 Five-Star Reviews")
             setReviewShowcaseSubtitle((saved.reviewShowcaseSubtitle || "Explore the rugs everyone's raving about.").trim() || "Explore the rugs everyone's raving about.")
+            setHomeFeatureItems(
+                Array.isArray(saved.homeFeatureItems) && saved.homeFeatureItems.length > 0
+                    ? DEFAULT_HOME_FEATURE_ITEMS.map((fallback, index) => {
+                        const item = saved.homeFeatureItems[index] || fallback
+                        return {
+                            ...fallback,
+                            ...item,
+                            id: item.id || fallback.id || `feature-${index + 1}`,
+                        }
+                    })
+                    : DEFAULT_HOME_FEATURE_ITEMS
+            )
             setHomePromoSections(
                 Array.isArray(saved.homePromoSections) && saved.homePromoSections.length > 0
                     ? saved.homePromoSections
@@ -456,6 +499,54 @@ export function ShopByCategoryMenuEditor() {
                                     </div>
                                 )
                             })}
+                        </div>
+                    </div>
+
+                    <div className="mt-6 border-t border-slate-200 pt-6">
+                        <div className="mb-4">
+                            <h3 className="text-base font-semibold text-slate-900">Homepage Features Strip (4)</h3>
+                            <p className="text-xs text-slate-500">Text and icon settings for the feature row between category cards and promo sections.</p>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                            {homeFeatureItems.slice(0, 4).map((item, index) => (
+                                <div key={item.id} className="rounded-lg border border-slate-200 p-4">
+                                    <h4 className="mb-2 text-sm font-semibold text-slate-900">Feature {index + 1}</h4>
+                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                                        <div className="space-y-1">
+                                            <Label className="text-xs text-slate-600">Icon</Label>
+                                            <select
+                                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                                value={item.icon}
+                                                onChange={(event) => updateHomeFeatureItem(item.id, { icon: event.target.value as HomeFeatureItem["icon"] })}
+                                                disabled={saving}
+                                            >
+                                                <option value="plane">Plane</option>
+                                                <option value="cart">Cart</option>
+                                                <option value="support">Support</option>
+                                                <option value="truck">Truck</option>
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-xs text-slate-600">Line 1</Label>
+                                            <Input
+                                                value={item.title}
+                                                onChange={(event) => updateHomeFeatureItem(item.id, { title: event.target.value })}
+                                                placeholder="Worldwide Free"
+                                                disabled={saving}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-xs text-slate-600">Line 2 (optional)</Label>
+                                            <Input
+                                                value={item.subtitle}
+                                                onChange={(event) => updateHomeFeatureItem(item.id, { subtitle: event.target.value })}
+                                                placeholder="Shipping"
+                                                disabled={saving}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
 

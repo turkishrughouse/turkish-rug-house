@@ -13,7 +13,6 @@ import {
     TableRow,
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -103,7 +102,6 @@ export function ProductList({
     const [isLoading, setIsLoading] = useState(false)
     const [bulkAction, setBulkAction] = useState<BulkAction>("")
 
-    const [searchTerm, setSearchTerm] = useState(filters.q || "")
     const [categoryFilter, setCategoryFilter] = useState(filters.category || "")
     const [typeFilter, setTypeFilter] = useState(filters.type || "")
     const [stockFilter, setStockFilter] = useState(filters.stock || "")
@@ -146,11 +144,6 @@ export function ProductList({
         if (resetPage) params.set("page", "1")
         const queryString = params.toString()
         router.replace(queryString ? `?${queryString}` : "?")
-    }
-
-    const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-        event.preventDefault()
-        updateQueryParams({ q: searchTerm || undefined })
     }
 
     const handleApplyFilters = () => {
@@ -527,21 +520,7 @@ export function ProductList({
                     ) : null}
                 </div>
 
-                <form onSubmit={handleSearchSubmit} className="flex w-[520px] max-w-full flex-shrink-0 items-center gap-2">
-                    <Input
-                        value={searchTerm}
-                        onChange={(event) => setSearchTerm(event.target.value)}
-                        placeholder={tx("Search products", "Ürün ara")}
-                        className="h-10 rounded-sm border-[#8c8f94] bg-white text-[14px]"
-                    />
-                    <Button
-                        type="submit"
-                        variant="outline"
-                        className={`h-10 rounded-sm px-4 text-[13px] font-semibold ${lightPrimaryButton}`}
-                    >
-                        {tx("Search products", "Ürün ara")}
-                    </Button>
-                </form>
+                <div />
             </div>
 
             {(filters.status || "all") === "schedule" ? (

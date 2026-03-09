@@ -241,7 +241,7 @@ export function MenuBuilder({ items, onChange }: MenuBuilderProps) {
             // 2. Insert Block at new specific index
 
             // Where is "over" now?
-            let newOverIndex = listWithoutBlock.findIndex(i => i.id === over.id)
+            const newOverIndex = listWithoutBlock.findIndex(i => i.id === over.id)
 
             // If moving down (originally), we likely want to be AFTER over?
             // Depends on direction.

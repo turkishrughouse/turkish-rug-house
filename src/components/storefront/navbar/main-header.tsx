@@ -3,13 +3,52 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
-import { Heart, Shuffle, ShoppingBag, X } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { getCartSummary, getCartUpdateEventName, readCart, removeCartItem, updateCartItemQuantity } from "@/lib/storefront/cart"
+import { ChevronDown, ChevronRight, Heart, House, Menu, Search, Shuffle, ShoppingBag, UserCircle2, X } from "lucide-react"
+import { getCartSummary, getCartUpdateEventName, readCart } from "@/lib/storefront/cart"
 import { toast } from "sonner"
 
 import { DiscoveryCapsule } from "./discovery-capsule"
 import { formatCurrency, type CurrencySettings } from "@/lib/storefront/currency"
+
+type MobileMenuItem = {
+    id: string
+    label: string
+    url: string
+    children: MobileMenuItem[]
+}
+
+const normalizeMenuHref = (input?: string) => {
+    const value = (input || "").trim()
+    if (!value) return "#"
+    if (value.startsWith("/")) return value
+    if (value.startsWith("http://") || value.startsWith("https://")) return value
+    return `/${value.replace(/^\/+/, "")}`
+}
+
+const mapMenuTree = (items: unknown): MobileMenuItem[] => {
+    if (!Array.isArray(items)) return []
+    return items
+        .filter((item): item is { id?: unknown; label?: unknown; url?: unknown; children?: unknown } => Boolean(item))
+        .map((item, index) => ({
+            id: typeof item.id === "string" ? item.id : `menu-${index}`,
+            label: typeof item.label === "string" ? item.label : "Untitled",
+            url: normalizeMenuHref(typeof item.url === "string" ? item.url : "#"),
+            children: mapMenuTree(item.children),
+        }))
+}
+
+const mapCategoryTreeToMenu = (items: unknown): MobileMenuItem[] => {
+    if (!Array.isArray(items)) return []
+    return items.map((item, index) => {
+        const node = item as { id?: string; title?: string; slug?: string; children?: unknown[] }
+        return {
+            id: node.id || `cat-${index}`,
+            label: node.title || "Category",
+            url: node.slug ? `/category/${node.slug}` : "#",
+            children: mapCategoryTreeToMenu(node.children || []),
+        }
+    })
+}
 
 export function MainHeader() {
     const router = useRouter()
@@ -28,7 +67,12 @@ export function MainHeader() {
     const [cartTotal, setCartTotal] = useState(0)
     const [compareCount, setCompareCount] = useState(0)
     const [wishlistCount, setWishlistCount] = useState(0)
-    const [drawerOpen, setDrawerOpen] = useState(false)
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+    const [mobileMenuTab, setMobileMenuTab] = useState<"categories" | "pages">("categories")
+    const [mobileSearch, setMobileSearch] = useState("")
+    const [mobileCategoriesMenu, setMobileCategoriesMenu] = useState<MobileMenuItem[]>([])
+    const [mobilePagesMenu, setMobilePagesMenu] = useState<MobileMenuItem[]>([])
+    const [mobileOpenItems, setMobileOpenItems] = useState<Record<string, boolean>>({})
     const [cartPreviewOpen, setCartPreviewOpen] = useState(false)
     const [loginDrawerOpen, setLoginDrawerOpen] = useState(false)
     const [authMode, setAuthMode] = useState<"login" | "register">("login")
@@ -111,22 +155,66 @@ export function MainHeader() {
         }
     }, [])
 
-    const freeShippingTarget = 150
-    const freeShippingRemaining = Math.max(0, freeShippingTarget - cartTotal)
-    const freeShippingProgress = Math.min((cartTotal / freeShippingTarget) * 100, 100)
+    useEffect(() => {
+        const loadMobileMenus = async () => {
+            try {
+                const [categoriesRes, pagesRes] = await Promise.all([
+                    fetch("/api/public/menus/PRIMARY_HEADER", { cache: "no-store" }),
+                    fetch("/api/public/menus/HEADER_INFORMATION", { cache: "no-store" }),
+                ])
+
+                const categoriesJson = categoriesRes.ok ? await categoriesRes.json() : null
+                let pagesJson = pagesRes.ok ? await pagesRes.json() : null
+                if (!pagesJson?.items || pagesJson.items.length === 0) {
+                    const footerPagesRes = await fetch("/api/public/menus/INFORMATION_FOOTER", { cache: "no-store" })
+                    pagesJson = footerPagesRes.ok ? await footerPagesRes.json() : null
+                }
+                let nextCategories = mapMenuTree(categoriesJson?.items)
+                if (nextCategories.length === 0) {
+                    const categoriesTreeRes = await fetch("/api/categories?tree=true", { cache: "no-store" })
+                    const categoriesTreeJson = categoriesTreeRes.ok ? await categoriesTreeRes.json() : null
+                    nextCategories = mapCategoryTreeToMenu(categoriesTreeJson)
+                }
+                setMobileCategoriesMenu(nextCategories)
+                setMobilePagesMenu(mapMenuTree(pagesJson?.items))
+            } catch {
+                setMobileCategoriesMenu([])
+                setMobilePagesMenu([])
+            }
+        }
+        void loadMobileMenus()
+    }, [])
+
+    useEffect(() => {
+        if (typeof document === "undefined") return
+        if (!mobileMenuOpen) return
+        const previousOverflow = document.body.style.overflow
+        document.body.style.overflow = "hidden"
+        return () => {
+            document.body.style.overflow = previousOverflow
+        }
+    }, [mobileMenuOpen])
 
     const openCartPreview = () => {
         if (cartPreviewTimeoutRef.current) {
             clearTimeout(cartPreviewTimeoutRef.current)
             cartPreviewTimeoutRef.current = null
         }
-        setCartPreviewOpen(true)
+        cartPreviewTimeoutRef.current = setTimeout(() => setCartPreviewOpen(true), 400)
     }
 
     const closeCartPreview = () => {
         if (cartPreviewTimeoutRef.current) clearTimeout(cartPreviewTimeoutRef.current)
-        cartPreviewTimeoutRef.current = setTimeout(() => setCartPreviewOpen(false), 120)
+        cartPreviewTimeoutRef.current = setTimeout(() => setCartPreviewOpen(false), 400)
     }
+
+    useEffect(() => {
+        return () => {
+            if (cartPreviewTimeoutRef.current) {
+                clearTimeout(cartPreviewTimeoutRef.current)
+            }
+        }
+    }, [])
 
     const submitLogin = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -201,9 +289,78 @@ export function MainHeader() {
         }
     }
 
+    const onMobileSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault()
+        const query = mobileSearch.trim()
+        const target = query ? `/shop?q=${encodeURIComponent(query)}` : "/shop"
+        setMobileMenuOpen(false)
+        router.push(target)
+    }
+
+    const toggleMobileItem = (id: string) => {
+        setMobileOpenItems((prev) => ({ ...prev, [id]: !prev[id] }))
+    }
+
+    const renderMobileMenuItems = (items: MobileMenuItem[], depth = 0): React.ReactNode => {
+        return items.map((item) => {
+            const hasChildren = item.children.length > 0
+            const isOpen = Boolean(mobileOpenItems[item.id])
+            const isExternal = item.url.startsWith("http://") || item.url.startsWith("https://")
+            return (
+                <div key={item.id} className="border-b border-slate-200">
+                    <div className={`flex items-center ${depth > 0 ? "bg-slate-50/70" : "bg-[#f7f7f7]"}`}>
+                        {hasChildren ? (
+                            <button
+                                type="button"
+                                onClick={() => toggleMobileItem(item.id)}
+                                className={`flex h-[52px] flex-1 items-center px-4 text-left text-[15px] font-semibold tracking-wide text-slate-800 ${depth > 0 ? "pl-8 text-[14px] font-medium" : ""}`}
+                            >
+                                {item.label}
+                            </button>
+                        ) : isExternal ? (
+                            <a
+                                href={item.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={() => setMobileMenuOpen(false)}
+                                className={`flex h-[52px] flex-1 items-center px-4 text-[15px] font-semibold tracking-wide text-slate-800 ${depth > 0 ? "pl-8 text-[14px] font-medium" : ""}`}
+                            >
+                                {item.label}
+                            </a>
+                        ) : (
+                            <Link
+                                href={item.url}
+                                onClick={() => setMobileMenuOpen(false)}
+                                className={`flex h-[52px] flex-1 items-center px-4 text-[15px] font-semibold tracking-wide text-slate-800 ${depth > 0 ? "pl-8 text-[14px] font-medium" : ""}`}
+                            >
+                                {item.label}
+                            </Link>
+                        )}
+
+                        {hasChildren ? (
+                            <button
+                                type="button"
+                                onClick={() => toggleMobileItem(item.id)}
+                                className="inline-flex h-[52px] w-[52px] items-center justify-center border-l border-slate-200 bg-emerald-700 text-white"
+                                aria-label={isOpen ? "Collapse submenu" : "Expand submenu"}
+                            >
+                                <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                            </button>
+                        ) : (
+                            <span className="inline-flex h-[52px] w-[52px] items-center justify-center border-l border-slate-200 text-slate-400">
+                                <ChevronRight className="h-4 w-4" />
+                            </span>
+                        )}
+                    </div>
+                    {hasChildren && isOpen ? <div>{renderMobileMenuItems(item.children, depth + 1)}</div> : null}
+                </div>
+            )
+        })
+    }
+
     return (
         <div className="bg-white border-b border-slate-100 shadow-sm relative z-40">
-            <div className="container mx-auto px-6">
+            <div className="container mx-auto px-3 sm:px-4 lg:px-6">
                 {maintenanceMode && (
                     <div className="pt-3">
                         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
@@ -212,9 +369,41 @@ export function MainHeader() {
                     </div>
                 )}
 
-                {/* ROW 1: Logo & Basket (Actions) */}
-                <div className="h-20 flex items-center justify-between">
-                    {/* Left: Logo */}
+                <div className="md:hidden pb-3">
+                    <div className="flex h-16 items-center justify-between">
+                        <button
+                            type="button"
+                            onClick={() => setMobileMenuOpen(true)}
+                            className="inline-flex h-10 w-10 items-center justify-center text-slate-800"
+                            aria-label="Open mobile menu"
+                        >
+                            <Menu className="h-7 w-7" />
+                        </button>
+                        <Link href="/" className="flex flex-col items-center group">
+                            <span className="font-serif text-[26px] font-bold leading-none tracking-tight text-slate-900">{brandPrimary}</span>
+                            <span className="-mt-1 font-serif text-[26px] font-bold leading-none tracking-tight text-teal-700">{brandSecondary}</span>
+                        </Link>
+                        <Link href="/basket" className="relative inline-flex h-10 w-10 items-center justify-center text-slate-700">
+                            <ShoppingBag className="h-7 w-7" strokeWidth={1.8} />
+                            <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-600 px-1 text-[11px] font-bold text-white">
+                                {cartCount}
+                            </span>
+                        </Link>
+                    </div>
+                    <form onSubmit={onMobileSearchSubmit} className="flex h-12 overflow-hidden border border-slate-300 bg-white">
+                        <input
+                            value={mobileSearch}
+                            onChange={(event) => setMobileSearch(event.target.value)}
+                            placeholder="Search for products"
+                            className="h-full flex-1 px-4 text-lg text-slate-700 placeholder:text-slate-400 outline-none"
+                        />
+                        <button type="submit" className="inline-flex h-full w-14 items-center justify-center bg-emerald-700 text-white">
+                            <Search className="h-5 w-5" />
+                        </button>
+                    </form>
+                </div>
+
+                <div className="hidden md:flex h-20 items-center justify-between">
                     <Link href="/" className="flex flex-col shrink-0 group">
                         <span className="font-serif text-3xl font-bold text-slate-900 tracking-tight leading-none group-hover:text-teal-900 transition-colors">
                             {brandPrimary}
@@ -224,7 +413,6 @@ export function MainHeader() {
                         </span>
                     </Link>
 
-                    {/* Right: Actions */}
                     <div className="relative flex items-center gap-4">
                         <Link href="/wishlist" className="relative inline-flex h-9 items-center text-slate-700 hover:text-slate-900">
                             <Heart className="h-5 w-5" />
@@ -232,7 +420,6 @@ export function MainHeader() {
                                 {wishlistCount}
                             </span>
                         </Link>
-
                         <Link href="/compare" className="relative inline-flex h-9 items-center text-slate-700 hover:text-slate-900">
                             <Shuffle className="h-5 w-5" />
                             <span className="absolute -right-2 -top-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-lime-500 px-1 text-[10px] font-bold text-white">
@@ -258,7 +445,7 @@ export function MainHeader() {
                             </button>
 
                             {cartPreviewOpen ? (
-                                <div className="absolute right-0 top-[calc(100%+8px)] z-[120] w-[360px] rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
+                                <div className="absolute right-0 top-[calc(100%+8px)] z-[120] w-[min(92vw,360px)] rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
                                     <div className="mb-2 flex items-center justify-between">
                                         <p className="text-sm font-semibold text-slate-900">Basket</p>
                                         <span className="text-xs text-slate-500">{cartCount} item(s)</span>
@@ -315,104 +502,99 @@ export function MainHeader() {
                     </div>
                 </div>
 
-                {/* ROW 2: Navigation (Discovery Module) */}
-                {/* ROW 2: Navigation (Discovery Module - Banner Height) */}
-                <DiscoveryCapsule />
+                <div className="hidden md:block">
+                    <DiscoveryCapsule />
+                </div>
 
             </div>
 
-            {drawerOpen ? (
+            {mobileMenuOpen ? (
                 <div className="fixed inset-0 z-[220]">
-                    <div className="absolute inset-0 bg-black/50" onClick={() => setDrawerOpen(false)} />
-                    <aside className="absolute right-0 top-0 h-full w-full max-w-[380px] bg-white shadow-[0_20px_60px_rgba(15,23,42,0.35)] flex flex-col animate-in slide-in-from-right duration-300">
-                        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3.5">
-                            <h3 className="text-2xl font-semibold text-slate-900">Shopping cart</h3>
-                            <button type="button" className="inline-flex items-center gap-1 text-sm text-slate-700 hover:text-slate-900" onClick={() => setDrawerOpen(false)}>
+                    <div className="absolute inset-0 bg-black/40" onClick={() => setMobileMenuOpen(false)} />
+                    <aside className="absolute left-0 top-0 h-full w-full max-w-[620px] bg-[#f7f7f7] shadow-[0_20px_60px_rgba(15,23,42,0.35)]">
+                        <div className="flex items-center justify-between border-b border-slate-300 px-4 py-4">
+                            <h3 className="text-[22px] font-semibold tracking-tight text-slate-900">Menu</h3>
+                            <button type="button" onClick={() => setMobileMenuOpen(false)} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 text-slate-700">
                                 <X className="h-5 w-5" />
-                                <span>Close</span>
                             </button>
                         </div>
 
-                        <div className="flex-1 overflow-auto">
-                            {cartItems.length === 0 ? (
-                                <div className="p-4 text-sm text-slate-500">Your basket is empty.</div>
-                            ) : (
-                                cartItems.map((item) => (
-                                    <div key={item.productId} className="flex items-start gap-3 border-b border-slate-200 p-3.5">
-                                        <Link href={`/product/${item.slug}`} onClick={() => setDrawerOpen(false)} className="h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200">
-                                            <img src={item.image || "/placeholder.jpg"} alt={item.title} className="h-full w-full object-cover" />
-                                        </Link>
-                                        <div className="min-w-0 flex-1">
-                                            <p className="truncate text-sm font-semibold text-slate-900">{item.title}</p>
-                                            <div className="mt-2 inline-grid grid-cols-3 items-center overflow-hidden rounded-md border border-slate-200">
-                                                <button
-                                                    type="button"
-                                                    className="h-8 w-8 cursor-pointer text-slate-600 hover:bg-slate-50"
-                                                    onClick={() => {
-                                                        const nextQty = item.quantity - 1
-                                                        if (nextQty < 1) return
-                                                        const result = updateCartItemQuantity(item.productId, nextQty)
-                                                        if (result.ok) refreshCart()
-                                                    }}
-                                                >
-                                                    -
-                                                </button>
-                                                <span className="inline-flex h-8 w-8 items-center justify-center border-x border-slate-200 text-xs">{item.quantity}</span>
-                                                <button
-                                                    type="button"
-                                                    className="h-8 w-8 cursor-pointer text-slate-600 hover:bg-slate-50"
-                                                    onClick={() => {
-                                                        const result = updateCartItemQuantity(item.productId, item.quantity + 1)
-                                                        if (result.ok) refreshCart()
-                                                    }}
-                                                >
-                                                    +
-                                                </button>
-                                            </div>
-                                            <p className="mt-2 text-xs text-slate-500">{item.quantity} x <span className="font-semibold text-emerald-700">${item.price.toFixed(2)}</span></p>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            className="text-slate-400 hover:text-slate-700"
-                                            onClick={() => {
-                                                removeCartItem(item.productId)
-                                                refreshCart()
-                                            }}
-                                        >
-                                            <X className="h-4 w-4" />
-                                        </button>
-                                    </div>
-                                ))
-                            )}
+                        <form onSubmit={onMobileSearchSubmit} className="border-b border-slate-300 bg-white px-4 py-4">
+                            <div className="flex h-12 items-center border border-slate-300 bg-white">
+                                <input
+                                    value={mobileSearch}
+                                    onChange={(event) => setMobileSearch(event.target.value)}
+                                    placeholder="Search for products"
+                                    className="h-full flex-1 px-3 text-[17px] text-slate-700 outline-none placeholder:text-slate-400"
+                                />
+                                <button type="submit" className="inline-flex h-full w-12 items-center justify-center text-slate-500">
+                                    <Search className="h-6 w-6" />
+                                </button>
+                            </div>
+                        </form>
+
+                        <div className="grid grid-cols-2 border-b border-slate-300 bg-[#ececec]">
+                            <button
+                                type="button"
+                                onClick={() => setMobileMenuTab("categories")}
+                                className={`h-14 text-[17px] font-semibold tracking-wide ${mobileMenuTab === "categories" ? "border-b-2 border-emerald-600 text-slate-900" : "text-slate-500"}`}
+                            >
+                                All Categories
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setMobileMenuTab("pages")}
+                                className={`h-14 text-[17px] font-semibold tracking-wide ${mobileMenuTab === "pages" ? "border-b-2 border-emerald-600 text-slate-900" : "text-slate-500"}`}
+                            >
+                                Pages
+                            </button>
                         </div>
 
-                        <div className="border-t border-slate-200 bg-slate-50 p-4">
-                            <div className="mb-3 flex items-center justify-between">
-                                <p className="text-2xl font-semibold text-slate-900">Subtotal:</p>
-                                <p className="text-2xl font-bold text-emerald-700">${cartTotal.toFixed(2)}</p>
-                            </div>
-                            <p className="text-xs text-slate-600">
-                                Add <span className="font-semibold text-emerald-700">${freeShippingRemaining.toFixed(2)}</span> to cart and get <span className="font-semibold">free shipping!</span>
-                            </p>
-                            <div className="mt-3 h-3 w-full overflow-hidden rounded bg-slate-200">
-                                <div className="h-full bg-emerald-600 transition-all" style={{ width: `${freeShippingProgress}%` }} />
-                            </div>
-                            <div className="mt-4 space-y-2">
-                                <Button asChild variant="outline" className="h-10 w-full border-slate-300 bg-white text-sm text-slate-900 hover:bg-slate-100">
-                                    <Link href="/basket" onClick={() => setDrawerOpen(false)}>View Cart</Link>
-                                </Button>
-                                <Button
-                                    type="button"
-                                    className="h-10 w-full bg-emerald-700 text-sm text-white hover:bg-emerald-800"
-                                    onClick={() => window.location.assign("/checkout")}
-                                >
-                                    Checkout
-                                </Button>
-                            </div>
+                        <div className="h-[calc(100%-186px)] overflow-y-auto pb-24">
+                            {mobileMenuTab === "categories" ? (
+                                mobileCategoriesMenu.length > 0 ? (
+                                    <div>{renderMobileMenuItems(mobileCategoriesMenu)}</div>
+                                ) : (
+                                    <p className="px-4 py-6 text-sm text-slate-500">No categories menu found.</p>
+                                )
+                            ) : mobilePagesMenu.length > 0 ? (
+                                <div>{renderMobileMenuItems(mobilePagesMenu)}</div>
+                            ) : (
+                                <p className="px-4 py-6 text-sm text-slate-500">No pages found.</p>
+                            )}
                         </div>
                     </aside>
                 </div>
             ) : null}
+
+            <div className="fixed inset-x-0 bottom-0 z-[320] grid grid-cols-4 border-t border-slate-300 bg-white md:hidden">
+                <Link href="/" className="flex h-16 flex-col items-center justify-center gap-1 text-[12px] font-semibold text-slate-700">
+                    <House className="h-5 w-5" />
+                    <span>Home</span>
+                </Link>
+                <Link href="/basket" className="relative flex h-16 flex-col items-center justify-center gap-1 text-[12px] font-semibold text-slate-700">
+                    <ShoppingBag className="h-5 w-5" />
+                    <span>Cart</span>
+                    <span className="absolute right-7 top-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-bold text-white">
+                        {cartCount}
+                    </span>
+                </Link>
+                <Link href="/compare" className="relative flex h-16 flex-col items-center justify-center gap-1 text-[12px] font-semibold text-slate-700">
+                    <Shuffle className="h-5 w-5" />
+                    <span>Compare</span>
+                    <span className="absolute right-7 top-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-bold text-white">
+                        {compareCount}
+                    </span>
+                </Link>
+                <button
+                    type="button"
+                    onClick={() => setLoginDrawerOpen(true)}
+                    className="flex h-16 flex-col items-center justify-center gap-1 text-[12px] font-semibold text-slate-700"
+                >
+                    <UserCircle2 className="h-5 w-5" />
+                    <span>My Account</span>
+                </button>
+            </div>
 
             {loginDrawerOpen ? (
                 <div className="fixed inset-0 z-[230]">

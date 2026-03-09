@@ -217,9 +217,9 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
 
             </div>
 
-            <div className="max-h-[88vh] overflow-y-auto p-6">
-              <h3 className="text-[42px] leading-[1.1] font-bold text-slate-900">{product.title}</h3>
-              <p className="mt-3 text-4xl font-bold text-emerald-700">${product.price.toFixed(2)}</p>
+            <div className="max-h-[88vh] overflow-y-auto p-4 sm:p-6">
+              <h3 className="text-3xl leading-[1.1] font-bold text-slate-900 sm:text-[42px]">{product.title}</h3>
+              <p className="mt-3 text-3xl font-bold text-emerald-700 sm:text-4xl">${product.price.toFixed(2)}</p>
 
               <p className="mt-4 line-clamp-5 text-slate-600 leading-7">
                 {fullDescription}
@@ -228,7 +228,7 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
                 Full description is available on <span className="font-semibold">Select / View Details</span>.
               </p>
 
-              <div className="mt-5 flex items-center gap-2">
+              <div className="mt-5 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   className="h-11 w-11 rounded border border-slate-200 bg-white text-xl text-slate-700 hover:bg-slate-50"
@@ -250,7 +250,7 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
                 </button>
                 <button
                   type="button"
-                  className="ml-2 h-11 min-w-[140px] shrink-0 whitespace-nowrap rounded-md bg-emerald-700 px-6 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="h-11 min-w-[120px] flex-1 whitespace-nowrap rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60 sm:ml-2 sm:min-w-[140px] sm:flex-none sm:px-6"
                   disabled={!canBuy}
                   onClick={() => addBasket(qty)}
                 >
@@ -258,7 +258,7 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
                 </button>
                 <button
                   type="button"
-                  className="h-11 min-w-[120px] shrink-0 whitespace-nowrap rounded-md border border-slate-900 bg-slate-900 px-5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="h-11 min-w-[120px] flex-1 whitespace-nowrap rounded-md border border-slate-900 bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none sm:px-5"
                   disabled={!canBuy}
                   onClick={handleBuyNow}
                 >
