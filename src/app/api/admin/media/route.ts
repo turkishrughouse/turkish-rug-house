@@ -33,6 +33,11 @@ type FolderInfo = {
   path: string
 }
 
+type UploadCandidate = {
+  folder: string
+  url: string
+}
+
 type AggregatedMediaAsset = {
   id: string
   url: string
@@ -94,6 +99,57 @@ function escapeRegExp(input: string): string {
 function topFolderName(folder: string) {
   const clean = sanitizeFolderPath(folder)
   return clean.split("/")[0] || clean
+}
+
+function normalizeAssetUrl(
+  rawUrl: string,
+  fallbackFolder?: string,
+  uploadLookup?: Map<string, UploadCandidate[]>
+) {
+  const storage = getStorageProvider()
+  const value = (rawUrl || "").trim()
+  if (!value) return ""
+
+  const relativeFromStorage = storage.toRelativePath(value)
+  if (relativeFromStorage) return storage.getPublicUrl(relativeFromStorage)
+
+  if (value.startsWith("http://") || value.startsWith("https://")) return value
+
+  const withoutLeadingSlash = value.replace(/^\/+/, "")
+  if (withoutLeadingSlash.startsWith("uploads/")) {
+    return storage.getPublicUrl(withoutLeadingSlash.slice("uploads/".length))
+  }
+
+  const looksLikeFileName = !value.includes("/") && !value.includes("\\")
+  if (looksLikeFileName) {
+    const candidates = uploadLookup?.get(value.toLowerCase()) || []
+    if (candidates.length === 1) return candidates[0].url
+
+    if (candidates.length > 1 && fallbackFolder) {
+      const folder = sanitizeFolderPath(fallbackFolder)
+      if (folder) {
+        const exact = candidates.find((item) => item.folder === folder)
+        if (exact) return exact.url
+        const nested = candidates.find((item) => item.folder.startsWith(`${folder}/`))
+        if (nested) return nested.url
+      }
+      return candidates[0].url
+    }
+  }
+
+  return value
+}
+
+function buildUploadLookup(uploadedFiles: MediaAsset[]) {
+  const lookup = new Map<string, UploadCandidate[]>()
+  for (const asset of uploadedFiles) {
+    const key = (asset.name || fileNameFromUrl(asset.url)).toLowerCase()
+    if (!key) continue
+    const list = lookup.get(key) || []
+    list.push({ folder: asset.folder, url: asset.url })
+    lookup.set(key, list)
+  }
+  return lookup
 }
 
 function buildCategoryPathMap(
@@ -280,6 +336,7 @@ export async function GET() {
     const profiles = profilesResult.status === "fulfilled" ? profilesResult.value : []
     const uploadFolders = foldersResult.status === "fulfilled" ? foldersResult.value : []
     const uploadedFiles = uploadsResult.status === "fulfilled" ? uploadsResult.value : []
+    const uploadLookup = buildUploadLookup(uploadedFiles)
     const categoryPathMap = buildCategoryPathMap(
       categories.map((category) => ({ id: category.id, slug: category.slug, parentId: category.parentId }))
     )
@@ -305,10 +362,11 @@ export async function GET() {
             : [defaultProductFolder]
 
       for (const folder of folderCandidates) {
+        const normalizedFeaturedImage = normalizeAssetUrl(featuredImage, folder, uploadLookup)
         assets.push({
-          id: `product:${product.id}:${folder}:${featuredImage}`,
-          url: featuredImage,
-          name: fileNameFromUrl(featuredImage),
+          id: `product:${product.id}:${folder}:${normalizedFeaturedImage}`,
+          url: normalizedFeaturedImage,
+          name: fileNameFromUrl(normalizedFeaturedImage),
           folder,
           source: "PRODUCT",
           usedIn: `Product featured: ${product.title}`,
@@ -320,10 +378,11 @@ export async function GET() {
     for (const category of categories) {
       if (!category.image) continue
       const categoryFolder = categoryPathMap.get(category.id) || "categories"
+      const normalizedCategoryImage = normalizeAssetUrl(category.image, categoryFolder, uploadLookup)
       assets.push({
-        id: `category:${category.id}:${category.image}`,
-        url: category.image,
-        name: fileNameFromUrl(category.image),
+        id: `category:${category.id}:${normalizedCategoryImage}`,
+        url: normalizedCategoryImage,
+        name: fileNameFromUrl(normalizedCategoryImage),
         folder: categoryFolder,
         source: "CATEGORY",
         usedIn: `Category: ${category.title}`,
@@ -334,10 +393,11 @@ export async function GET() {
     const contentImageRegex = /<img[^>]+src=["']([^"']+)["']/gi
     for (const page of pages) {
       if (page.featuredImage) {
+        const normalizedFeatured = normalizeAssetUrl(page.featuredImage, "pages", uploadLookup)
         assets.push({
-          id: `page-featured:${page.id}:${page.featuredImage}`,
-          url: page.featuredImage,
-          name: fileNameFromUrl(page.featuredImage),
+          id: `page-featured:${page.id}:${normalizedFeatured}`,
+          url: normalizedFeatured,
+          name: fileNameFromUrl(normalizedFeatured),
           folder: "pages",
           source: "PAGE_FEATURED",
           usedIn: `Page featured: ${page.title}`,
@@ -350,10 +410,11 @@ export async function GET() {
       while ((match = contentImageRegex.exec(content)) !== null) {
         const src = match[1]
         if (!src) continue
+        const normalizedSrc = normalizeAssetUrl(src, "pages", uploadLookup)
         assets.push({
-          id: `page-content:${page.id}:${src}`,
-          url: src,
-          name: fileNameFromUrl(src),
+          id: `page-content:${page.id}:${normalizedSrc}`,
+          url: normalizedSrc,
+          name: fileNameFromUrl(normalizedSrc),
           folder: "pages",
           source: "PAGE_CONTENT",
           usedIn: `Page content: ${page.title}`,
@@ -366,10 +427,11 @@ export async function GET() {
       if (!profile.avatarUrl) continue
       const fullName = [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim()
       const profileName = profile.displayName || fullName || "Profile"
+      const normalizedAvatar = normalizeAssetUrl(profile.avatarUrl, "profile", uploadLookup)
       assets.push({
-        id: `profile:${profile.id}:${profile.avatarUrl}`,
-        url: profile.avatarUrl,
-        name: fileNameFromUrl(profile.avatarUrl),
+        id: `profile:${profile.id}:${normalizedAvatar}`,
+        url: normalizedAvatar,
+        name: fileNameFromUrl(normalizedAvatar),
         folder: "profile",
         source: "PROFILE",
         usedIn: `Profile: ${profileName}`,

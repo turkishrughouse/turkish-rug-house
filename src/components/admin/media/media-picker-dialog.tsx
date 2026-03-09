@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { isManagedUploadUrl } from "@/lib/storage/url"
+import { getImageUrl, isManagedUploadUrl } from "@/lib/storage/url"
 
 type Folder = { name: string; count: number }
 type Asset = {
@@ -55,6 +55,16 @@ function formatFolderLabel(value: string) {
     .join(" ")
 }
 
+function normalizePickerAssetUrl(url: string) {
+  const value = (url || "").trim()
+  if (!value) return ""
+  const normalized = getImageUrl(value)
+  if (normalized !== value) return normalized
+  if (value.startsWith("http://") || value.startsWith("https://") || value.startsWith("/")) return value
+  if (value.startsWith("uploads/")) return `/${value}`
+  return value
+}
+
 export function MediaPickerDialog({
   open,
   onOpenChange,
@@ -98,7 +108,10 @@ export function MediaPickerDialog({
       const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[]; assets?: Asset[] })
       if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
       const nextFolders: Folder[] = json?.folders ?? []
-      const nextAssets: Asset[] = json?.assets ?? []
+      const nextAssets: Asset[] = (json?.assets ?? []).map((asset: Asset) => ({
+        ...asset,
+        url: normalizePickerAssetUrl(asset.url),
+      }))
       setFolders(nextFolders)
       setAssets(nextAssets)
       if (!nextFolders.some((folder) => folder.name === uploadFolder)) {
