@@ -34,6 +34,7 @@ type MediaPickerDialogProps = {
     title?: string
     sku?: string
     description?: string
+    categoryFolderPath?: string
   }
 }
 
@@ -53,6 +54,20 @@ function formatFolderLabel(value: string) {
       return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
     })
     .join(" ")
+}
+
+function buildUploadBaseName(title: string, index: number, total: number) {
+  const base = title
+    .trim()
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+    .replace(/[\s_]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase()
+
+  if (!base) return ""
+  if (total <= 1) return base
+  return `${base}-${index + 1}`
 }
 
 function normalizePickerAssetUrl(url: string) {
@@ -112,6 +127,14 @@ export function MediaPickerDialog({
   const libraryScrollRef = useRef<HTMLDivElement | null>(null)
   const deleteTimeoutsRef = useRef<Record<string, number>>({})
 
+  const preferredUploadFolder = useMemo(() => {
+    const sku = (productMeta?.sku || "").trim()
+    const categoryFolderPath = (productMeta?.categoryFolderPath || "").trim()
+    if (sku && categoryFolderPath) return `${categoryFolderPath}/${sku}`
+    if (categoryFolderPath) return categoryFolderPath
+    return ""
+  }, [productMeta?.categoryFolderPath, productMeta?.sku])
+
   const loadMedia = useCallback(async () => {
     setLoading(true)
     try {
@@ -141,6 +164,13 @@ export function MediaPickerDialog({
     if (!open) return
     loadMedia()
   }, [open, loadMedia])
+
+  useEffect(() => {
+    if (!open) return
+    if (!preferredUploadFolder) return
+    setUploadFolder(preferredUploadFolder)
+    setTargetFolder(preferredUploadFolder)
+  }, [open, preferredUploadFolder])
 
   useEffect(() => {
     const raw = window.localStorage.getItem(FOLDER_COLOR_KEY)
@@ -466,12 +496,24 @@ export function MediaPickerDialog({
     if (files.length === 0) return
     setUploading(true)
     try {
+      if (preferredUploadFolder && productMeta?.categoryFolderPath) {
+        const skuFolder = (productMeta?.sku || "").trim()
+        if (skuFolder) {
+          await fetch("/api/admin/media", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ parentFolder: productMeta.categoryFolderPath, name: skuFolder }),
+          })
+        }
+      }
       const uploadedUrls: string[] = []
       const uploadedFolders: string[] = []
-      for (const file of files) {
+      for (const [index, file] of files.entries()) {
         const formData = new FormData()
         formData.append("file", file)
-        formData.append("folder", uploadFolder)
+        formData.append("folder", preferredUploadFolder || uploadFolder)
+        const baseName = buildUploadBaseName(productMeta?.title || "", index, files.length)
+        if (baseName) formData.append("baseName", baseName)
         const res = await fetch("/api/upload", {
           method: "POST",
           body: formData,
@@ -492,7 +534,7 @@ export function MediaPickerDialog({
       setSelectedFolder(null)
       setSelectedRightFolders([])
 
-      const focusFolder = uploadedFolders[0] || uploadFolder
+      const focusFolder = uploadedFolders[0] || preferredUploadFolder || uploadFolder
       const focusTop = focusFolder.split("/")[0] || "all"
       setActiveFolder(focusTop)
       setActiveSubfolder(focusFolder === focusTop ? "all" : focusFolder)
@@ -624,46 +666,18 @@ export function MediaPickerDialog({
     const libraryScrollTop = libraryScrollRef.current?.scrollTop ?? 0
     const windowScrollX = window.scrollX
     const windowScrollY = window.scrollY
-    const currentName = folderPath.split("/").pop() || folderPath
-    const parentFolder = folderPath.includes("/") ? folderPath.split("/").slice(0, -1).join("/") : ""
-    const match = currentName.match(/^(.*?)(\d+)$/)
-    if (!match) {
-      toast.error("Klonlama için klasör sonunda numara olmalı")
-      return
-    }
-
-    const [, prefix, digits] = match
-    let maxNumber = Number.parseInt(digits, 10)
-    const siblingPrefix = parentFolder ? `${parentFolder}/` : ""
-
-    for (const folder of folders) {
-      const sameLevelParent = folder.name.includes("/") ? folder.name.split("/").slice(0, -1).join("/") : ""
-      if (sameLevelParent !== parentFolder) continue
-
-      const leafName = siblingPrefix ? folder.name.slice(siblingPrefix.length) : folder.name
-      const siblingMatch = leafName.match(/^(.*?)(\d+)$/)
-      if (!siblingMatch) continue
-      if (siblingMatch[1] !== prefix) continue
-
-      const siblingNumber = Number.parseInt(siblingMatch[2], 10)
-      if (siblingNumber > maxNumber) maxNumber = siblingNumber
-    }
-
-    const nextNumber = String(maxNumber + 1).padStart(digits.length, "0")
-    const nextName = `${prefix}${nextNumber}`
-
     setCreatingFolder(true)
     try {
-      const res = await fetch("/api/admin/media", {
+      const res = await fetch("/api/admin/media/folders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parentFolder, name: nextName }),
+        body: JSON.stringify({ action: "clone", folder: folderPath }),
       })
       const json = await res.json().catch(() => null as null | { error?: string; folder?: string })
       if (!res.ok || !json?.folder) {
         throw new Error(json?.error || "Failed to clone folder")
       }
-      toast.success(`Klonlandı: ${nextName}`)
+      toast.success(`Klonlandı: ${json.folder.split("/").pop() || json.folder}`)
       setSelectedFolder(json.folder)
       setSelectedRightFolders([json.folder])
       await loadMedia()

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
+import { stat } from "fs/promises"
+import path from "path"
 import { v4 as uuidv4 } from "uuid"
 import { getEnv } from "@/lib/env"
 import { logger } from "@/lib/logger"
@@ -13,6 +15,36 @@ export const dynamic = "force-dynamic"
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/avif"])
 
+function normalizeFolderFromObjectKey(value: string | null | undefined) {
+    const clean = sanitizeFolderPath(value || "")
+    if (!clean) return ""
+    const parts = clean.split("/").filter(Boolean)
+    if (parts.length <= 1) return ""
+    return parts.slice(0, -1).join("/")
+}
+
+async function resolveBaseName(folder: string, requestedBaseName: string | null, fallbackName: string) {
+    const baseSlug = sanitizeFolderPath(requestedBaseName || "").split("/").pop() || sanitizeFolderPath(fallbackName) || uuidv4()
+    const uploadRoot = path.join(process.cwd(), "public", "uploads")
+
+    let candidate = baseSlug
+    let counter = 2
+    while (true) {
+        const relativePath = path.join(uploadRoot, folder, `${candidate}-master.webp`)
+        const exists = await stat(relativePath).then(() => true).catch(() => false)
+        if (!exists) return candidate
+        candidate = `${baseSlug}-${counter}`
+        counter += 1
+    }
+}
+
+async function mediaRowExists(objectKey: string | null | undefined) {
+    const clean = sanitizeFolderPath(objectKey || "")
+    if (!clean) return false
+    const absolutePath = path.join(process.cwd(), "public", "uploads", clean)
+    return stat(absolutePath).then(() => true).catch(() => false)
+}
+
 export async function POST(req: NextRequest) {
     try {
         const env = getEnv()
@@ -26,7 +58,9 @@ export async function POST(req: NextRequest) {
         const formData = await req.formData()
         const file = formData.get("file") as File | null
         const folderInput = formData.get("folder")
+        const baseNameInput = formData.get("baseName")
         const candidateFolder = typeof folderInput === "string" ? sanitizeFolderPath(folderInput) : ""
+        const requestedBaseName = typeof baseNameInput === "string" ? baseNameInput : null
         const topCategories = await prisma.category.findMany({
             where: { parentId: null },
             select: { slug: true },
@@ -73,13 +107,22 @@ export async function POST(req: NextRequest) {
         }
         await ensureMediaRegistryTable()
         const existing = await findMediaByChecksum(processed.checksum)
-        if (existing.length > 0) {
-            const primary = existing.find((item) => item.is_primary === 1) || existing[0]
+        const existingInFolder = existing.filter((item) => normalizeFolderFromObjectKey(item.object_key) === folder)
+        const existingInFolderWithFiles = []
+        for (const item of existingInFolder) {
+            if (await mediaRowExists(item.object_key)) {
+                existingInFolderWithFiles.push(item)
+                continue
+            }
+            await prisma.$executeRawUnsafe(`DELETE FROM "MediaAsset" WHERE "image_url" = ?`, item.image_url)
+        }
+        if (existingInFolderWithFiles.length > 0) {
+            const primary = existingInFolderWithFiles.find((item) => item.is_primary === 1) || existingInFolderWithFiles[0]
             return NextResponse.json({
                 success: true,
                 duplicate: true,
                 url: primary.image_url,
-                variants: existing.map((item) => ({
+                variants: existingInFolderWithFiles.map((item) => ({
                     variant: item.variant,
                     url: item.image_url,
                     width: item.width,
@@ -90,7 +133,7 @@ export async function POST(req: NextRequest) {
 
         const storage = getStorageProvider()
         const originalName = file.name || "image"
-        const baseName = `${uuidv4()}`
+        const baseName = await resolveBaseName(folder, requestedBaseName, originalName.replace(/\.[^.]+$/, ""))
         const savedVariants: Array<{ variant: string; url: string; path: string; width?: number; height?: number; contentType: string; size: number }> = []
 
         for (const variant of processed.variants) {

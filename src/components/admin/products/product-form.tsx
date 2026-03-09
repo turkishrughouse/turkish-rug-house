@@ -818,6 +818,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
     const seoKeywordsValue = watch("seoKeywords") || ""
 
     const customAttributeItems = watch("customAttributes") ?? EMPTY_CUSTOM_ATTRIBUTES
+    const selectedCategoryIds = watch("categoryIds")
     const selectedAttributeCount = customAttributeItems.length
     const descriptionValue = watch("description") || ""
     const shortDescriptionValue = watch("seoDescription") || ""
@@ -825,6 +826,27 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         () => seoKeywordsValue.split(",").map((item) => item.trim()).filter(Boolean),
         [seoKeywordsValue]
     )
+    const categoryPathMap = useMemo(() => {
+        const byId = new Map(categories.map((category) => [category.id, category]))
+        const cache = new Map<string, string>()
+        const resolvePath = (id: string): string => {
+            if (cache.has(id)) return cache.get(id) || ""
+            const current = byId.get(id)
+            if (!current) return ""
+            const parentPath = current.parentId ? resolvePath(current.parentId) : ""
+            const slug = (current.slug || "").trim()
+            const path = [parentPath, slug].filter(Boolean).join("/")
+            cache.set(id, path)
+            return path
+        }
+        categories.forEach((category) => resolvePath(category.id))
+        return cache
+    }, [categories])
+    const primaryCategoryFolderPath = useMemo(() => {
+        const firstCategoryId = selectedCategoryIds?.[0]
+        if (!firstCategoryId) return ""
+        return categoryPathMap.get(firstCategoryId) || ""
+    }, [categoryPathMap, selectedCategoryIds])
     const googlePreviewTitle = (seoTitleValue || title || tx("Product title preview", "Ürün başlığı önizleme")).trim().slice(0, 60)
     const googlePreviewUrl = `https://turkishrughouse.com/product/${slugValue || "product-slug"}`
     const googlePreviewDescription = stripHtmlPreview(shortDescriptionValue || descriptionValue || tx("Product description preview", "Ürün açıklaması önizleme"))
@@ -917,6 +939,16 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         }
 
         data.sku = (data.sku || "").trim()
+        if (!data.sku) {
+            toast.error(tx("SKU is required for product media folders", "Ürün media klasörü için SKU zorunlu"))
+            setIsLoading(false)
+            return
+        }
+        if (!data.images || data.images.length === 0) {
+            toast.error(tx("At least one product image is required", "En az bir ürün görseli zorunlu"))
+            setIsLoading(false)
+            return
+        }
 
         const regularPrice = Number(data.price || 0)
         const salePrice = Number(data.compareAtPrice || 0)
@@ -1772,6 +1804,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                     title: title || "",
                     sku: watch("sku") || "",
                     description: stripHtmlPreview(shortDescriptionValue || ""),
+                    categoryFolderPath: primaryCategoryFolderPath,
                 }}
             />
         ) : null}

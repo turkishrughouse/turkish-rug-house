@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { mkdir, readdir, stat, unlink, rename } from "fs/promises"
+import { mkdir, readdir, rmdir, stat, unlink, rename } from "fs/promises"
 import path from "path"
 import { z } from "zod"
 import { prisma } from "@/lib/db"
@@ -13,6 +13,7 @@ import {
 import { logger } from "@/lib/logger"
 import { getStorageProvider } from "@/lib/storage/provider"
 import { parseProductImages } from "@/lib/product-images"
+import { ensureMediaRegistryTable } from "@/lib/media-registry"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -49,6 +50,22 @@ type AggregatedMediaAsset = {
   sizeBytes?: number
 }
 
+type UploadVariantGroup = {
+  baseKey: string
+  relativeBase: string
+  folder: string
+  masterRelative: string
+  createdAt: number
+  sizeBytes?: number
+}
+
+type SiblingUploadAsset = {
+  url: string
+  relativePath: string
+  absolutePath: string
+  fileName: string
+}
+
 const createFolderSchema = z.object({
   name: z.string().min(1, "Folder name is required"),
   parentFolder: z.string().min(1, "Parent folder is required"),
@@ -63,6 +80,15 @@ const moveAssetSchema = z.object({
 
 const OPTIMIZED_ROOT = "_optimized"
 
+function normalizeUploadRelativePath(relativePath: string) {
+  return (relativePath || "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0 && segment !== "." && segment !== "..")
+    .join("/")
+}
+
 function fileNameFromUrl(url: string): string {
   try {
     const clean = url.split("?")[0]
@@ -73,7 +99,7 @@ function fileNameFromUrl(url: string): string {
 }
 
 function toLogicalUploadRelativePath(relativePath: string) {
-  const clean = sanitizeFolderPath(relativePath)
+  const clean = normalizeUploadRelativePath(relativePath)
   if (!clean) return ""
   if (clean === OPTIMIZED_ROOT) return ""
   if (clean.startsWith(`${OPTIMIZED_ROOT}/`)) {
@@ -96,13 +122,40 @@ function resolveUploadInfo(url: string): { absolutePath: string; fileName: strin
   const storage = getStorageProvider()
   const relative = storage.toRelativePath(url)
   if (!relative) return null
-  if (!relative || relative.includes("..")) return null
+  const normalizedRelative = normalizeUploadRelativePath(relative)
+  if (!normalizedRelative || normalizedRelative.includes("..")) return null
 
-  const absolutePath = path.join(process.cwd(), "public", "uploads", relative)
-  const fileName = path.basename(relative)
+  const absolutePath = path.join(process.cwd(), "public", "uploads", normalizedRelative)
+  const fileName = path.basename(normalizedRelative)
   if (!fileName) return null
 
   return { absolutePath, fileName }
+}
+
+function extractVariantBaseName(fileName: string) {
+  return fileName.replace(/-(thumb|large|master)\.(avif|webp)$/i, "")
+}
+
+function extractVariantGroup(relativePath: string): UploadVariantGroup {
+  const logicalRelative = toLogicalUploadRelativePath(relativePath)
+  const normalizedRelative = logicalRelative || normalizeUploadRelativePath(relativePath)
+  const parts = normalizedRelative.split("/").filter(Boolean)
+  const fileName = parts.pop() || ""
+  const folder = parts.join("/") || "root"
+  const baseName = extractVariantBaseName(fileName)
+  const relativeBase = [...parts, baseName].filter(Boolean).join("/") || baseName
+  const isVariant = /-(thumb|large|master)\.(avif|webp)$/i.test(fileName)
+  const masterRelative = isVariant
+    ? [...parts, `${baseName}-master.webp`].filter(Boolean).join("/")
+    : normalizedRelative
+
+  return {
+    baseKey: relativeBase.toLowerCase(),
+    relativeBase,
+    folder,
+    masterRelative,
+    createdAt: 0,
+  }
 }
 
 function escapeRegExp(input: string): string {
@@ -293,35 +346,147 @@ async function listUploadFiles(rootDir: string, relative = ""): Promise<MediaAss
   const storage = getStorageProvider()
   const current = path.join(rootDir, relative)
   const entries = await readdir(current, { withFileTypes: true }).catch(() => [])
-  const assets: MediaAsset[] = []
+  const groups = new Map<string, UploadVariantGroup>()
 
   for (const entry of entries) {
     const childRelative = relative ? `${relative}/${entry.name}` : entry.name
     const fullPath = path.join(rootDir, childRelative)
 
     if (entry.isDirectory()) {
-      assets.push(...await listUploadFiles(rootDir, childRelative))
+      const nestedAssets = await listUploadFiles(rootDir, childRelative)
+      for (const asset of nestedAssets) {
+        const group = extractVariantGroup(getStorageProvider().toRelativePath(asset.url) || "")
+        groups.set(`${asset.folder}@@${group.baseKey}`, {
+          ...group,
+          folder: asset.folder,
+          masterRelative: getStorageProvider().toRelativePath(asset.url) || group.masterRelative,
+          createdAt: asset.createdAt,
+          sizeBytes: asset.sizeBytes,
+        })
+      }
       continue
     }
 
     const fileStats = await stat(fullPath).catch(() => null)
     if (!fileStats || !fileStats.isFile()) continue
 
-    const logicalRelative = toLogicalUploadRelativePath(childRelative)
-    const folder = logicalRelative.includes("/") ? logicalRelative.split("/").slice(0, -1).join("/") : "root"
+    const group = extractVariantGroup(childRelative)
+    const groupKey = `${group.folder}@@${group.baseKey}`
+    const existing = groups.get(groupKey)
+    const isPreferredMaster = childRelative === group.masterRelative
+
+    if (!existing) {
+      groups.set(groupKey, {
+        ...group,
+        createdAt: fileStats.mtimeMs,
+        sizeBytes: fileStats.size,
+        masterRelative: childRelative,
+      })
+      continue
+    }
+
+    if (fileStats.mtimeMs > existing.createdAt) {
+      existing.createdAt = fileStats.mtimeMs
+    }
+    if (!existing.sizeBytes || isPreferredMaster) {
+      existing.sizeBytes = fileStats.size
+    }
+    if (isPreferredMaster) {
+      existing.masterRelative = childRelative
+    }
+  }
+
+  return Array.from(groups.values()).map((group) => ({
+    id: `upload:${group.masterRelative}`,
+    url: storage.getPublicUrl(group.masterRelative),
+    name: path.basename(group.masterRelative),
+    folder: group.folder,
+    source: "UPLOAD",
+    usedIn: "Uploaded media",
+    createdAt: group.createdAt,
+    sizeBytes: group.sizeBytes,
+  }))
+}
+
+async function getSiblingUploadUrls(url: string) {
+  const storage = getStorageProvider()
+  const relative = storage.toRelativePath(url)
+  if (!relative) return [url]
+
+  const logicalRelative = toLogicalUploadRelativePath(relative)
+  const parts = logicalRelative.split("/").filter(Boolean)
+  const fileName = parts.pop() || ""
+  const folder = parts.join("/")
+  const baseName = extractVariantBaseName(fileName)
+  const variants = [
+    `${baseName}-thumb.webp`,
+    `${baseName}-large.webp`,
+    `${baseName}-master.webp`,
+    `${baseName}-master.avif`,
+  ]
+
+  const urls = new Set<string>([url])
+  for (const variantName of variants) {
+    const relativePath = [...(folder ? [folder] : []), variantName].join("/")
+    if (!relativePath) continue
+    const absolutePath = path.join(process.cwd(), "public", "uploads", relativePath)
+    const exists = await stat(absolutePath).then(() => true).catch(() => false)
+    if (exists) {
+      urls.add(storage.getPublicUrl(relativePath))
+    }
+  }
+
+  return Array.from(urls)
+}
+
+async function getSiblingUploadAssets(url: string): Promise<SiblingUploadAsset[]> {
+  const storage = getStorageProvider()
+  const relative = storage.toRelativePath(url)
+  if (!relative) return []
+
+  const normalizedRelative = normalizeUploadRelativePath(relative)
+  const parts = normalizedRelative.split("/").filter(Boolean)
+  const fileName = parts.pop() || ""
+  const folder = parts.join("/")
+  const baseName = extractVariantBaseName(fileName)
+  const variantNames = [
+    `${baseName}-thumb.webp`,
+    `${baseName}-large.webp`,
+    `${baseName}-master.webp`,
+    `${baseName}-master.avif`,
+  ]
+
+  const assets: SiblingUploadAsset[] = []
+  for (const variantName of variantNames) {
+    const relativePath = [...(folder ? [folder] : []), variantName].join("/")
+    if (!relativePath) continue
+    const absolutePath = path.join(process.cwd(), "public", "uploads", relativePath)
+    const exists = await stat(absolutePath).then(() => true).catch(() => false)
+    if (!exists) continue
     assets.push({
-      id: `upload:${childRelative}`,
-      url: storage.getPublicUrl(childRelative),
-      name: entry.name,
-      folder,
-      source: "UPLOAD",
-      usedIn: "Uploaded media",
-      createdAt: fileStats.mtimeMs,
-      sizeBytes: fileStats.size,
+      url: storage.getPublicUrl(relativePath),
+      relativePath,
+      absolutePath,
+      fileName: variantName,
     })
   }
 
   return assets
+}
+
+async function pruneEmptyUploadFolders(folder: string) {
+  const uploadRoot = path.join(process.cwd(), "public", "uploads")
+  let current = sanitizeFolderPath(folder)
+
+  while (current) {
+    const currentPath = path.join(uploadRoot, current)
+    const entries = await readdir(currentPath).catch(() => null)
+    if (!entries || entries.length > 0) break
+    await rmdir(currentPath).catch(() => undefined)
+    const next = current.split("/").slice(0, -1).join("/")
+    if (!next || next === current) break
+    current = next
+  }
 }
 
 export async function GET() {
@@ -575,8 +740,8 @@ export async function PATCH(req: NextRequest) {
       )
     }
 
-    const info = resolveUploadInfo(parsed.data.url)
-    if (!info) {
+    const siblings = await getSiblingUploadAssets(parsed.data.url)
+    if (siblings.length === 0) {
       return NextResponse.json({ error: "Only uploaded files can be moved" }, { status: 400 })
     }
 
@@ -592,15 +757,42 @@ export async function PATCH(req: NextRequest) {
 
     const targetDir = path.join(process.cwd(), "public", "uploads", targetFolder)
     await mkdir(targetDir, { recursive: true })
+    const sourceFolder = extractFolderFromUrl(parsed.data.url)
+    if (sourceFolder === targetFolder) {
+      return NextResponse.json({ error: "File is already in the selected folder" }, { status: 400 })
+    }
 
-    const targetPath = path.join(targetDir, info.fileName)
-    await rename(info.absolutePath, targetPath)
-    const nextUrl = getStorageProvider().getPublicUrl(`${targetFolder}/${info.fileName}`)
-    await replaceUrlReferences(parsed.data.url, nextUrl)
+    for (const sibling of siblings) {
+      const targetPath = path.join(targetDir, sibling.fileName)
+      const exists = await stat(targetPath).then(() => true).catch(() => false)
+      if (exists) {
+        return NextResponse.json({ error: `A file named ${sibling.fileName} already exists in the target folder` }, { status: 409 })
+      }
+    }
+
+    const storage = getStorageProvider()
+    await ensureMediaRegistryTable()
+    let nextPrimaryUrl = ""
+    for (const sibling of siblings) {
+      const targetPath = path.join(targetDir, sibling.fileName)
+      await rename(sibling.absolutePath, targetPath)
+      const nextUrl = storage.getPublicUrl(`${targetFolder}/${sibling.fileName}`)
+      await replaceUrlReferences(sibling.url, nextUrl)
+      await prisma.$executeRawUnsafe(
+        `UPDATE "MediaAsset" SET "image_url" = ?, "object_key" = ? WHERE "image_url" = ?`,
+        nextUrl,
+        `${targetFolder}/${sibling.fileName}`,
+        sibling.url
+      )
+      if (sibling.fileName.endsWith("-master.webp") || !nextPrimaryUrl) {
+        nextPrimaryUrl = nextUrl
+      }
+    }
+    await pruneEmptyUploadFolders(sourceFolder)
 
     return NextResponse.json({
       success: true,
-      url: nextUrl,
+      url: nextPrimaryUrl,
     })
   } catch (error) {
     logger.error("Error moving media asset", { error: error instanceof Error ? error.message : String(error) }, "admin-media-api")
@@ -619,13 +811,21 @@ export async function DELETE(req: NextRequest) {
       )
     }
 
-    const info = resolveUploadInfo(parsed.data.url)
-    await replaceUrlReferences(parsed.data.url, null)
-    if (info) {
-      await unlink(info.absolutePath).catch((err: NodeJS.ErrnoException) => {
-        if (err.code !== "ENOENT") throw err
-      })
+    const relatedUrls = await getSiblingUploadUrls(parsed.data.url)
+    await ensureMediaRegistryTable()
+    for (const url of relatedUrls) {
+      await replaceUrlReferences(url, null)
+      const info = resolveUploadInfo(url)
+      if (info) {
+        await unlink(info.absolutePath).catch((err: NodeJS.ErrnoException) => {
+          if (err.code !== "ENOENT") throw err
+        })
+      }
     }
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM "MediaAsset" WHERE "image_url" IN (${relatedUrls.map(() => "?").join(", ")})`,
+      ...relatedUrls
+    )
     return NextResponse.json({ success: true })
   } catch (error) {
     logger.error("Error deleting media asset", { error: error instanceof Error ? error.message : String(error) }, "admin-media-api")

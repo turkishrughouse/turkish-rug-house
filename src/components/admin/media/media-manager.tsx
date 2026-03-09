@@ -10,6 +10,9 @@ import {
   Copy,
   Trash2,
   FolderInput,
+  ChevronLeft,
+  ChevronRight,
+  Home,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -82,6 +85,24 @@ function folderLeafName(folderPath: string) {
   return parts[parts.length - 1] || folderPath
 }
 
+function prettifyAssetName(asset: Asset) {
+  const productMatch = asset.usedIn.match(/^Product featured:\s*(.+)$/i)
+  if (productMatch?.[1]) return productMatch[1].trim()
+
+  const rawName = asset.name
+    .replace(/\.(avif|webp|png|jpe?g|gif)$/i, "")
+    .replace(/-(thumb|large|master)$/i, "")
+    .replace(/[-_]+/g, " ")
+    .trim()
+
+  if (!rawName) return asset.name
+  return rawName
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => (part === part.toUpperCase() ? part : part.charAt(0).toUpperCase() + part.slice(1)))
+    .join(" ")
+}
+
 function FolderTile({ label }: { label: string }) {
   return (
     <div className="inline-flex flex-col items-center gap-2">
@@ -93,6 +114,11 @@ function FolderTile({ label }: { label: string }) {
     </div>
   )
 }
+
+const ROOT_VIEW = "__root__"
+const FOLDER_CARD_LIMIT = 20
+const ASSET_CARD_LIMIT = 20
+type FolderContextMenuState = { folderPath: string; x: number; y: number }
 
 export function MediaManager() {
   const [folders, setFolders] = useState<Folder[]>([])
@@ -114,10 +140,12 @@ export function MediaManager() {
   const [optimizing, setOptimizing] = useState(false)
   const [deleteFolderModalOpen, setDeleteFolderModalOpen] = useState(false)
   const [deletingFolder, setDeletingFolder] = useState(false)
-  const [renamingSubfolder, setRenamingSubfolder] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState("")
-  const [renamingFolder, setRenamingFolder] = useState(false)
   const [showCreateForFolder, setShowCreateForFolder] = useState<string | null>(null)
+  const [currentFolderPath, setCurrentFolderPath] = useState<string>(ROOT_VIEW)
+  const [folderContextMenu, setFolderContextMenu] = useState<FolderContextMenuState | null>(null)
+  const [pendingDeleteFolder, setPendingDeleteFolder] = useState<string | null>(null)
+  const [folderPage, setFolderPage] = useState(1)
+  const [assetPage, setAssetPage] = useState(1)
 
   const cardSurface =
     "bg-white border border-[#dce3ed] shadow-[0_8px_24px_rgba(15,23,42,0.05)]"
@@ -157,38 +185,89 @@ export function MediaManager() {
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [folders])
 
-  const folderCountMap = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const folder of folders) {
-      map.set(folder.name, folder.count)
+  const totalCountForPath = useCallback(
+    (path: string) => {
+      let total = 0
+      for (const folder of folders) {
+        if (folder.name === path || folder.name.startsWith(`${path}/`)) total += folder.count
+      }
+      return total
+    },
+    [folders]
+  )
+
+  const visibleFolderCards = useMemo(() => {
+    if (currentFolderPath === ROOT_VIEW) {
+      return topFolders.map((folder) => ({
+        path: folder.name,
+        label: folderLabel(folder.name),
+        count: folder.count,
+      }))
     }
-    return map
-  }, [folders])
+
+    const prefix = `${currentFolderPath}/`
+    const immediateChildren = new Set<string>()
+    for (const folder of folders) {
+      if (!folder.name.startsWith(prefix)) continue
+      const remainder = folder.name.slice(prefix.length)
+      const [child] = remainder.split("/")
+      if (!child) continue
+      immediateChildren.add(`${currentFolderPath}/${child}`)
+    }
+
+    return Array.from(immediateChildren)
+      .sort((a, b) => a.localeCompare(b))
+      .map((path) => ({
+        path,
+        label: folderLabel(folderLeafName(path)),
+        count: totalCountForPath(path),
+      }))
+  }, [currentFolderPath, folders, topFolders, totalCountForPath])
+
+  const breadcrumbPaths = useMemo(() => {
+    if (currentFolderPath === ROOT_VIEW) return []
+    const parts = currentFolderPath.split("/").filter(Boolean)
+    return parts.map((_, idx) => parts.slice(0, idx + 1).join("/"))
+  }, [currentFolderPath])
 
   useEffect(() => {
-    if (activeFolder !== "all") {
-      setNewFolderParent(activeFolder)
+    if (currentFolderPath !== ROOT_VIEW) {
+      setNewFolderParent(currentFolderPath)
       return
     }
     if (!newFolderParent && topFolders.length > 0) {
       setNewFolderParent(topFolders[0].name)
     }
-  }, [activeFolder, newFolderParent, topFolders])
+  }, [currentFolderPath, newFolderParent, topFolders])
 
   useEffect(() => {
-    setRenamingSubfolder(null)
-    setRenameValue("")
-  }, [activeFolder])
+    setFolderContextMenu(null)
+    setPendingDeleteFolder(null)
+    setFolderPage(1)
+    setAssetPage(1)
+  }, [currentFolderPath])
+
+  useEffect(() => {
+    setAssetPage(1)
+  }, [search])
+
+  useEffect(() => {
+    if (currentFolderPath === ROOT_VIEW) {
+      setActiveFolder("all")
+      setActiveSubfolder("all")
+      return
+    }
+    const top = currentFolderPath.split("/")[0] || "all"
+    setActiveFolder(top)
+    setActiveSubfolder(currentFolderPath === top ? "all" : currentFolderPath)
+  }, [currentFolderPath])
 
   const filteredAssets = useMemo(() => {
     const term = search.trim().toLowerCase()
+    if (currentFolderPath === ROOT_VIEW) return []
     return assets.filter((asset) => {
       const inFolder =
-        activeFolder === "all"
-          ? true
-          : activeSubfolder === "all"
-            ? asset.folder === activeFolder || asset.folder.startsWith(`${activeFolder}/`)
-            : asset.folder === activeSubfolder || asset.folder.startsWith(`${activeSubfolder}/`)
+        asset.folder === currentFolderPath || asset.folder.startsWith(`${currentFolderPath}/`)
       const inSearch =
         !term ||
         asset.name.toLowerCase().includes(term) ||
@@ -196,7 +275,21 @@ export function MediaManager() {
         asset.source.toLowerCase().includes(term)
       return inFolder && inSearch
     })
-  }, [activeFolder, activeSubfolder, assets, search])
+  }, [assets, currentFolderPath, search])
+
+  const folderPageCount = Math.max(1, Math.ceil(visibleFolderCards.length / FOLDER_CARD_LIMIT))
+  const safeFolderPage = Math.min(folderPage, folderPageCount)
+  const pagedFolderCards = useMemo(() => {
+    const start = (safeFolderPage - 1) * FOLDER_CARD_LIMIT
+    return visibleFolderCards.slice(start, start + FOLDER_CARD_LIMIT)
+  }, [safeFolderPage, visibleFolderCards])
+
+  const assetPageCount = Math.max(1, Math.ceil(filteredAssets.length / ASSET_CARD_LIMIT))
+  const safeAssetPage = Math.min(assetPage, assetPageCount)
+  const pagedAssets = useMemo(() => {
+    const start = (safeAssetPage - 1) * ASSET_CARD_LIMIT
+    return filteredAssets.slice(start, start + ASSET_CARD_LIMIT)
+  }, [filteredAssets, safeAssetPage])
 
   const folderOptions = useMemo(() => {
     const names = Array.from(new Set(folders.map((f) => f.name)))
@@ -204,12 +297,12 @@ export function MediaManager() {
   }, [folders])
 
   const selectedInView = useMemo(
-    () => filteredAssets.filter((asset) => selectedAssetUrls.includes(asset.url)),
-    [filteredAssets, selectedAssetUrls]
+    () => pagedAssets.filter((asset) => selectedAssetUrls.includes(asset.url)),
+    [pagedAssets, selectedAssetUrls]
   )
 
   const allSelectedInView =
-    filteredAssets.length > 0 && selectedInView.length === filteredAssets.length
+    pagedAssets.length > 0 && selectedInView.length === pagedAssets.length
 
   const createFolder = async () => {
     const name = newFolderName.trim()
@@ -234,6 +327,7 @@ export function MediaManager() {
         const top = createdFolder.split("/")[0] || createdFolder
         setActiveFolder(top)
         setActiveSubfolder(createdFolder)
+        setCurrentFolderPath(createdFolder)
         setSelectedUploadFolder(createdFolder)
         setTargetFolder(createdFolder)
       }
@@ -252,14 +346,14 @@ export function MediaManager() {
 
   const toggleSelectAllCurrent = () => {
     if (allSelectedInView) {
-      const viewSet = new Set(filteredAssets.map((a) => a.url))
+      const viewSet = new Set(pagedAssets.map((a) => a.url))
       setSelectedAssetUrls((prev) => prev.filter((u) => !viewSet.has(u)))
       return
     }
 
     setSelectedAssetUrls((prev) => {
       const next = new Set(prev)
-      for (const asset of filteredAssets) next.add(asset.url)
+      for (const asset of pagedAssets) next.add(asset.url)
       return Array.from(next)
     })
   }
@@ -403,34 +497,27 @@ export function MediaManager() {
     }
   }
 
-  const folderToDelete = activeSubfolder !== "all" ? activeSubfolder : activeFolder !== "all" ? activeFolder : ""
+  const folderToDelete = pendingDeleteFolder || (currentFolderPath !== ROOT_VIEW ? currentFolderPath : "")
   const deleteTargets = folderToDelete ? [folderToDelete] : []
 
-  const startRename = (folderPath: string) => {
-    setRenamingSubfolder(folderPath)
-    setRenameValue(folderLeafName(folderPath))
-  }
-
-  const submitRename = async () => {
-    if (!renamingSubfolder) return
-    const value = renameValue.trim()
+  const startRename = async (folderPath: string) => {
+    const initialName = folderLeafName(folderPath)
+    const value = prompt("Yeni klasor adini girin:", initialName)?.trim() || ""
     if (!value) {
       toast.error("Folder name is required")
       return
     }
-    setRenamingFolder(true)
     try {
       const res = await fetch("/api/admin/media/folders", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folder: renamingSubfolder, newName: value }),
+        body: JSON.stringify({ folder: folderPath, newName: value }),
       })
       const json = (await res.json().catch(() => null)) as { error?: string; folder?: string } | null
       if (!res.ok) throw new Error(json?.error || "Failed to rename folder")
       toast.success("Folder renamed")
-      setRenamingSubfolder(null)
-      setRenameValue("")
       if (json?.folder) {
+        setCurrentFolderPath(json.folder)
         setActiveSubfolder(json.folder)
         setSelectedUploadFolder(json.folder)
         setTargetFolder(json.folder)
@@ -438,8 +525,6 @@ export function MediaManager() {
       await loadMedia()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to rename folder")
-    } finally {
-      setRenamingFolder(false)
     }
   }
 
@@ -473,6 +558,13 @@ export function MediaManager() {
       if (deleteTargets.some((target) => targetFolder === target || targetFolder.startsWith(`${target}/`))) {
         setTargetFolder(activeFolder !== "all" ? activeFolder : "categories")
       }
+      if (deleteTargets.some((target) => currentFolderPath === target || currentFolderPath.startsWith(`${target}/`))) {
+        const parentPath = currentFolderPath.includes("/")
+          ? currentFolderPath.split("/").slice(0, -1).join("/")
+          : ROOT_VIEW
+        setCurrentFolderPath(parentPath || ROOT_VIEW)
+      }
+      setPendingDeleteFolder(null)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to delete folder")
     } finally {
@@ -481,12 +573,16 @@ export function MediaManager() {
   }
 
   const optimizeImages = async () => {
+    if (currentFolderPath === ROOT_VIEW) {
+      toast.error("Klasore girip optimize edin")
+      return
+    }
     setOptimizing(true)
     try {
       const res = await fetch("/api/admin/media/optimize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folder: activeFolder }),
+        body: JSON.stringify({ folder: currentFolderPath }),
       })
       const json = (await res.json().catch(() => null)) as
         | { error?: string; optimized?: number; processed?: number; bytesSaved?: number }
@@ -506,31 +602,45 @@ export function MediaManager() {
     }
   }
 
+  const cloneFolder = async (folderPath: string) => {
+    try {
+      const res = await fetch("/api/admin/media/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clone", folder: folderPath }),
+      })
+      const json = (await res.json().catch(() => null)) as { error?: string; folder?: string } | null
+      if (!res.ok || !json?.folder) throw new Error(json?.error || "Failed to clone folder")
+      toast.success(`Folder cloned: ${folderLeafName(json.folder)}`)
+      setFolderContextMenu(null)
+      await loadMedia()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to clone folder")
+    }
+  }
+
+  const isSkuLikeFolder = (folderPath: string) => /^[a-z0-9_-]*[a-z][a-z0-9_-]*\d+$/i.test(folderLeafName(folderPath))
+  const canCloneFolder = (folderPath: string) => {
+    const depth = folderPath.split("/").filter(Boolean).length
+    return depth >= 3 && isSkuLikeFolder(folderPath) && currentFolderPath !== ROOT_VIEW
+  }
+
   return (
     <div className="space-y-4">
       <Card className={cardSurface}>
         <CardHeader>
           <CardTitle className="text-slate-900 text-lg">Folders</CardTitle>
           <div className="flex justify-end">
-            {activeSubfolder !== "all" && activeFolder !== "all" ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => startRename(activeSubfolder)}
-              >
-                Rename
-              </Button>
-            ) : null}
             <Button
               type="button"
               variant="outline"
               onClick={() => {
-                if (activeFolder === "all") {
-                  toast.error("Once bir ana klasor secin")
+                if (currentFolderPath === ROOT_VIEW) {
+                  toast.error("Önce bir klasöre çift tıklayıp içine girin")
                   return
                 }
-                setNewFolderParent(activeFolder)
-                setShowCreateForFolder(activeFolder)
+                setNewFolderParent(currentFolderPath)
+                setShowCreateForFolder(currentFolderPath)
               }}
             >
               <FolderPlus className="h-4 w-4 mr-2" />
@@ -539,48 +649,112 @@ export function MediaManager() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-            {topFolders.map((folder) => {
-              const isOpen = activeFolder === folder.name
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (currentFolderPath === ROOT_VIEW) return
+                const parts = currentFolderPath.split("/").filter(Boolean)
+                if (parts.length <= 1) {
+                  setCurrentFolderPath(ROOT_VIEW)
+                  return
+                }
+                setCurrentFolderPath(parts.slice(0, -1).join("/"))
+              }}
+              disabled={currentFolderPath === ROOT_VIEW}
+            >
+              <ChevronLeft className="h-4 w-4 mr-2" />
+              Geri
+            </Button>
+            <button
+              type="button"
+              className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs ${
+                currentFolderPath === ROOT_VIEW
+                  ? "border-teal-500 bg-teal-50 text-teal-700"
+                  : "border-[#dce3ed] bg-white text-slate-700"
+              }`}
+              onClick={() => setCurrentFolderPath(ROOT_VIEW)}
+            >
+              <Home className="h-3.5 w-3.5" />
+              Media
+            </button>
+            {breadcrumbPaths.map((path) => (
+              <button
+                key={path}
+                type="button"
+                className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs ${
+                  currentFolderPath === path
+                    ? "border-teal-500 bg-teal-50 text-teal-700"
+                    : "border-[#dce3ed] bg-white text-slate-700"
+                }`}
+                onClick={() => setCurrentFolderPath(path)}
+              >
+                <ChevronRight className="h-3 w-3" />
+                {folderLabel(folderLeafName(path))}
+              </button>
+            ))}
+          </div>
+
+          <div className="rounded-lg border border-[#edf1f5] bg-white p-3 space-y-3">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+              {pagedFolderCards.map((folder) => {
+                const isOpen = currentFolderPath === folder.path
+                const isSelectedTop =
+                  currentFolderPath !== ROOT_VIEW && currentFolderPath.split("/")[0] === folder.path
               return (
                 <button
-                  key={folder.name}
+                  key={folder.path}
                   type="button"
                   className={`rounded-lg border bg-white p-3 text-left transition ${
-                    isOpen ? "border-teal-400 ring-2 ring-teal-200" : "border-[#dce3ed] hover:border-slate-300"
+                    isOpen || isSelectedTop
+                      ? "border-teal-400 ring-2 ring-teal-200"
+                      : "border-[#dce3ed] hover:border-slate-300"
                   }`}
                   onClick={() => {
-                    const willOpen = activeFolder !== folder.name
-                    if (!willOpen) {
-                      setActiveFolder("all")
-                      setActiveSubfolder("all")
-                      setShowCreateForFolder(null)
-                      return
-                    }
-                    setActiveFolder(folder.name)
-                    setActiveSubfolder("all")
-                    setSelectedUploadFolder(folder.name)
-                    setTargetFolder(folder.name)
-                    setNewFolderParent(folder.name)
+                    setSelectedUploadFolder(folder.path)
+                    setTargetFolder(folder.path)
+                    setNewFolderParent(folder.path)
+                  }}
+                  onContextMenu={(event) => {
+                    event.preventDefault()
+                    setFolderContextMenu({
+                      folderPath: folder.path,
+                      x: event.clientX,
+                      y: event.clientY,
+                    })
+                  }}
+                  onDoubleClick={() => {
+                    setCurrentFolderPath(folder.path)
+                    setSelectedUploadFolder(folder.path)
+                    setTargetFolder(folder.path)
+                    setNewFolderParent(folder.path)
+                    setShowCreateForFolder(null)
                   }}
                 >
                   <div className="flex items-center justify-between">
-                    <FolderTile label={folderLabel(folder.name)} />
+                    <FolderTile label={folder.label} />
                     <span className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-700">{folder.count}</span>
                   </div>
                 </button>
               )
-            })}
+              })}
+              {pagedFolderCards.length === 0 ? (
+                <div className="col-span-full rounded-md border border-dashed border-[#dce3ed] p-6 text-center text-sm text-slate-500">
+                  Alt klasor yok.
+                </div>
+              ) : null}
+            </div>
           </div>
 
-          {activeFolder !== "all" ? (
+          {currentFolderPath !== ROOT_VIEW ? (
             <div className="rounded-lg border border-[#edf1f5] bg-white px-3 py-3 space-y-3">
-              {showCreateForFolder === activeFolder ? (
+              {showCreateForFolder === currentFolderPath ? (
                 <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-2">
                   <Input
                     value={newFolderName}
                     onChange={(e) => setNewFolderName(e.target.value)}
-                    placeholder={`New folder under ${folderLabel(activeFolder)}`}
+                    placeholder={`New folder under ${folderLabel(folderLeafName(currentFolderPath))}`}
                     className="bg-white border-[#dce3ed] text-slate-900 placeholder:text-slate-400"
                   />
                   <Button type="button" onClick={createFolder} disabled={creatingFolder}>
@@ -599,80 +773,33 @@ export function MediaManager() {
                   </Button>
                 </div>
               ) : null}
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveSubfolder("all")}
-                  className={`rounded-md border px-3 py-1.5 text-xs font-medium ${
-                    activeSubfolder === "all"
-                      ? "border-teal-500 bg-teal-50 text-teal-700"
-                      : "border-[#dce3ed] bg-white text-slate-700"
-                  }`}
-                >
-                  All
-                </button>
-                {folders
-                  .map((item) => item.name)
-                  .filter((name) => name !== activeFolder && name.startsWith(`${activeFolder}/`))
-                  .sort((a, b) => a.localeCompare(b))
-                  .map((folderPath) => (
-                    <div
-                      key={folderPath}
-                      className={`inline-flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs ${
-                        activeSubfolder === folderPath
-                          ? "border-teal-500 bg-teal-50 text-teal-700"
-                          : "border-[#dce3ed] bg-white text-slate-700"
-                      }`}
-                    >
-                      {renamingSubfolder === folderPath ? (
-                        <Input
-                          value={renameValue}
-                          onChange={(event) => setRenameValue(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault()
-                              void submitRename()
-                            }
-                            if (event.key === "Escape") {
-                              setRenamingSubfolder(null)
-                              setRenameValue("")
-                            }
-                          }}
-                          onBlur={() => void submitRename()}
-                          className="h-7 w-36 border-[#dce3ed] bg-white text-xs"
-                          autoFocus
-                          disabled={renamingFolder}
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          className="text-left"
-                          onClick={() => {
-                            setActiveSubfolder(folderPath)
-                            setSelectedUploadFolder(folderPath)
-                            setTargetFolder(folderPath)
-                          }}
-                        >
-                          {folderLabel(folderLeafName(folderPath))}
-                        </button>
-                      )}
-                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
-                        {folderCountMap.get(folderPath) || 0}
-                      </span>
-                    </div>
-                  ))}
-              </div>
             </div>
           ) : null}
 
           <div className="flex items-center justify-end">
-            {deleteTargets.length > 0 ? (
-              <Button type="button" variant="destructive" onClick={() => setDeleteFolderModalOpen(true)}>
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">
+                Klasor sayfa: {safeFolderPage}/{folderPageCount}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={safeFolderPage <= 1}
+                onClick={() => setFolderPage((prev) => Math.max(1, prev - 1))}
+              >
+                Onceki
               </Button>
-            ) : null}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={safeFolderPage >= folderPageCount}
+                onClick={() => setFolderPage((prev) => Math.min(folderPageCount, prev + 1))}
+              >
+                Sonraki
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -727,101 +854,122 @@ export function MediaManager() {
         </CardContent>
       </Card>
 
-      <Card className={cardSurface}>
-        <CardHeader>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <CardTitle className="text-slate-900 text-lg">
-              {activeFolder === "all"
-                ? "All Files"
-                : activeSubfolder !== "all"
-                  ? `${folderLabel(folderLeafName(activeSubfolder))} Folder`
-                  : `${folderLabel(activeFolder)} Folder`}
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 rounded-md border border-[#dce3ed] px-3 py-2 bg-white">
-                <Checkbox
-                  checked={allSelectedInView}
-                  onCheckedChange={toggleSelectAllCurrent}
-                />
-                <span className="text-sm text-slate-700 whitespace-nowrap">Hepsini sec</span>
+      {currentFolderPath !== ROOT_VIEW ? (
+        <Card className={cardSurface}>
+          <CardHeader>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <CardTitle className="text-slate-900 text-lg">
+                {`${folderLabel(folderLeafName(currentFolderPath))} Folder`}
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 rounded-md border border-[#dce3ed] px-3 py-2 bg-white">
+                  <Checkbox
+                    checked={allSelectedInView}
+                    onCheckedChange={toggleSelectAllCurrent}
+                  />
+                  <span className="text-sm text-slate-700 whitespace-nowrap">Hepsini sec</span>
+                </div>
+                <Select value={targetFolder} onValueChange={setTargetFolder}>
+                  <SelectTrigger className="bg-white border-[#dce3ed] text-slate-900 min-w-[180px]">
+                    <SelectValue placeholder="Hedef klasor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {folderOptions.map((folder) => (
+                      <SelectItem key={folder.name} value={folder.name}>
+                        {folderLabel(folder.name)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button type="button" onClick={bulkMove} disabled={bulkLoading || selectedInView.length === 0}>
+                  <FolderInput className="h-4 w-4 mr-2" />
+                  Toplu Tasi ({selectedInView.length})
+                </Button>
+                <Button type="button" variant="destructive" onClick={bulkDelete} disabled={bulkLoading || selectedInView.length === 0}>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Toplu Sil
+                </Button>
               </div>
-              <Select value={targetFolder} onValueChange={setTargetFolder}>
-                <SelectTrigger className="bg-white border-[#dce3ed] text-slate-900 min-w-[180px]">
-                  <SelectValue placeholder="Hedef klasor" />
-                </SelectTrigger>
-                <SelectContent>
-                  {folderOptions.map((folder) => (
-                    <SelectItem key={folder.name} value={folder.name}>
-                      {folderLabel(folder.name)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button type="button" onClick={bulkMove} disabled={bulkLoading || selectedInView.length === 0}>
-                <FolderInput className="h-4 w-4 mr-2" />
-                Toplu Tasi ({selectedInView.length})
-              </Button>
-              <Button type="button" variant="destructive" onClick={bulkDelete} disabled={bulkLoading || selectedInView.length === 0}>
-                <Trash2 className="h-4 w-4 mr-2" />
-                Toplu Sil
-              </Button>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-0">
-          {loading ? (
-            <div className="py-10 text-center text-slate-500">Loading media...</div>
-          ) : filteredAssets.length === 0 ? (
-            <div className="py-10 text-center text-slate-500">No media found.</div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
-              {filteredAssets.map((asset) => (
-                <div
-                  key={asset.id}
-                  className="rounded-lg border border-[#dce3ed] bg-white overflow-hidden"
-                >
-                  <div className="aspect-square bg-slate-100 relative">
-                    <div className="absolute top-2 left-2 z-10 rounded bg-white/95 p-1 border border-[#dce3ed]">
-                      <Checkbox
-                        checked={selectedAssetUrls.includes(asset.url)}
-                        onCheckedChange={() => toggleSelect(asset.url)}
+          </CardHeader>
+          <CardContent className="pt-0">
+            {loading ? (
+              <div className="py-10 text-center text-slate-500">Loading media...</div>
+            ) : pagedAssets.length === 0 ? (
+              <div className="py-10 text-center text-slate-500">No media found.</div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
+                {pagedAssets.map((asset) => (
+                  <div
+                    key={asset.id}
+                    className="rounded-lg border border-[#dce3ed] bg-white overflow-hidden"
+                  >
+                    <div className="aspect-square bg-slate-100 relative">
+                      <div className="absolute top-2 left-2 z-10 rounded bg-white/95 p-1 border border-[#dce3ed]">
+                        <Checkbox
+                          checked={selectedAssetUrls.includes(asset.url)}
+                          onCheckedChange={() => toggleSelect(asset.url)}
+                        />
+                      </div>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={asset.url}
+                        alt={asset.name}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
                       />
                     </div>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={asset.url}
-                      alt={asset.name}
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                    />
-                  </div>
-                  <div className="p-3 space-y-2">
-                    <p className="text-sm font-medium text-slate-900 truncate">{asset.name}</p>
-                    <p className="text-xs text-slate-600 truncate">{asset.folder}</p>
-                    <div className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700">
-                      <ImageIcon className="h-3 w-3" />
-                      {asset.source}
+                    <div className="p-3 space-y-2">
+                      <p className="text-sm font-medium text-slate-900 truncate">{prettifyAssetName(asset)}</p>
+                      <p className="text-xs text-slate-600 truncate">{asset.folder}</p>
+                      <div className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700">
+                        <ImageIcon className="h-3 w-3" />
+                        {asset.source}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => {
+                          setManagingAsset(asset)
+                          setTargetFolder(asset.folder || selectedUploadFolder)
+                        }}
+                      >
+                        <Eye className="h-4 w-4 mr-1" />
+                        Manage
+                      </Button>
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => {
-                        setManagingAsset(asset)
-                        setTargetFolder(asset.folder || selectedUploadFolder)
-                      }}
-                    >
-                      <Eye className="h-4 w-4 mr-1" />
-                      Manage
-                    </Button>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+            )}
+            <div className="pt-4 flex items-center justify-end gap-2">
+              <span className="text-xs text-slate-500">
+                Gorsel sayfa: {safeAssetPage}/{assetPageCount}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={safeAssetPage <= 1}
+                onClick={() => setAssetPage((prev) => Math.max(1, prev - 1))}
+              >
+                Onceki
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={safeAssetPage >= assetPageCount}
+                onClick={() => setAssetPage((prev) => Math.min(assetPageCount, prev + 1))}
+              >
+                Sonraki
+              </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Dialog open={Boolean(managingAsset)} onOpenChange={(open) => !open && setManagingAsset(null)}>
         <DialogContent className="bg-white border-[#dce3ed] max-w-xl">
@@ -839,7 +987,7 @@ export function MediaManager() {
                 />
               </div>
               <div>
-                <p className="text-sm font-medium text-slate-900">{managingAsset.name}</p>
+                <p className="text-sm font-medium text-slate-900">{prettifyAssetName(managingAsset)}</p>
                 <p className="text-xs text-slate-600">{managingAsset.usedIn}</p>
                 <p className="text-xs text-slate-500 mt-1 break-all">{managingAsset.url}</p>
               </div>
@@ -908,7 +1056,64 @@ export function MediaManager() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={deleteFolderModalOpen} onOpenChange={setDeleteFolderModalOpen}>
+      {folderContextMenu ? (
+        <div
+          className="fixed inset-0 z-50"
+          onClick={() => setFolderContextMenu(null)}
+          onContextMenu={(event) => {
+            event.preventDefault()
+            setFolderContextMenu(null)
+          }}
+        >
+          <div
+            className="absolute min-w-[150px] rounded-md border border-[#dce3ed] bg-white p-1 shadow-lg"
+            style={{ left: folderContextMenu.x, top: folderContextMenu.y }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="block w-full rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
+              onClick={() => {
+                void startRename(folderContextMenu.folderPath)
+                setFolderContextMenu(null)
+              }}
+            >
+              Duzenle
+            </button>
+            {canCloneFolder(folderContextMenu.folderPath) ? (
+              <button
+                type="button"
+                className="block w-full rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
+                onClick={() => {
+                  void cloneFolder(folderContextMenu.folderPath)
+                  setFolderContextMenu(null)
+                }}
+              >
+                Klonla
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="block w-full rounded px-2 py-1.5 text-left text-xs text-rose-600 hover:bg-rose-50"
+              onClick={() => {
+                setPendingDeleteFolder(folderContextMenu.folderPath)
+                setDeleteFolderModalOpen(true)
+                setFolderContextMenu(null)
+              }}
+            >
+              Sil
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <Dialog
+        open={deleteFolderModalOpen}
+        onOpenChange={(open) => {
+          setDeleteFolderModalOpen(open)
+          if (!open) setPendingDeleteFolder(null)
+        }}
+      >
         <DialogContent className="bg-white border-[#dce3ed] max-w-md">
           <DialogHeader>
             <DialogTitle className="text-slate-900">Emin misiniz?</DialogTitle>

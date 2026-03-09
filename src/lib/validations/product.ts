@@ -9,7 +9,7 @@ const customAttributeSchema = z.object({
 export const productFormSchema = z.object({
     title: z.string().min(1, "Title is required"),
     slug: z.string().min(1, "Slug is required").regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Invalid slug format"),
-    sku: z.string().optional(),
+    sku: z.string().trim().min(1, "SKU is required"),
     description: z.string().optional(),
     price: z.coerce.number().min(0, "Price must be positive"),
     compareAtPrice: z.coerce.number().min(0).optional(),
@@ -18,7 +18,7 @@ export const productFormSchema = z.object({
     isPublished: z.boolean().default(false),
     isFeatured: z.boolean().default(false),
     featuredImage: z.string().optional(),
-    images: z.array(z.string()).default([]), // URLs
+    images: z.array(z.string()).min(1, "At least one image is required").default([]), // URLs
 
     // Relations (IDs)
     categoryIds: z.array(z.string()).min(1, "At least one category is required").default([]),

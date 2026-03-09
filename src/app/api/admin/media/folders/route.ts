@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { revalidatePath } from "next/cache"
-import { rm, rename } from "fs/promises"
+import { mkdir, readdir, rm, rename, stat } from "fs/promises"
 import path from "path"
 import { z } from "zod"
 import { prisma } from "@/lib/db"
 import { sanitizeFolderPath, getManagedMediaRoots } from "@/lib/media-folders"
+import { ensureMediaRegistryTable } from "@/lib/media-registry"
 import { parseProductImages } from "@/lib/product-images"
 import { getStorageProvider } from "@/lib/storage/provider"
 
@@ -19,6 +20,11 @@ const renameFolderSchema = z.object({
   folder: z.string().min(1, "Folder is required"),
   newName: z.string().min(1, "New name is required").optional(),
   targetParent: z.string().min(1, "Target parent is required").optional(),
+})
+
+const cloneFolderSchema = z.object({
+  action: z.literal("clone"),
+  folder: z.string().min(1, "Folder is required"),
 })
 
 function escapeRegExp(input: string): string {
@@ -79,6 +85,22 @@ async function replaceFolderUrlReferences(oldFolder: string, nextFolder: string)
       data: { avatarUrl: `${nextPrefix}${profile.avatarUrl.slice(oldPrefix.length)}` },
     })
   }
+
+  await ensureMediaRegistryTable()
+  await prisma.$executeRawUnsafe(
+    `
+      UPDATE "MediaAsset"
+      SET "image_url" = REPLACE("image_url", ?, ?),
+          "object_key" = REPLACE("object_key", ?, ?)
+      WHERE "image_url" LIKE ? OR "object_key" LIKE ?
+    `,
+    oldPrefix,
+    nextPrefix,
+    `${oldFolder}/`,
+    `${nextFolder}/`,
+    `${oldPrefix}%`,
+    `${oldFolder}/%`
+  )
 }
 
 export async function DELETE(req: NextRequest) {
@@ -178,6 +200,10 @@ export async function PATCH(req: NextRequest) {
     if (safeFolder === nextFolder) {
       return NextResponse.json({ success: true, folder: nextFolder })
     }
+    const targetExists = await stat(toPath).then(() => true).catch(() => false)
+    if (targetExists) {
+      return NextResponse.json({ error: "A folder with the same name already exists in the target location" }, { status: 409 })
+    }
 
     await rename(fromPath, toPath)
     await replaceFolderUrlReferences(safeFolder, nextFolder)
@@ -188,5 +214,75 @@ export async function PATCH(req: NextRequest) {
   } catch (error) {
     console.error("PATCH /api/admin/media/folders error:", error)
     return NextResponse.json({ error: "Failed to rename folder" }, { status: 500 })
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json().catch(() => ({}))
+    const parsed = cloneFolderSchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 })
+    }
+
+    const sourceFolder = sanitizeFolderPath(parsed.data.folder)
+    if (!sourceFolder) {
+      return NextResponse.json({ error: "Invalid folder name" }, { status: 400 })
+    }
+    const parts = sourceFolder.split("/").filter(Boolean)
+    const sourceLeaf = parts[parts.length - 1] || ""
+    const parentPath = parts.slice(0, -1).join("/")
+    const match = sourceLeaf.match(/^(.*?)(\d+)$/)
+    if (!match) {
+      return NextResponse.json({ error: "Folder name must end with a number for clone" }, { status: 400 })
+    }
+    const [, prefix, digits] = match
+
+    const topCategories = await prisma.category.findMany({
+      where: { parentId: null },
+      select: { slug: true },
+    })
+    const protectedRoots = new Set([
+      ...getManagedMediaRoots().map((item) => sanitizeFolderPath(item)).filter(Boolean),
+      ...topCategories.map((item) => sanitizeFolderPath(item.slug)).filter(Boolean),
+    ])
+    const topSource = sourceFolder.split("/")[0] || ""
+    if (!protectedRoots.has(topSource)) {
+      return NextResponse.json({ error: "Folder is outside allowed roots" }, { status: 400 })
+    }
+
+    const uploadRoot = path.join(process.cwd(), "public", "uploads")
+    const parentAbs = path.join(uploadRoot, parentPath)
+    const sourceAbs = path.join(uploadRoot, sourceFolder)
+    if (!sourceAbs.startsWith(uploadRoot) || !parentAbs.startsWith(uploadRoot)) {
+      return NextResponse.json({ error: "Invalid folder path" }, { status: 400 })
+    }
+
+    const siblings = await readdir(parentAbs, { withFileTypes: true }).catch(() => [])
+    let maxNumber = Number.parseInt(digits, 10)
+    for (const entry of siblings) {
+      if (!entry.isDirectory()) continue
+      const siblingMatch = entry.name.match(/^(.*?)(\d+)$/)
+      if (!siblingMatch) continue
+      if (siblingMatch[1] !== prefix) continue
+      const siblingNumber = Number.parseInt(siblingMatch[2], 10)
+      if (siblingNumber > maxNumber) maxNumber = siblingNumber
+    }
+
+    const nextLeaf = `${prefix}${String(maxNumber + 1).padStart(digits.length, "0")}`
+    const targetFolder = parentPath ? `${parentPath}/${nextLeaf}` : nextLeaf
+    const targetAbs = path.join(uploadRoot, targetFolder)
+    if (!targetAbs.startsWith(uploadRoot)) {
+      return NextResponse.json({ error: "Invalid target folder path" }, { status: 400 })
+    }
+
+    await readdir(sourceAbs)
+    await mkdir(targetAbs, { recursive: false })
+    revalidatePath("/dashboard/media")
+    revalidatePath("/dashboard/products")
+    return NextResponse.json({ success: true, folder: targetFolder })
+  } catch (error) {
+    console.error("POST /api/admin/media/folders error:", error)
+    return NextResponse.json({ error: "Failed to clone folder" }, { status: 500 })
   }
 }
