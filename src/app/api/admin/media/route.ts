@@ -61,6 +61,8 @@ const moveAssetSchema = z.object({
   targetFolder: z.string().min(1),
 })
 
+const OPTIMIZED_ROOT = "_optimized"
+
 function fileNameFromUrl(url: string): string {
   try {
     const clean = url.split("?")[0]
@@ -70,11 +72,22 @@ function fileNameFromUrl(url: string): string {
   }
 }
 
+function toLogicalUploadRelativePath(relativePath: string) {
+  const clean = sanitizeFolderPath(relativePath)
+  if (!clean) return ""
+  if (clean === OPTIMIZED_ROOT) return ""
+  if (clean.startsWith(`${OPTIMIZED_ROOT}/`)) {
+    return clean.slice(OPTIMIZED_ROOT.length + 1)
+  }
+  return clean
+}
+
 function extractFolderFromUrl(url: string): string {
   const storage = getStorageProvider()
   const relative = storage.toRelativePath(url)
   if (!relative) return "external"
-  const parts = relative.split("/").filter(Boolean)
+  const logicalRelative = toLogicalUploadRelativePath(relative)
+  const parts = logicalRelative.split("/").filter(Boolean)
   if (parts.length <= 1) return "root"
   return parts.slice(0, -1).join("/") || "root"
 }
@@ -264,7 +277,11 @@ async function listUploadFolders(rootDir: string, relative = ""): Promise<Folder
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
     const childRelative = relative ? `${relative}/${entry.name}` : entry.name
-    folders.push({ name: entry.name, path: childRelative })
+    const logicalPath = toLogicalUploadRelativePath(childRelative)
+    if (logicalPath) {
+      const logicalName = logicalPath.split("/").pop() || logicalPath
+      folders.push({ name: logicalName, path: logicalPath })
+    }
     const nested = await listUploadFolders(rootDir, childRelative)
     folders.push(...nested)
   }
@@ -290,7 +307,8 @@ async function listUploadFiles(rootDir: string, relative = ""): Promise<MediaAss
     const fileStats = await stat(fullPath).catch(() => null)
     if (!fileStats || !fileStats.isFile()) continue
 
-    const folder = childRelative.includes("/") ? childRelative.split("/").slice(0, -1).join("/") : "root"
+    const logicalRelative = toLogicalUploadRelativePath(childRelative)
+    const folder = logicalRelative.includes("/") ? logicalRelative.split("/").slice(0, -1).join("/") : "root"
     assets.push({
       id: `upload:${childRelative}`,
       url: storage.getPublicUrl(childRelative),
