@@ -65,6 +65,17 @@ function normalizePickerAssetUrl(url: string) {
   return value
 }
 
+function extractFolderFromUploadUrl(url: string) {
+  const normalized = getImageUrl(url)
+  const marker = "/uploads/"
+  const idx = normalized.indexOf(marker)
+  if (idx < 0) return null
+  const relative = normalized.slice(idx + marker.length).replace(/^\/+/, "")
+  const parts = relative.split("/").filter(Boolean)
+  if (parts.length < 2) return null
+  return parts.slice(0, -1).join("/")
+}
+
 export function MediaPickerDialog({
   open,
   onOpenChange,
@@ -117,8 +128,10 @@ export function MediaPickerDialog({
       if (!nextFolders.some((folder) => folder.name === uploadFolder)) {
         setUploadFolder(nextFolders[0]?.name || "categories")
       }
+      return { folders: nextFolders, assets: nextAssets }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to fetch media")
+      return null
     } finally {
       setLoading(false)
     }
@@ -454,6 +467,7 @@ export function MediaPickerDialog({
     setUploading(true)
     try {
       const uploadedUrls: string[] = []
+      const uploadedFolders: string[] = []
       for (const file of files) {
         const formData = new FormData()
         formData.append("file", file)
@@ -467,14 +481,32 @@ export function MediaPickerDialog({
           throw new Error(json?.error || "Upload failed")
         }
         uploadedUrls.push(json.url)
+        const resolvedFolder = extractFolderFromUploadUrl(json.url)
+        if (resolvedFolder) uploadedFolders.push(resolvedFolder)
       }
       toast.success(`${uploadedUrls.length} file(s) uploaded`)
-      await loadMedia()
+      setHiddenDeletedUrls((prev) => prev.filter((url) => !uploadedUrls.includes(url)))
+      const refreshed = await loadMedia()
       setTab("library")
-      if (multiple) {
-        setSelectedUrls(uploadedUrls)
-      } else if (uploadedUrls[0]) {
-        setSelectedUrls([uploadedUrls[0]])
+      setSearch("")
+      setSelectedFolder(null)
+      setSelectedRightFolders([])
+
+      const focusFolder = uploadedFolders[0] || uploadFolder
+      const focusTop = focusFolder.split("/")[0] || "all"
+      setActiveFolder(focusTop)
+      setActiveSubfolder(focusFolder === focusTop ? "all" : focusFolder)
+      setUploadFolder(focusFolder)
+      setTargetFolder(focusFolder)
+
+      const assetUrlSet = new Set((refreshed?.assets || []).map((asset) => asset.url))
+      const existingUploaded = uploadedUrls.filter((url) => assetUrlSet.has(url))
+      if (existingUploaded.length === 0) {
+        setSelectedUrls([])
+      } else if (multiple) {
+        setSelectedUrls(existingUploaded)
+      } else {
+        setSelectedUrls([existingUploaded[0]])
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Upload failed")
