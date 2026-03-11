@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/db"
-import { createSessionToken, getAuthCookieName, getSessionMaxAge } from "@/lib/auth"
+import { createSessionToken, getAuthCookieName, getSessionMaxAge, shouldUseSecureCookies } from "@/lib/auth"
 import { verifyPassword } from "@/lib/password"
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  identifier: z.string().min(1),
   password: z.string().min(1),
 })
 
@@ -21,12 +21,27 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const email = parsed.data.email.toLowerCase()
+    const rawIdentifier = parsed.data.identifier.trim()
+    const identifier = rawIdentifier.toLowerCase()
     const password = parsed.data.password
 
-    const user = await prisma.user.findUnique({ where: { email } })
+    const candidates = await prisma.user.findMany({
+      where: {
+        OR: [
+          { email: identifier },
+          { email: { startsWith: `${identifier}@` } },
+          { name: rawIdentifier },
+        ],
+      },
+      take: 10,
+    })
+    const user =
+      candidates.find((item) => item.email.toLowerCase() === identifier) ||
+      candidates.find((item) => (item.name || "").trim().toLowerCase() === identifier) ||
+      candidates.find((item) => item.email.toLowerCase().startsWith(`${identifier}@`)) ||
+      null
     if (!user) {
-      return NextResponse.json({ error: "Email or password is incorrect" }, { status: 401 })
+      return NextResponse.json({ error: `User not found for: ${identifier}` }, { status: 401 })
     }
     if (user.isBlocked) {
       return NextResponse.json({ error: "This account is blocked. Please contact support." }, { status: 403 })
@@ -49,9 +64,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const valid = verifyPassword(user.password, password)
+    const normalizedStoredPassword = String(user.password || "").trim()
+    const normalizedPassword = password.trim()
+    const valid = verifyPassword(normalizedStoredPassword, normalizedPassword)
     if (!valid) {
-      return NextResponse.json({ error: "Email or password is incorrect" }, { status: 401 })
+      return NextResponse.json({ error: "Username/email or password is incorrect" }, { status: 401 })
     }
 
     const adminRoles = new Set(["SUPER_USER", "ADMIN", "EDITOR", "MANAGER", "STAFF"])
@@ -63,10 +80,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Please use the admin login page for this account." }, { status: 403 })
     }
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
-    })
+    try {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      })
+    } catch (error) {
+      console.warn("Login lastLoginAt update skipped:", error)
+    }
 
     const token = createSessionToken({
       id: user.id,
@@ -90,7 +111,7 @@ export async function POST(req: NextRequest) {
     res.cookies.set(getAuthCookieName(targetPortal), token, {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: shouldUseSecureCookies(req.nextUrl.hostname),
       path: "/",
       maxAge: getSessionMaxAge(),
     })

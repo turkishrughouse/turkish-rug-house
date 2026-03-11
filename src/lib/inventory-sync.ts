@@ -25,6 +25,7 @@ type InventorySyncInput = {
     seoKeywords?: string | null
     images: string[]
     customAttributes?: Array<{ name: string; values: string[]; visible: boolean }>
+    suppliers?: Array<{ name: string; number: string; company: string; phone: string; note: string }>
     categories: InventoryCategory[]
   }
 }

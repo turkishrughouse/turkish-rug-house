@@ -1,18 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { useEffect } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
 export function LoginForm() {
-  const [email, setEmail] = useState("")
+  const [identifier, setIdentifier] = useState("")
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
-  useEffect(() => {
-    void fetch("/api/auth/reset-sessions", { method: "POST" })
-  }, [])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -21,7 +17,7 @@ export function LoginForm() {
       const res = await fetch("/api/auth/login?portal=admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ identifier, password }),
       })
       const json = await res.json().catch(() => null as null | { error?: string; redirectTo?: string })
       if (!res.ok) {
@@ -42,14 +38,14 @@ export function LoginForm() {
   return (
     <form onSubmit={submit} className="space-y-4">
       <div className="space-y-2">
-        <label className="text-sm font-medium text-slate-700">Email Address</label>
+        <label className="text-sm font-medium text-slate-700">Email Address or Username</label>
         <Input
-          type="email"
-          name="email"
+          type="text"
+          name="identifier"
           autoComplete="username"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="name@company.com"
+          value={identifier}
+          onChange={(e) => setIdentifier(e.target.value)}
+          placeholder="name@company.com or username"
           className="h-11 bg-white border-[#dce3ed] text-slate-900 placeholder:text-slate-400"
           required
         />

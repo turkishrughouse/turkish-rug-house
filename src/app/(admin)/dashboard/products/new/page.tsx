@@ -21,12 +21,14 @@ export default async function NewProductPage() {
         colors: any[];
         sizes: any[];
         ages: any[];
+        materials: any[];
         categoryAttributeMap?: Record<string, {
             typeIds: string[]
             styleIds: string[]
             colorIds: string[]
             sizeIds: string[]
             ageIds: string[]
+            materialIds: string[]
         }>;
     } = {
         categories: [],
@@ -35,6 +37,7 @@ export default async function NewProductPage() {
         colors: [],
         sizes: [],
         ages: [],
+        materials: [],
         categoryAttributeMap: {}
     }
 

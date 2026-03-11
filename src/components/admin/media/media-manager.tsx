@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   FolderPlus,
   Upload,
@@ -146,9 +146,14 @@ export function MediaManager() {
   const [pendingDeleteFolder, setPendingDeleteFolder] = useState<string | null>(null)
   const [folderPage, setFolderPage] = useState(1)
   const [assetPage, setAssetPage] = useState(1)
+  const selectedUploadFolderRef = useRef(selectedUploadFolder)
 
   const cardSurface =
     "bg-white border border-[#dce3ed] shadow-[0_8px_24px_rgba(15,23,42,0.05)]"
+
+  useEffect(() => {
+    selectedUploadFolderRef.current = selectedUploadFolder
+  }, [selectedUploadFolder])
 
   const loadMedia = useCallback(async () => {
     setLoading(true)
@@ -160,15 +165,16 @@ export function MediaManager() {
       const nextAssets = json?.assets || []
       setFolders(nextFolders)
       setAssets(nextAssets)
-      if (!nextFolders.some((f: Folder) => f.name === selectedUploadFolder)) {
-        setSelectedUploadFolder(nextFolders[0]?.name || "categories")
+      if (!nextFolders.some((f: Folder) => f.name === selectedUploadFolderRef.current)) {
+        const fallbackFolder = nextFolders[0]?.name || "categories"
+        setSelectedUploadFolder((prev) => (prev === fallbackFolder ? prev : fallbackFolder))
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to fetch media")
     } finally {
       setLoading(false)
     }
-  }, [selectedUploadFolder])
+  }, [])
 
   useEffect(() => {
     loadMedia()

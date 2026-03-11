@@ -45,7 +45,7 @@ export function AttributesManager() {
   const [forms, setForms] = useState<Record<string, FormState>>({})
   const [newGroup, setNewGroup] = useState({ name: "", slug: "" })
 
-  const fixedKeys = useMemo(() => new Set(["types", "styles", "colors", "sizes", "ages"]), [])
+  const fixedKeys = useMemo(() => new Set(["types", "styles", "colors", "sizes", "ages", "materials"]), [])
 
   async function load() {
     setLoading(true)
@@ -220,7 +220,7 @@ export function AttributesManager() {
     <div className="space-y-6">
       <div className="rounded-xl border border-[#dce3ed] bg-white p-5">
         <h3 className="text-lg font-semibold text-slate-900">Create New Attribute Group</h3>
-        <p className="text-sm text-slate-600 mt-1">Add custom groups beyond Types, Styles, Colors, Sizes, and Ages.</p>
+        <p className="text-sm text-slate-600 mt-1">Add custom groups beyond Types, Styles, Colors, Sizes, Ages, and Materials.</p>
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
           <Input
             placeholder="Group name (e.g. Materials)"

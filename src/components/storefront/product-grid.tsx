@@ -1,7 +1,7 @@
 
 import Link from "next/link"
 import { ShoppingCart, Search, Shuffle, Heart } from "lucide-react"
-import { parseProductImages } from "@/lib/product-images"
+import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 
 interface Product {
     id: string
@@ -24,8 +24,9 @@ export function ProductGrid({ products }: ProductGridProps) {
     return (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-10">
             {products.map((product) => {
-                const images = parseProductImages(product.images)
-                const mainImage = images[0] || "/placeholder.jpg"
+                const images = parseProductImageRecords(product.images)
+                const mainImage = getProductImageUrl(images[0], "large") || "/placeholder.jpg"
+                const imageAlt = buildProductImageAlt({ title: product.title, fallbackAlt: images[0]?.alt })
                 const stockCount = Math.max(0, product.stockCount ?? 999)
                 const isMarkedOutOfStock = product.isStock === false && stockCount > 0
                 const isSold = stockCount <= 0
@@ -52,7 +53,9 @@ export function ProductGrid({ products }: ProductGridProps) {
                             ) : null}
                             <img
                                 src={mainImage}
-                                alt={product.title}
+                                alt={imageAlt}
+                                loading="lazy"
+                                decoding="async"
                                 className="h-full w-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
                             />
                             {/* Hover Action Bar */}

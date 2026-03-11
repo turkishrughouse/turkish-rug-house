@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
-import { z } from "zod"
+import { buildCategoryPathMap } from "@/lib/category-paths"
 
 export async function GET(req: Request) {
     try {
@@ -34,6 +34,7 @@ export async function GET(req: Request) {
                 catIds.length > 0 ? prisma.category.findMany({ where: { id: { in: catIds } } }) : [],
                 pageIds.length > 0 ? prisma.page.findMany({ where: { id: { in: pageIds } } }) : []
             ])
+            const { pathById } = buildCategoryPathMap(categories)
 
             // 3. Map Data
             const enrichedItems = menu.items.map(item => {
@@ -53,7 +54,7 @@ export async function GET(req: Request) {
                     if (cat) {
                         return {
                             ...baseItem,
-                            url: `/category/${cat.slug}`,
+                            url: pathById.get(cat.id) || `/${cat.slug}`,
                             originalLabel: cat.title
                         }
                     } else {

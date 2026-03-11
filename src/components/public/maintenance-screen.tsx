@@ -7,14 +7,47 @@ type MaintenanceScreenProps = {
   socialLinks?: FooterSocialLink[]
 }
 
-const socialIconMap: Record<string, string> = {
-  instagram: "ig",
-  linkedin: "in",
-  youtube: "yt",
-  facebook: "f",
-  x: "x",
-  tiktok: "tt",
-  pinterest: "p",
+function SocialBrandIcon({ platform }: { platform: FooterSocialLink["platform"] }) {
+  if (platform === "instagram") {
+    return (
+      <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 text-[#E4405F]" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+        <rect x="3" y="3" width="18" height="18" rx="5" />
+        <circle cx="12" cy="12" r="4" />
+        <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
+      </svg>
+    )
+  }
+
+  if (platform === "youtube") {
+    return (
+      <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 text-[#FF0000]" fill="currentColor" aria-hidden="true">
+        <path d="M23 12s0-3.4-.43-5.03a2.6 2.6 0 0 0-1.84-1.84C19.1 4.7 12 4.7 12 4.7s-7.1 0-8.73.43A2.6 2.6 0 0 0 1.43 6.97C1 8.6 1 12 1 12s0 3.4.43 5.03a2.6 2.6 0 0 0 1.84 1.84c1.63.43 8.73.43 8.73.43s7.1 0 8.73-.43a2.6 2.6 0 0 0 1.84-1.84C23 15.4 23 12 23 12z" />
+        <path d="M10 15.5v-7l6 3.5-6 3.5z" fill="#fff" />
+      </svg>
+    )
+  }
+
+  const styleByPlatform: Record<FooterSocialLink["platform"], string> = {
+    facebook: "text-[#1877F2]",
+    x: "text-[#111111]",
+    instagram: "",
+    youtube: "",
+    tiktok: "text-[#00F2EA]",
+    linkedin: "text-[#0A66C2]",
+    pinterest: "text-[#E60023]",
+  }
+
+  const textByPlatform: Record<FooterSocialLink["platform"], string> = {
+    facebook: "f",
+    x: "X",
+    instagram: "",
+    youtube: "",
+    tiktok: "♪",
+    linkedin: "in",
+    pinterest: "P",
+  }
+
+  return <span className={`text-lg font-bold leading-none ${styleByPlatform[platform]}`}>{textByPlatform[platform]}</span>
 }
 
 export function MaintenanceScreen({ title, message, imageUrl, socialLinks = [] }: MaintenanceScreenProps) {
@@ -46,15 +79,15 @@ export function MaintenanceScreen({ title, message, imageUrl, socialLinks = [] }
                       rel="noreferrer"
                       className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-300 text-sm font-semibold uppercase text-slate-500 transition hover:bg-white"
                     >
-                      {socialIconMap[link.platform] || "o"}
+                      <SocialBrandIcon platform={link.platform} />
                     </a>
                   ))
                 ) : (
                   <>
-                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-300 text-sm font-semibold uppercase text-slate-500">ig</span>
-                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-300 text-sm font-semibold uppercase text-slate-500">in</span>
-                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-300 text-sm font-semibold uppercase text-slate-500">yt</span>
-                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-300 text-sm font-semibold uppercase text-slate-500">f</span>
+                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-300 transition hover:bg-white"><SocialBrandIcon platform="instagram" /></span>
+                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-300 transition hover:bg-white"><SocialBrandIcon platform="linkedin" /></span>
+                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-300 transition hover:bg-white"><SocialBrandIcon platform="youtube" /></span>
+                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-300 transition hover:bg-white"><SocialBrandIcon platform="facebook" /></span>
                   </>
                 )}
               </div>

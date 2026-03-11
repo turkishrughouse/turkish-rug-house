@@ -2,10 +2,7 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Eye, Save, RotateCcw, Monitor, Smartphone, Tablet } from "lucide-react"
 import { PreviewProductCard } from "@/components/admin/preview/product-card"
 import { PREVIEW_PRODUCTS } from "@/lib/mock-data"

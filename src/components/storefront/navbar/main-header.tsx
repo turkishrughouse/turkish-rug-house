@@ -40,11 +40,11 @@ const mapMenuTree = (items: unknown): MobileMenuItem[] => {
 const mapCategoryTreeToMenu = (items: unknown): MobileMenuItem[] => {
     if (!Array.isArray(items)) return []
     return items.map((item, index) => {
-        const node = item as { id?: string; title?: string; slug?: string; children?: unknown[] }
+        const node = item as { id?: string; title?: string; slug?: string; path?: string; children?: unknown[] }
         return {
             id: node.id || `cat-${index}`,
             label: node.title || "Category",
-            url: node.slug ? `/category/${node.slug}` : "#",
+            url: typeof node.path === "string" && node.path.length > 0 ? node.path : node.slug ? `/${node.slug}` : "#",
             children: mapCategoryTreeToMenu(node.children || []),
         }
     })

@@ -27,6 +27,7 @@ import {
     Package,
     Truck,
     Link2,
+    Building2,
     SlidersHorizontal,
     Settings,
     Sparkles,
@@ -70,6 +71,7 @@ import {
 import { cn } from "@/lib/utils"
 import { MediaPickerDialog } from "@/components/admin/media/media-picker-dialog"
 import type { AdminLanguage } from "@/lib/admin/i18n"
+import { parseProductImages } from "@/lib/product-images"
 
 type SelectOption = { id: string, name?: string, title?: string }
 
@@ -166,7 +168,7 @@ function DropdownMultiSelect({
                     style={{ top: menuStyle.top, left: menuStyle.left, width: menuStyle.width }}
                 >
                     {options.length === 0 ? (
-                        <div className="px-2 py-2 text-xs text-slate-500">No options for selected category</div>
+                        <div className="px-2 py-2 text-xs text-slate-500">No global options defined yet</div>
                     ) : (
                         options.map((opt) => (
                             <label
@@ -206,6 +208,7 @@ type CategoryAttributeMap = Record<string, {
     colorIds: string[]
     sizeIds: string[]
     ageIds: string[]
+    materialIds: string[]
 }>
 
 interface ProductFormProps {
@@ -218,13 +221,16 @@ interface ProductFormProps {
         colors: SelectOption[]
         sizes: SelectOption[]
         ages: SelectOption[]
+        materials: SelectOption[]
         categoryAttributeMap?: CategoryAttributeMap
     }
 }
 
 type ProductRelation = { id: string }
 type CustomAttributeInput = { name: string; values: string[]; visible: boolean }
+type SupplierInput = { name: string; number: string; company: string; phone: string; note: string }
 const EMPTY_CUSTOM_ATTRIBUTES: CustomAttributeInput[] = []
+const EMPTY_SUPPLIERS: SupplierInput[] = []
 
 type ProductFormInitialData = {
     id: string
@@ -249,10 +255,12 @@ type ProductFormInitialData = {
     colors: ProductRelation[]
     sizes: ProductRelation[]
     ages: ProductRelation[]
+    materials: ProductRelation[]
     customAttributes?: CustomAttributeInput[]
+    suppliers?: SupplierInput[]
 }
 
-type ProductDataTab = "general" | "inventory" | "shipping" | "linked" | "attributes" | "advanced" | "more"
+type ProductDataTab = "general" | "inventory" | "shipping" | "linked" | "supplier" | "attributes" | "advanced" | "more"
 type ProductMediaPickerTarget = "featured" | "gallery"
 
 const PRODUCT_DATA_TABS: Array<{
@@ -264,6 +272,7 @@ const PRODUCT_DATA_TABS: Array<{
     { key: "inventory", label: { en: "Inventory", tr: "Envanter" }, icon: Package },
     { key: "shipping", label: { en: "Shipping", tr: "Kargo" }, icon: Truck },
     { key: "linked", label: { en: "Linked Products", tr: "Bagli Ürünler" }, icon: Link2 },
+    { key: "supplier", label: { en: "Suppliers", tr: "Tedarikciler" }, icon: Building2 },
     { key: "attributes", label: { en: "Attributes", tr: "Özellikler" }, icon: SlidersHorizontal },
     { key: "advanced", label: { en: "Advanced", tr: "Gelismis" }, icon: Settings },
     { key: "more", label: { en: "Get more options", tr: "Daha fazla seçenek" }, icon: Sparkles },
@@ -275,34 +284,14 @@ function filterOptionsByCategory(
     map: CategoryAttributeMap | undefined,
     attributeKey: keyof CategoryAttributeMap[string]
 ) {
-    if (selectedCategoryIds.length === 0 || !map) return allOptions
-
-    const allowedIds = new Set<string>()
-    let hasMappedCategory = false
-
-    selectedCategoryIds.forEach((categoryId) => {
-        const categoryMap = map[categoryId]
-        if (!categoryMap) return
-        hasMappedCategory = true
-        categoryMap[attributeKey].forEach((id) => allowedIds.add(id))
-    })
-
-    if (!hasMappedCategory || allowedIds.size === 0) return allOptions
-
-    return allOptions.filter((item) => allowedIds.has(item.id))
+    void selectedCategoryIds
+    void map
+    void attributeKey
+    return allOptions
 }
 
 function parseImageList(value: unknown): string[] {
-    if (!value) return []
-    if (Array.isArray(value)) return value.filter(Boolean)
-    if (typeof value !== "string") return []
-
-    try {
-        const parsed = JSON.parse(value)
-        return Array.isArray(parsed) ? parsed.filter(Boolean) : []
-    } catch {
-        return []
-    }
+    return parseProductImages(value)
 }
 
 function toSlug(value: string): string {
@@ -486,24 +475,38 @@ function RichTextEditor({
         if (!visualRef.current) return
         const selection = window.getSelection()
         visualRef.current.focus()
-        if (selection && savedRangeRef.current) {
-            selection.removeAllRanges()
-            selection.addRange(savedRangeRef.current)
+        let range: Range | null = savedRangeRef.current ? savedRangeRef.current.cloneRange() : null
+
+        if (!range && selection && selection.rangeCount > 0) {
+            const currentRange = selection.getRangeAt(0)
+            if (visualRef.current.contains(currentRange.commonAncestorContainer)) {
+                range = currentRange.cloneRange()
+            }
         }
 
-        const inserted = document.execCommand("insertHTML", false, html)
-        if (!inserted && selection && selection.rangeCount > 0) {
-            const range = selection.getRangeAt(0)
-            range.deleteContents()
-            const fragment = range.createContextualFragment(html)
-            const lastNode = fragment.lastChild
-            range.insertNode(fragment)
+        if (!range) {
+            range = document.createRange()
+            range.selectNodeContents(visualRef.current)
+            range.collapse(false)
+        }
+
+        range.deleteContents()
+        const fragment = range.createContextualFragment(html)
+        const lastNode = fragment.lastChild
+        range.insertNode(fragment)
+
+        if (selection) {
+            const nextRange = document.createRange()
             if (lastNode) {
-                range.setStartAfter(lastNode)
-                range.collapse(true)
-                selection.removeAllRanges()
-                selection.addRange(range)
+                nextRange.setStartAfter(lastNode)
+            } else {
+                nextRange.selectNodeContents(visualRef.current)
+                nextRange.collapse(false)
             }
+            nextRange.collapse(true)
+            selection.removeAllRanges()
+            selection.addRange(nextRange)
+            savedRangeRef.current = nextRange.cloneRange()
         }
         syncContent()
     }
@@ -735,6 +738,12 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         const currentSlug = (initialData.slug || "").trim()
         return !currentSlug || currentSlug === initialTitleSlug
     })
+    const [isSeoTitleAutoSync, setIsSeoTitleAutoSync] = useState(() => {
+        if (!initialData) return true
+        const currentSeoTitle = (initialData.seoTitle || "").trim()
+        const currentTitle = (initialData.title || "").trim()
+        return !currentSeoTitle || currentSeoTitle === currentTitle
+    })
     const [activeProductDataTab, setActiveProductDataTab] = useState<ProductDataTab>("general")
     const [productType, setProductType] = useState("simple")
     const [isVirtual, setIsVirtual] = useState(false)
@@ -755,6 +764,8 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
     const [imagePreviewOpen, setImagePreviewOpen] = useState(false)
     const [imagePreviewIndex, setImagePreviewIndex] = useState(0)
     const [tagInput, setTagInput] = useState("")
+    const [supplierDialogOpen, setSupplierDialogOpen] = useState(false)
+    const [supplierDraft, setSupplierDraft] = useState<SupplierInput>({ name: "", number: "", company: "", phone: "", note: "" })
 
     const defaultValues: Partial<ProductFormValues> = initialData ? {
         title: initialData.title,
@@ -775,6 +786,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         seoDescription: initialData.seoDescription || "",
         seoKeywords: initialData.seoKeywords || "",
         customAttributes: initialData.customAttributes || [],
+        suppliers: initialData.suppliers || [],
         images: initialImages,
         categoryIds: initialData.categories.map((c) => c.id),
         typeIds: initialData.types.map((t) => t.id),
@@ -782,6 +794,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         colorIds: initialData.colors.map((c) => c.id),
         sizeIds: initialData.sizes.map((s) => s.id),
         ageIds: initialData.ages.map((a) => a.id),
+        materialIds: initialData.materials.map((m) => m.id),
     } : {
         title: "",
         slug: "",
@@ -797,6 +810,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         seoDescription: "",
         seoKeywords: "",
         customAttributes: [],
+        suppliers: [],
         images: [],
         categoryIds: [],
         typeIds: [],
@@ -804,6 +818,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         colorIds: [],
         sizeIds: [],
         ageIds: [],
+        materialIds: [],
     }
 
     const form = useForm<ProductFormInput, unknown, ProductFormValues>({
@@ -818,8 +833,22 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
     const seoKeywordsValue = watch("seoKeywords") || ""
 
     const customAttributeItems = watch("customAttributes") ?? EMPTY_CUSTOM_ATTRIBUTES
+    const supplierItems = watch("suppliers") ?? EMPTY_SUPPLIERS
     const selectedCategoryIds = watch("categoryIds")
-    const selectedAttributeCount = customAttributeItems.length
+    const selectedTypeIds = watch("typeIds") || []
+    const selectedStyleIds = watch("styleIds") || []
+    const selectedColorIds = watch("colorIds") || []
+    const selectedSizeIds = watch("sizeIds") || []
+    const selectedAgeIds = watch("ageIds") || []
+    const selectedMaterialIds = watch("materialIds") || []
+    const selectedAttributeCount =
+        customAttributeItems.length +
+        selectedTypeIds.length +
+        selectedStyleIds.length +
+        selectedColorIds.length +
+        selectedSizeIds.length +
+        selectedAgeIds.length +
+        selectedMaterialIds.length
     const descriptionValue = watch("description") || ""
     const shortDescriptionValue = watch("seoDescription") || ""
     const tagItems = useMemo(
@@ -847,16 +876,51 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         if (!firstCategoryId) return ""
         return categoryPathMap.get(firstCategoryId) || ""
     }, [categoryPathMap, selectedCategoryIds])
-    const googlePreviewTitle = (seoTitleValue || title || tx("Product title preview", "Ürün başlığı önizleme")).trim().slice(0, 60)
+    const resolvedSeoTitle = (seoTitleValue || title || tx("Product title preview", "Ürün başlığı önizleme")).trim()
+    const previewDescriptionSource = stripHtmlPreview(descriptionValue || tx("Product description preview", "Ürün açıklaması önizleme"))
+    const googlePreviewTitle = resolvedSeoTitle.slice(0, 60)
     const googlePreviewUrl = `https://turkishrughouse.com/product/${slugValue || "product-slug"}`
-    const googlePreviewDescription = stripHtmlPreview(shortDescriptionValue || descriptionValue || tx("Product description preview", "Ürün açıklaması önizleme"))
-        .slice(0, 160)
+    const googlePreviewDescription = previewDescriptionSource.slice(0, 160)
+    const googlePreviewTitleLength = resolvedSeoTitle.length
+    const googlePreviewDescriptionLength = previewDescriptionSource.length
+    const availableTypeOptions = useMemo(
+        () => filterOptionsByCategory(options.types, selectedCategoryIds || [], options.categoryAttributeMap, "typeIds"),
+        [options.types, options.categoryAttributeMap, selectedCategoryIds]
+    )
+    const availableStyleOptions = useMemo(
+        () => filterOptionsByCategory(options.styles, selectedCategoryIds || [], options.categoryAttributeMap, "styleIds"),
+        [options.styles, options.categoryAttributeMap, selectedCategoryIds]
+    )
+    const availableColorOptions = useMemo(
+        () => filterOptionsByCategory(options.colors, selectedCategoryIds || [], options.categoryAttributeMap, "colorIds"),
+        [options.colors, options.categoryAttributeMap, selectedCategoryIds]
+    )
+    const availableSizeOptions = useMemo(
+        () => filterOptionsByCategory(options.sizes, selectedCategoryIds || [], options.categoryAttributeMap, "sizeIds"),
+        [options.sizes, options.categoryAttributeMap, selectedCategoryIds]
+    )
+    const availableAgeOptions = useMemo(
+        () => filterOptionsByCategory(options.ages, selectedCategoryIds || [], options.categoryAttributeMap, "ageIds"),
+        [options.ages, options.categoryAttributeMap, selectedCategoryIds]
+    )
+    const availableMaterialOptions = useMemo(
+        () => filterOptionsByCategory(options.materials, selectedCategoryIds || [], options.categoryAttributeMap, "materialIds"),
+        [options.materials, options.categoryAttributeMap, selectedCategoryIds]
+    )
 
     useEffect(() => {
         if (!isSlugAutoSync) return
         const nextSlug = toSlug(title || "")
+        if ((form.getValues("slug") || "") === nextSlug) return
         setValue("slug", nextSlug, { shouldValidate: true })
-    }, [title, isSlugAutoSync, setValue])
+    }, [title, isSlugAutoSync, form, setValue])
+
+    useEffect(() => {
+        if (!isSeoTitleAutoSync) return
+        const nextSeoTitle = title || ""
+        if ((form.getValues("seoTitle") || "") === nextSeoTitle) return
+        setValue("seoTitle", nextSeoTitle, { shouldValidate: true, shouldDirty: true })
+    }, [title, isSeoTitleAutoSync, form, setValue])
 
     const handleCategoryCreated = (newCategory: Category) => {
         setCategories((prev) => [...prev, newCategory])
@@ -880,6 +944,38 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         const current = form.getValues("customAttributes") || []
         const next = current.filter((_, idx) => idx !== index)
         setValue("customAttributes", next, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
+    }
+
+    const addSupplier = () => {
+        const name = (supplierDraft.name || "").trim()
+        const number = (supplierDraft.number || "").trim().toUpperCase()
+        const company = (supplierDraft.company || "").trim()
+        const phone = (supplierDraft.phone || "").trim()
+        const note = (supplierDraft.note || "").trim()
+        if (!name && !company && !number) {
+            toast.error(tx("Supplier name, company, or number is required", "Tedarikçi adı, şirket veya number zorunlu"))
+            return
+        }
+        const current = form.getValues("suppliers") || []
+        setValue("suppliers", [
+            ...current,
+            {
+                name,
+                number,
+                company,
+                phone,
+                note,
+            },
+        ], { shouldDirty: true, shouldTouch: true, shouldValidate: true })
+        setSupplierDraft({ name: "", number: "", company: "", phone: "", note: "" })
+        setSupplierDialogOpen(false)
+        toast.success(tx("Supplier added", "Tedarikçi eklendi"))
+    }
+
+    const removeSupplier = (index: number) => {
+        const current = form.getValues("suppliers") || []
+        const next = current.filter((_, idx) => idx !== index)
+        setValue("suppliers", next, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
     }
 
     const syncImageState = (nextFeatured: string | null, nextGallery: string[]) => {
@@ -933,6 +1029,15 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                 visible: item.visible !== false,
             }))
             .filter((item) => item.name.length > 0 && item.values.length > 0)
+        data.suppliers = (data.suppliers || [])
+            .map((item) => ({
+                name: (item.name || "").trim(),
+                number: (item.number || "").trim().toUpperCase(),
+                company: (item.company || "").trim(),
+                phone: (item.phone || "").trim(),
+                note: (item.note || "").trim(),
+            }))
+            .filter((item) => item.name.length > 0 || item.company.length > 0 || item.number.length > 0)
 
         if (!data.slug && data.title) {
             data.slug = toSlug(data.title)
@@ -1348,8 +1453,109 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                         </div>
                                     ) : null}
 
+                                    {activeProductDataTab === "supplier" ? (
+                                        <div className="space-y-5">
+                                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                                <div>
+                                                    <h3 className="text-base font-semibold text-slate-900">{tx("Suppliers", "Tedarikçiler")}</h3>
+                                                    <p className="mt-1 text-sm text-slate-500">{tx("Supplier records stay only in admin. Quantity is tracked in settings.", "Tedarikçi kayıtları sadece adminde kalır. Quantity bilgisi settings tarafında takip edilir.")}</p>
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    className="rounded-sm bg-[#2271b1] text-white hover:bg-[#135e96]"
+                                                    onClick={() => setSupplierDialogOpen(true)}
+                                                >
+                                                    {tx("Add supplier", "Tedarikçi Ekle")}
+                                                </Button>
+                                            </div>
+
+                                            {supplierItems.length === 0 ? (
+                                                <div className="rounded-sm border border-dashed border-[#c3c4c7] bg-[#f6f7f7] px-4 py-6 text-sm text-slate-500">
+                                                    {tx("No supplier added yet.", "Henüz tedarikçi eklenmedi.")}
+                                                </div>
+                                            ) : (
+                                                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                                    {supplierItems.map((supplier, index) => (
+                                                        <div key={`${supplier.name}-${index}`} className="rounded-sm border border-[#dcdcde] bg-[#f8fafc] p-4">
+                                                            <div className="flex items-start justify-between gap-3">
+                                                                <div>
+                                                                    <h4 className="text-sm font-semibold text-slate-900">{supplier.company || supplier.name || supplier.number || tx("Company not set", "Şirket belirtilmedi")}</h4>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    className="text-xs font-medium text-red-600 hover:underline"
+                                                                    onClick={() => removeSupplier(index)}
+                                                                >
+                                                                    {tx("Remove", "Kaldır")}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : null}
+
                                     {activeProductDataTab === "attributes" ? (
                                         <div className="space-y-5">
+                                            <div className="rounded-sm border border-[#dcdcde] bg-white">
+                                                <div className="border-b border-[#dcdcde] px-4 py-3">
+                                                    <h3 className="text-base font-semibold text-slate-900">{tx("Storefront filters", "Storefront filtreleri")}</h3>
+                                                    <p className="mt-1 text-sm text-slate-500">
+                                                        {tx("These values feed storefront category filtering without changing the current product form layout.", "Bu değerler mevcut ürün form düzenini değiştirmeden storefront kategori filtrelerini besler.")}
+                                                    </p>
+                                                </div>
+                                                <div className="grid gap-4 p-4 md:grid-cols-2">
+                                                    <DropdownMultiSelect
+                                                        label={tx("Type", "Tip")}
+                                                        options={availableTypeOptions}
+                                                        value={selectedTypeIds}
+                                                        onChange={(val) => setValue("typeIds", val, { shouldDirty: true, shouldTouch: true, shouldValidate: true })}
+                                                        placeholder={tx("Select type", "Tip seç")}
+                                                        error={errors.typeIds?.message as string | undefined}
+                                                    />
+                                                    <DropdownMultiSelect
+                                                        label={tx("Style", "Stil")}
+                                                        options={availableStyleOptions}
+                                                        value={selectedStyleIds}
+                                                        onChange={(val) => setValue("styleIds", val, { shouldDirty: true, shouldTouch: true, shouldValidate: true })}
+                                                        placeholder={tx("Select style", "Stil seç")}
+                                                        error={errors.styleIds?.message as string | undefined}
+                                                    />
+                                                    <DropdownMultiSelect
+                                                        label={tx("Color", "Renk")}
+                                                        options={availableColorOptions}
+                                                        value={selectedColorIds}
+                                                        onChange={(val) => setValue("colorIds", val, { shouldDirty: true, shouldTouch: true, shouldValidate: true })}
+                                                        placeholder={tx("Select color", "Renk seç")}
+                                                        error={errors.colorIds?.message as string | undefined}
+                                                    />
+                                                    <DropdownMultiSelect
+                                                        label={tx("Size", "Boyut")}
+                                                        options={availableSizeOptions}
+                                                        value={selectedSizeIds}
+                                                        onChange={(val) => setValue("sizeIds", val, { shouldDirty: true, shouldTouch: true, shouldValidate: true })}
+                                                        placeholder={tx("Select size", "Boyut seç")}
+                                                        error={errors.sizeIds?.message as string | undefined}
+                                                    />
+                                                    <DropdownMultiSelect
+                                                        label={tx("Age", "Yaş")}
+                                                        options={availableAgeOptions}
+                                                        value={selectedAgeIds}
+                                                        onChange={(val) => setValue("ageIds", val, { shouldDirty: true, shouldTouch: true, shouldValidate: true })}
+                                                        placeholder={tx("Select age", "Yaş seç")}
+                                                        error={errors.ageIds?.message as string | undefined}
+                                                    />
+                                                    <DropdownMultiSelect
+                                                        label={tx("Material", "Malzeme")}
+                                                        options={availableMaterialOptions}
+                                                        value={selectedMaterialIds}
+                                                        onChange={(val) => setValue("materialIds", val, { shouldDirty: true, shouldTouch: true, shouldValidate: true })}
+                                                        placeholder={tx("Select material", "Malzeme seç")}
+                                                        error={errors.materialIds?.message as string | undefined}
+                                                    />
+                                                </div>
+                                            </div>
                                             <div className="rounded-sm border border-[#dcdcde] bg-[#f6f7f7] p-4 text-sm text-slate-600">
                                                 {tx("Add descriptive pieces of information customers can see on the product page, such as Material, Size, or Origin.", "Müşterilerin ürün sayfasında göreceği açıklayıcı bilgileri ekleyin; örneğin Malzeme, Boyut veya Köken.")}
                                             </div>
@@ -1458,6 +1664,14 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                     <p className="truncate text-[20px] leading-6 text-[#1a0dab]">{googlePreviewTitle}</p>
                                     <p className="mt-1 truncate text-sm text-[#006621]">{googlePreviewUrl}</p>
                                     <p className="mt-1 text-sm leading-5 text-[#4d5156]">{googlePreviewDescription}</p>
+                                </div>
+                                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                    <p className="rounded-sm border border-[#dcdcde] bg-[#f6f7f7] px-3 py-2 text-xs text-slate-600">
+                                        {tx("Title length", "Başlık uzunluğu")}: <span className="font-semibold text-slate-900">{googlePreviewTitleLength}</span> / 50–60
+                                    </p>
+                                    <p className="rounded-sm border border-[#dcdcde] bg-[#f6f7f7] px-3 py-2 text-xs text-slate-600">
+                                        {tx("Description length", "Açıklama uzunluğu")}: <span className="font-semibold text-slate-900">{googlePreviewDescriptionLength}</span> / 150–160
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -1730,7 +1944,19 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                             <div className="space-y-4 p-4">
                                 <div className="space-y-1">
                                     <Label className="text-xs font-medium uppercase tracking-wide text-slate-600">{tx("Meta title", "Meta başlık")}</Label>
-                                    <Input {...register("seoTitle")} className="h-10 rounded-sm border-[#8c8f94]" placeholder={tx("SEO title for search engines", "Arama motorları için SEO başlığı")} />
+                                    <Input
+                                        value={seoTitleValue}
+                                        onChange={(event) => {
+                                            const nextValue = event.target.value
+                                            setValue("seoTitle", nextValue, { shouldValidate: true, shouldDirty: true, shouldTouch: true })
+                                            setIsSeoTitleAutoSync(nextValue.trim().length === 0 || nextValue.trim() === (title || "").trim())
+                                        }}
+                                        className="h-10 rounded-sm border-[#8c8f94]"
+                                        placeholder={tx("SEO title for search engines", "Arama motorları için SEO başlığı")}
+                                    />
+                                    <p className="text-xs text-slate-500">
+                                        {tx("If left empty, search preview uses the product title instantly.", "Boş bırakılırsa arama önizlemesi ürün başlığını anında kullanır.")}
+                                    </p>
                                 </div>
                                 <div className="space-y-1">
                                     <Label className="text-xs font-medium uppercase tracking-wide text-slate-600">{tx("Keywords / notes", "Anahtar kelimeler / notlar")}</Label>
@@ -1741,7 +1967,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                     />
                                 </div>
                                 <p className="rounded-sm border border-[#dcdcde] bg-[#f6f7f7] px-3 py-2 text-xs text-slate-500">
-                                    {tx("Meta description currently uses Product short description.", "Meta açıklama şu an ürün kısa açıklamasını kullanır.")}
+                                    {tx("Meta description preview uses the main product description, not the short description.", "Meta açıklama önizlemesi kısa açıklamayı değil ana ürün açıklamasını kullanır.")}
                                 </p>
                             </div>
                         </div>
@@ -1808,6 +2034,48 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                 }}
             />
         ) : null}
+        <Dialog open={supplierDialogOpen} onOpenChange={setSupplierDialogOpen}>
+            <DialogContent className="sm:max-w-[520px]">
+                <DialogHeader>
+                    <DialogTitle>{tx("Add supplier", "Tedarikçi Ekle")}</DialogTitle>
+                    <DialogDescription>{tx("Supplier data stays only in the admin panel.", "Tedarikçi verisi sadece admin panelinde kalır.")}</DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-2">
+                    <div className="space-y-1.5">
+                        <Label>{tx("Supplier name", "Tedarikçi adı")}</Label>
+                        <Input value={supplierDraft.name} onChange={(event) => setSupplierDraft((prev) => ({ ...prev, name: event.target.value }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label>{tx("Number", "Number")}</Label>
+                        <Input value={supplierDraft.number} onChange={(event) => setSupplierDraft((prev) => ({ ...prev, number: event.target.value.toUpperCase() }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label>{tx("Company", "Şirket")}</Label>
+                        <Input value={supplierDraft.company} onChange={(event) => setSupplierDraft((prev) => ({ ...prev, company: event.target.value }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label>{tx("Phone", "Telefon")}</Label>
+                        <Input value={supplierDraft.phone} onChange={(event) => setSupplierDraft((prev) => ({ ...prev, phone: event.target.value }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label>{tx("Note", "Not")}</Label>
+                        <textarea
+                            value={supplierDraft.note}
+                            onChange={(event) => setSupplierDraft((prev) => ({ ...prev, note: event.target.value }))}
+                            className="min-h-[110px] w-full rounded-sm border border-[#8c8f94] px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#2271b1]"
+                        />
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setSupplierDialogOpen(false)}>
+                        {tx("Cancel", "İptal")}
+                    </Button>
+                    <Button type="button" onClick={addSupplier}>
+                        {tx("Add supplier", "Tedarikçi Ekle")}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
         <Dialog open={imagePreviewOpen} onOpenChange={setImagePreviewOpen}>
             <DialogContent className="!left-1/2 !top-1/2 !translate-x-[-50%] !translate-y-[-50%] w-[90vw] max-w-5xl border-none bg-black/95 p-0 text-white">
                 <div className="relative flex min-h-[70vh] items-center justify-center px-16 py-10">

@@ -1,21 +1,21 @@
-import { NextResponse } from "next/server"
-import { getAuthCookieName, getLegacyAuthCookieName } from "@/lib/auth"
+import { NextRequest, NextResponse } from "next/server"
+import { getAuthCookieName, getLegacyAuthCookieName, shouldUseSecureCookies } from "@/lib/auth"
 
-function clearCookie(res: NextResponse, cookieName: string) {
+function clearCookie(res: NextResponse, cookieName: string, secure: boolean) {
   res.cookies.set(cookieName, "", {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure,
     path: "/",
     maxAge: 0,
   })
 }
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   const res = NextResponse.json({ success: true })
-  clearCookie(res, getAuthCookieName("admin"))
-  clearCookie(res, getAuthCookieName("customer"))
-  clearCookie(res, getLegacyAuthCookieName())
+  const secure = shouldUseSecureCookies(req.nextUrl.hostname)
+  clearCookie(res, getAuthCookieName("admin"), secure)
+  clearCookie(res, getAuthCookieName("customer"), secure)
+  clearCookie(res, getLegacyAuthCookieName(), secure)
   return res
 }
-

@@ -8,12 +8,14 @@ import { ChevronLeft, ChevronRight, Grid2x2, Facebook, Linkedin, Send, Heart, Sh
 import { addToCart } from "@/lib/storefront/cart"
 import { addEngagementItem } from "@/lib/storefront/engagement"
 import { ProductRatingBadge } from "@/components/storefront/product-rating-badge"
-import { parseProductImages } from "@/lib/product-images"
+import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
+import { CategoryHoverProductCard } from "@/components/storefront/category-hover-product-card"
 
 type ProductCategory = {
   id: string
   title: string
   slug: string
+  path?: string
 }
 
 type ProductDetail = {
@@ -36,9 +38,13 @@ type RelatedProduct = {
   id: string
   slug: string
   title: string
+  description?: string | null
   price: number
   compareAtPrice: number | null
   images: string
+  stockCount?: number
+  isStock?: boolean
+  categories?: Array<{ id: string; title: string; slug: string }>
 }
 
 type NavProduct = {
@@ -50,7 +56,7 @@ type NavProduct = {
 }
 
 function parseImages(images: string): string[] {
-  return parseProductImages(images)
+  return parseProductImageRecords(images).map((image) => getProductImageUrl(image, "large"))
 }
 
 function stripHtml(input: string | null | undefined): string {
@@ -113,13 +119,45 @@ export function ProductDetailView({
 }) {
   const router = useRouter()
   const gallery = useMemo(() => {
-    const imgs = parseImages(product.images)
-    return imgs.length > 0 ? imgs : ["/placeholder.jpg"]
-  }, [product.images])
+    const records = parseProductImageRecords(product.images)
+    if (records.length === 0) {
+      return [
+        {
+          src: "/placeholder.jpg",
+          zoomSrc: "/placeholder.jpg",
+          thumbSrc: "/placeholder.jpg",
+          alt: buildProductImageAlt({
+            title: product.title,
+            categories: product.categories,
+            customAttributes: product.customAttributes,
+          }),
+          width: 1200,
+          height: 1200,
+        },
+      ]
+    }
+
+    return records.map((image, index) => ({
+      src: getProductImageUrl(image, "large") || "/placeholder.jpg",
+      zoomSrc: getProductImageUrl(image, "master") || getProductImageUrl(image, "large") || "/placeholder.jpg",
+      thumbSrc: getProductImageUrl(image, "thumb") || getProductImageUrl(image, "large") || "/placeholder.jpg",
+      alt: buildProductImageAlt({
+        title: product.title,
+        fallbackAlt: image.alt,
+        categories: product.categories,
+        customAttributes: product.customAttributes,
+        index,
+      }),
+      width: image.width ?? 1200,
+      height: image.height ?? 1200,
+    }))
+  }, [product.images, product.title, product.categories, product.customAttributes])
 
   const [selectedImage, setSelectedImage] = useState(0)
   const [qty, setQty] = useState(1)
   const [imageLightboxOpen, setImageLightboxOpen] = useState(false)
+  const [hoverZoomEnabled, setHoverZoomEnabled] = useState(false)
+  const [zoomOrigin, setZoomOrigin] = useState("50% 50%")
   const [expandedDesc, setExpandedDesc] = useState(false)
   const [expandedBottomDesc, setExpandedBottomDesc] = useState(false)
   const [expandedShipping, setExpandedShipping] = useState(false)
@@ -135,6 +173,7 @@ export function ProductDetailView({
 
   const verticalThumbs = gallery.slice(0, 5)
   const bottomThumbs = gallery.slice(5)
+  const selectedGalleryImage = gallery[selectedImage] || gallery[0]
 
   const discountActive = product.compareAtPrice && product.compareAtPrice > product.price
   const stockLimit = Math.max(0, product.stockCount)
@@ -165,7 +204,7 @@ export function ProductDetailView({
   useEffect(() => {
     if (typeof window === "undefined") return
     const storageKey = "rughouse_recently_viewed_products"
-    const image = gallery[0] || "/placeholder.jpg"
+    const image = gallery[0]?.src || "/placeholder.jpg"
     const current = {
       id: product.id,
       slug: product.slug,
@@ -184,6 +223,15 @@ export function ProductDetailView({
       // Do not block product page on localStorage errors.
     }
   }, [product.id, product.slug, product.title, product.price, gallery])
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return
+    const query = window.matchMedia("(hover: hover) and (pointer: fine)")
+    const sync = () => setHoverZoomEnabled(query.matches)
+    sync()
+    query.addEventListener?.("change", sync)
+    return () => query.removeEventListener?.("change", sync)
+  }, [])
 
 
   useEffect(() => {
@@ -223,7 +271,7 @@ export function ProductDetailView({
       sku: product.sku,
       price: product.price,
       compareAtPrice: product.compareAtPrice,
-      image: gallery[0] || "/placeholder.jpg",
+      image: gallery[0]?.src || "/placeholder.jpg",
       stockCount: product.stockCount,
       quantity: safeQty,
     })
@@ -250,7 +298,7 @@ export function ProductDetailView({
       sku: product.sku,
       price: product.price,
       compareAtPrice: product.compareAtPrice,
-      image: gallery[0] || "/placeholder.jpg",
+      image: gallery[0]?.src || "/placeholder.jpg",
       stockCount: product.stockCount,
       quantity: safeQty,
     })
@@ -316,7 +364,7 @@ export function ProductDetailView({
             <span className="mx-2">/</span>
             {primaryCategory ? (
               <>
-                <Link href={`/category/${primaryCategory.slug}`} className="hover:text-slate-800">{primaryCategory.title}</Link>
+                <Link href={primaryCategory.path || `/${primaryCategory.slug}`} className="hover:text-slate-800">{primaryCategory.title}</Link>
                 <span className="mx-2">/</span>
               </>
             ) : null}
@@ -337,7 +385,7 @@ export function ProductDetailView({
               {previousProduct ? (
                 <div className="pointer-events-none absolute right-0 top-11 z-50 hidden w-64 rounded-md border border-[#dce3ed] bg-white p-3 shadow-[0_14px_34px_rgba(15,23,42,0.14)] group-hover:block">
                   <div className="flex items-center gap-3">
-                    <img src={parseImages(previousProduct.images)[0] || "/placeholder.jpg"} alt={previousProduct.title} className="h-16 w-16 rounded-md border border-[#dce3ed] object-cover" />
+                    <img src={parseImages(previousProduct.images)[0] || "/placeholder.jpg"} alt={previousProduct.title} loading="lazy" decoding="async" className="h-16 w-16 rounded-md border border-[#dce3ed] object-cover" />
                     <div className="min-w-0">
                       <p className="truncate text-lg font-semibold text-slate-900">{previousProduct.title}</p>
                       <p className="text-xl font-bold text-emerald-700">${previousProduct.price.toFixed(2)}</p>
@@ -364,7 +412,7 @@ export function ProductDetailView({
               {nextProduct ? (
                 <div className="pointer-events-none absolute right-0 top-11 z-50 hidden w-64 rounded-md border border-[#dce3ed] bg-white p-3 shadow-[0_14px_34px_rgba(15,23,42,0.14)] group-hover:block">
                   <div className="flex items-center gap-3">
-                    <img src={parseImages(nextProduct.images)[0] || "/placeholder.jpg"} alt={nextProduct.title} className="h-16 w-16 rounded-md border border-[#dce3ed] object-cover" />
+                    <img src={parseImages(nextProduct.images)[0] || "/placeholder.jpg"} alt={nextProduct.title} loading="lazy" decoding="async" className="h-16 w-16 rounded-md border border-[#dce3ed] object-cover" />
                     <div className="min-w-0">
                       <p className="truncate text-lg font-semibold text-slate-900">{nextProduct.title}</p>
                       <p className="text-xl font-bold text-emerald-700">${nextProduct.price.toFixed(2)}</p>
@@ -382,12 +430,12 @@ export function ProductDetailView({
               <div className="space-y-3">
                 {verticalThumbs.map((img, i) => (
                   <button
-                    key={`${img}-${i}`}
+                    key={`${img.src}-${i}`}
                     type="button"
                     onClick={() => setSelectedImage(i)}
                     className={`block h-14 w-14 sm:h-20 sm:w-20 rounded-md overflow-hidden border ${selectedImage === i ? "border-slate-900" : "border-[#dce3ed]"}`}
                   >
-                    <img src={img} alt={product.title} className="h-full w-full object-cover" />
+                    <img src={img.thumbSrc} alt={img.alt} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                   </button>
                 ))}
               </div>
@@ -396,6 +444,14 @@ export function ProductDetailView({
                 <button
                   type="button"
                   className="group relative block aspect-square w-full overflow-hidden rounded-lg bg-white"
+                  onMouseMove={(event) => {
+                    if (!hoverZoomEnabled) return
+                    const bounds = event.currentTarget.getBoundingClientRect()
+                    const x = ((event.clientX - bounds.left) / bounds.width) * 100
+                    const y = ((event.clientY - bounds.top) / bounds.height) * 100
+                    setZoomOrigin(`${x}% ${y}%`)
+                  }}
+                  onMouseLeave={() => setZoomOrigin("50% 50%")}
                   onClick={() => setImageLightboxOpen(true)}
                 >
                   {isMarkedOutOfStock ? (
@@ -411,7 +467,17 @@ export function ProductDetailView({
                       {discountPercent}% OFF
                     </span>
                   ) : null}
-                  <img src={gallery[selectedImage]} alt={product.title} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                  <img
+                    src={selectedGalleryImage.src}
+                    alt={selectedGalleryImage.alt}
+                    width={selectedGalleryImage.width}
+                    height={selectedGalleryImage.height}
+                    loading="eager"
+                    fetchPriority="high"
+                    decoding="sync"
+                    className={`h-full w-full object-cover transition-transform duration-300 ${hoverZoomEnabled ? "group-hover:scale-[1.85] cursor-zoom-in" : "group-hover:scale-105"}`}
+                    style={{ transformOrigin: zoomOrigin }}
+                  />
                 </button>
               </div>
             </div>
@@ -424,13 +490,13 @@ export function ProductDetailView({
                     const idx = i + 5
                     return (
                       <button
-                        key={`${img}-${idx}`}
+                        key={`${img.src}-${idx}`}
                         type="button"
                         onClick={() => setSelectedImage(idx)}
                         className={`block rounded-md overflow-hidden border ${selectedImage === idx ? "border-slate-900" : "border-[#dce3ed]"}`}
                       >
                         <div className="aspect-square">
-                          <img src={img} alt={product.title} className="h-full w-full object-cover" />
+                          <img src={img.thumbSrc} alt={img.alt} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                         </div>
                       </button>
                     )
@@ -616,7 +682,7 @@ export function ProductDetailView({
                 <>
                   {visibleCategories.map((cat, i) => (
                     <span key={cat.id}>
-                      <Link href={`/category/${cat.slug}`} className="text-emerald-700 hover:underline">{cat.title}</Link>
+                      <Link href={cat.path || `/${cat.slug}`} className="text-emerald-700 hover:underline">{cat.title}</Link>
                       {i < visibleCategories.length - 1 ? ", " : ""}
                     </span>
                   ))}
@@ -635,7 +701,7 @@ export function ProductDetailView({
                     productId: product.id,
                     slug: product.slug,
                     title: product.title,
-                    image: gallery[0] || "/placeholder.jpg",
+                    image: gallery[0]?.src || "/placeholder.jpg",
                     price: product.price,
                   })
                   if (res.added) {
@@ -656,7 +722,7 @@ export function ProductDetailView({
                     productId: product.id,
                     slug: product.slug,
                     title: product.title,
-                    image: gallery[0] || "/placeholder.jpg",
+                    image: gallery[0]?.src || "/placeholder.jpg",
                     price: product.price,
                   })
                   if (res.added) {
@@ -825,29 +891,11 @@ export function ProductDetailView({
 
         {relatedProducts.length > 0 ? (
           <section className="mt-16">
-            <h2 className="text-3xl font-serif font-bold text-slate-900 mb-6">Related Products</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-              {relatedProducts.map((item) => {
-                const images = parseImages(item.images)
-                const image = images[0] || "/placeholder.jpg"
-                return (
-                  <Link key={item.id} href={`/product/${item.slug}`} className="group block rounded-xl border border-[#dce3ed] bg-white p-3">
-                    <div className="relative aspect-square overflow-hidden rounded-md bg-slate-100">
-                      <ProductRatingBadge productId={item.id} />
-                      <img src={image} alt={item.title} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                    </div>
-                    <div className="pt-3 text-center">
-                      <p className="truncate text-lg font-semibold text-slate-900">{item.title}</p>
-                      <div className="mt-1 flex items-center justify-center gap-2">
-                        <span className="font-bold text-emerald-700">${item.price.toFixed(2)}</span>
-                        {item.compareAtPrice && item.compareAtPrice > item.price ? (
-                          <span className="text-sm line-through text-slate-400">${item.compareAtPrice.toFixed(2)}</span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </Link>
-                )
-              })}
+            <h2 className="text-3xl font-serif font-bold text-slate-900 mb-6">You May Also Like</h2>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 lg:gap-5">
+              {relatedProducts.map((item) => (
+                <CategoryHoverProductCard key={item.id} product={item} />
+              ))}
             </div>
           </section>
         ) : null}
@@ -956,7 +1004,14 @@ export function ProductDetailView({
           </button>
 
           <div className="flex h-full w-full items-center justify-center" onClick={(e) => e.stopPropagation()}>
-            <img src={gallery[selectedImage]} alt={product.title} className="max-h-[88vh] max-w-[92vw] rounded-lg object-contain" />
+            <img
+              src={selectedGalleryImage.zoomSrc}
+              alt={selectedGalleryImage.alt}
+              width={selectedGalleryImage.width}
+              height={selectedGalleryImage.height}
+              decoding="async"
+              className="max-h-[88vh] max-w-[92vw] rounded-lg object-contain"
+            />
           </div>
         </div>
       ) : null}

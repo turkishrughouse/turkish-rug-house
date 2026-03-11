@@ -9,7 +9,7 @@ import { toast } from "sonner"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { addToCart } from "@/lib/storefront/cart"
 import { addEngagementItem } from "@/lib/storefront/engagement"
-import { parseProductImages } from "@/lib/product-images"
+import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 
 type ProductCardData = {
   id: string
@@ -25,7 +25,7 @@ type ProductCardData = {
 }
 
 function parseImages(images: string) {
-  return parseProductImages(images)
+  return parseProductImageRecords(images)
 }
 
 function stripHtml(input: string | null | undefined) {
@@ -41,10 +41,15 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
 
   const gallery = useMemo(() => {
     const arr = parseImages(product.images)
-    return arr.length ? arr : ["/placeholder.jpg"]
+    return arr.length ? arr : [{ image_url: "/placeholder.jpg", variants: { thumb: "/placeholder.jpg", large: "/placeholder.jpg", master: "/placeholder.jpg" } }]
   }, [product.images])
 
-  const mainImage = gallery[0]
+  const mainImage = getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
+  const mainImageAlt = buildProductImageAlt({
+    title: product.title,
+    fallbackAlt: gallery[0]?.alt,
+    categories: product.categories,
+  })
   const stockCount = Math.max(0, product.stockCount ?? 999)
   const canBuy = (product.isStock ?? true) && stockCount > 0
   const isMarkedOutOfStock = product.isStock === false && stockCount > 0
@@ -78,7 +83,7 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
       title: product.title,
       price: product.price,
       compareAtPrice: product.compareAtPrice || null,
-      image: gallery[activeImageIndex] || mainImage,
+      image: getProductImageUrl(gallery[activeImageIndex], "large") || mainImage,
       stockCount,
       quantity,
     })
@@ -125,7 +130,9 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
               ) : null}
               <img
                 src={mainImage}
-                alt={product.title}
+                alt={mainImageAlt}
+                loading="lazy"
+                decoding="async"
                 className="h-full w-full object-contain object-center transition-transform duration-300 group-hover/card:scale-105"
               />
               <div className="pointer-events-none absolute inset-0 bg-black/20 opacity-0 transition-opacity duration-300 group-hover/card:opacity-100" />
@@ -183,7 +190,18 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
           <div className="grid max-h-[88vh] grid-cols-1 md:grid-cols-[1fr_1.3fr]">
             <div className="relative border-r border-slate-200 p-6">
               <div className="group/quick relative aspect-[4/5] overflow-hidden rounded-md bg-slate-50">
-                <img src={gallery[activeImageIndex]} alt={product.title} className="h-full w-full object-cover" />
+                <img
+                  src={getProductImageUrl(gallery[activeImageIndex], "large") || mainImage}
+                  alt={buildProductImageAlt({
+                    title: product.title,
+                    fallbackAlt: gallery[activeImageIndex]?.alt,
+                    categories: product.categories,
+                    index: activeImageIndex,
+                  })}
+                  loading="lazy"
+                  decoding="async"
+                  className="h-full w-full object-cover"
+                />
 
                 <Link
                   href={`/product/${product.slug}`}

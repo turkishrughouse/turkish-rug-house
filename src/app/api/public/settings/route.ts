@@ -17,6 +17,7 @@ export async function GET() {
       maintenanceTitle: data.maintenanceTitle,
       maintenanceMessage: data.maintenanceMessage,
       maintenanceImageUrl: data.maintenanceImageUrl,
+      maintenanceSocialLinks: data.maintenanceSocialLinks,
       footerSocialLinks: data.footerSocialLinks,
       shopByCategoryIds: data.shopByCategoryIds,
       categoryCardRadiusLinked: data.categoryCardRadiusLinked,

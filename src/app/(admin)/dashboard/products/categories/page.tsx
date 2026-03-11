@@ -31,7 +31,7 @@ import { Edit2, Trash2, Folder, FolderOpen, ChevronRight, ChevronDown, Check, X 
 import { toast } from "sonner"
 import { SortableTree, FlatItem } from "@/components/admin/sortable-tree"
 import { Switch } from "@/components/ui/switch"
-import { MediaUploader } from "@/components/admin/products/media-uploader"
+import { MediaPickerDialog } from "@/components/admin/media/media-picker-dialog"
 import type { SiteSettings } from "@/lib/site-settings"
 
 // --- Types ---
@@ -195,6 +195,7 @@ export default function CategoriesPage() {
     const [homeSlotsLoading, setHomeSlotsLoading] = useState(true)
     const [homeSlotsSaving, setHomeSlotsSaving] = useState(false)
     const [homeSectionsOpen, setHomeSectionsOpen] = useState(false)
+    const [categoryMediaPickerOpen, setCategoryMediaPickerOpen] = useState(false)
 
     // Action States
     const [deleteModalOpen, setDeleteModalOpen] = useState(false)
@@ -728,10 +729,33 @@ export default function CategoriesPage() {
                             {/* Image */}
                             <div className="space-y-2">
                                 <Label>Category Image</Label>
-                                <MediaUploader
-                                    images={form.watch("image") ? [form.watch("image")!] : []}
-                                    onImagesChange={(imgs) => form.setValue("image", imgs[imgs.length - 1] || "")}
-                                />
+                                {form.watch("image") ? (
+                                    <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                        <img
+                                            src={form.watch("image") || ""}
+                                            alt={form.watch("title") || "Category image"}
+                                            className="h-48 w-full object-cover"
+                                        />
+                                    </div>
+                                ) : (
+                                    <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500">
+                                        No category image selected
+                                    </div>
+                                )}
+                                <div className="flex gap-2">
+                                    <Button type="button" variant="outline" onClick={() => setCategoryMediaPickerOpen(true)}>
+                                        Select from Media
+                                    </Button>
+                                    {form.watch("image") ? (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            onClick={() => form.setValue("image", "", { shouldDirty: true, shouldValidate: true })}
+                                        >
+                                            Remove
+                                        </Button>
+                                    ) : null}
+                                </div>
                                 <p className="text-[11px] text-slate-400">Optional. Used for the category header.</p>
                             </div>
 
@@ -811,6 +835,21 @@ export default function CategoriesPage() {
                 count={selectedIds.size}
                 onConfirm={handleBulkDelete}
                 loading={actionLoading}
+            />
+
+            <MediaPickerDialog
+                open={categoryMediaPickerOpen}
+                onOpenChange={setCategoryMediaPickerOpen}
+                multiple={false}
+                onSelect={(urls) => {
+                    form.setValue("image", urls[0] || "", { shouldDirty: true, shouldValidate: true })
+                    setCategoryMediaPickerOpen(false)
+                }}
+                title="Select category image"
+                productMeta={{
+                    title: form.watch("title") || "",
+                    description: form.watch("description") || "",
+                }}
             />
 
             <BulkParentModal

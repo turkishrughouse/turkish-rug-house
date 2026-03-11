@@ -5,10 +5,18 @@ import { ShopProductCard } from "@/components/storefront/shop-product-card"
 import { getProducts, getProductOptions } from "@/lib/actions/product-actions"
 import { prisma } from "@/lib/db"
 import { getSiteSettings } from "@/lib/site-settings"
-import { parseProductImages } from "@/lib/product-images"
+import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 
 type ShopPageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}
+
+function getMaterialDelegate() {
+  return (prisma as unknown as {
+    material?: {
+      findMany: (...args: any[]) => Promise<Array<{ id: string; slug: string; name: string; _count: { products: number } }>>
+    }
+  }).material
 }
 
 function getParam(params: { [key: string]: string | string[] | undefined }, key: string) {
@@ -23,10 +31,6 @@ function getSingle(params: { [key: string]: string | string[] | undefined }, key
   return Array.isArray(value) ? value[0] || "" : value
 }
 
-function parseImages(images: string): string[] {
-  return parseProductImages(images)
-}
-
 export default async function ShopPage({ searchParams }: ShopPageProps) {
   const resolved = await searchParams
   const query = getSingle(resolved, "q")
@@ -37,6 +41,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
   const showValue = [8, 16, 24, 36].includes(showInput) ? showInput : 24
   const inStockOnly = resolved["inStock"] === "true"
   const selectedColors = getParam(resolved, "color")
+  const selectedMaterials = getParam(resolved, "material")
   const priceMin = Number(getSingle(resolved, "priceMin") || 0)
   const priceMaxRaw = Number(getSingle(resolved, "priceMax") || 0)
   const hasPriceFilter = Number.isFinite(priceMin) && Number.isFinite(priceMaxRaw) && priceMaxRaw > 0
@@ -47,12 +52,14 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
     colors: selectedColors,
     sizes: getParam(resolved, "size"),
     ages: getParam(resolved, "age"),
+    materials: getParam(resolved, "material"),
     inStock: inStockOnly,
     priceMin: hasPriceFilter ? priceMin : undefined,
     priceMax: hasPriceFilter ? priceMaxRaw : undefined,
   }
 
-  const [{ products }, options, siteSettings, colorCounters] = await Promise.all([
+  const materialDelegate = getMaterialDelegate()
+  const [{ products }, options, siteSettings, colorCounters, materialCounters] = await Promise.all([
     getProducts(1, showValue, query, "published", sort, undefined, filters),
     getProductOptions(),
     getSiteSettings(),
@@ -70,6 +77,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                 styles: filters.styles.length ? { some: { slug: { in: filters.styles } } } : undefined,
                 sizes: filters.sizes.length ? { some: { slug: { in: filters.sizes } } } : undefined,
                 ages: filters.ages.length ? { some: { slug: { in: filters.ages } } } : undefined,
+                materials: filters.materials.length ? { some: { slug: { in: filters.materials } } } : undefined,
                 isStock: inStockOnly ? true : undefined,
                 price: hasPriceFilter ? { gte: priceMin, lte: priceMaxRaw } : undefined,
               },
@@ -78,13 +86,39 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
         },
       },
     }),
+    materialDelegate?.findMany
+      ? materialDelegate.findMany({
+          select: {
+            id: true,
+            slug: true,
+            name: true,
+            _count: {
+              select: {
+                products: {
+                  where: {
+                    isPublished: true,
+                    OR: query ? [{ title: { contains: query } }, { slug: { contains: query } }] : undefined,
+                    types: filters.types.length ? { some: { slug: { in: filters.types } } } : undefined,
+                    styles: filters.styles.length ? { some: { slug: { in: filters.styles } } } : undefined,
+                    colors: filters.colors.length ? { some: { slug: { in: filters.colors } } } : undefined,
+                    sizes: filters.sizes.length ? { some: { slug: { in: filters.sizes } } } : undefined,
+                    ages: filters.ages.length ? { some: { slug: { in: filters.ages } } } : undefined,
+                    isStock: inStockOnly ? true : undefined,
+                    price: hasPriceFilter ? { gte: priceMin, lte: priceMaxRaw } : undefined,
+                  },
+                },
+              },
+            },
+          },
+        })
+      : Promise.resolve([]),
   ])
 
   const visibleProducts = siteSettings.hideOutOfStockOnShop
     ? products.filter((product) => (product.isStock ?? true) && (product.stockCount ?? 0) > 0)
     : products
 
-  const heroImage = parseImages(visibleProducts[0]?.images || "")[0] || "/placeholder.jpg"
+  const heroImage = getProductImageUrl(parseProductImageRecords(visibleProducts[0]?.images || "")[0], "large") || "/placeholder.jpg"
 
   const categoryMap = new Map<string, { title: string; slug: string; count: number }>()
   visibleProducts.forEach((product) => {
@@ -100,6 +134,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
   const heroCategories = Array.from(categoryMap.values()).slice(0, 6)
 
   const colorCountMap = new Map(colorCounters.map((entry) => [entry.slug, entry._count.products]))
+  const materialCountMap = new Map(materialCounters.map((entry) => [entry.slug, entry._count.products]))
 
   const maxShopPrice = visibleProducts.reduce((max, product) => Math.max(max, Number(product.price || 0)), 0)
   const pricePresets = [
@@ -262,15 +297,45 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
               </div>
 
               <div className="border-t border-slate-200 pt-5">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Material</h3>
+                <div className="mt-4 space-y-1.5">
+                  {options.materials.map((material) => {
+                    const active = selectedMaterials.includes(material.slug)
+                    const count = materialCountMap.get(material.slug) || 0
+                    return (
+                      <Link
+                        key={material.id}
+                        href={`/shop${buildQuery((p) => {
+                          const existing = p.getAll("material")
+                          p.delete("material")
+                          if (existing.includes(material.slug)) {
+                            existing.filter((item) => item !== material.slug).forEach((item) => p.append("material", item))
+                          } else {
+                            existing.forEach((item) => p.append("material", item))
+                            p.append("material", material.slug)
+                          }
+                        })}`}
+                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
+                      >
+                        <span>{material.name}</span>
+                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="border-t border-slate-200 pt-5">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Category Products</h3>
                 <div className="mt-4 space-y-3">
                   {sidebarProducts.length === 0 ? (
                     <p className="text-sm text-slate-500">No products found.</p>
                   ) : sidebarProducts.map((product) => {
-                    const image = parseImages(product.images)[0] || "/placeholder.jpg"
+                    const parsedImages = parseProductImageRecords(product.images)
+                    const image = getProductImageUrl(parsedImages[0], "thumb") || "/placeholder.jpg"
                     return (
                       <Link key={product.id} href={`/product/${product.slug}`} className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-slate-50">
-                        <img src={image} alt={product.title} className="h-12 w-12 rounded-md border border-slate-200 object-cover" />
+                        <img src={image} alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt })} loading="lazy" decoding="async" className="h-12 w-12 rounded-md border border-slate-200 object-cover" />
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-slate-900">{product.title}</p>
                           <p className="text-sm font-semibold text-emerald-700">${product.price.toFixed(2)}</p>

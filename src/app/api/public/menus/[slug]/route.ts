@@ -1,6 +1,7 @@
 
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
+import { buildCategoryPathMap } from "@/lib/category-paths"
 
 export const dynamic = 'force-dynamic'
 
@@ -42,11 +43,11 @@ export async function GET(req: Request, { params }: Params) {
         const pageIds = menu.items.filter(i => i.type === 'PAGE' && i.referenceId).map(i => i.referenceId!)
 
         const [categories, pages] = await Promise.all([
-            catIds.length ? prisma.category.findMany({ where: { id: { in: catIds } }, select: { id: true, slug: true } }) : [],
+            catIds.length ? prisma.category.findMany({ where: { id: { in: catIds } }, select: { id: true, slug: true, title: true, parentId: true } }) : [],
             pageIds.length ? prisma.page.findMany({ where: { id: { in: pageIds } }, select: { id: true, slug: true, status: true } }) : []
         ])
 
-        const catMap = new Map(categories.map(c => [c.id, c.slug]))
+        const { pathById } = buildCategoryPathMap(categories)
         // Only map published pages? Or all and let frontend decide?
         // Better to check published status here.
         const pageMap = new Map(pages.filter(p => p.status === 'PUBLISHED').map(p => [p.id, p.slug]))
@@ -56,8 +57,8 @@ export async function GET(req: Request, { params }: Params) {
             let isMissing = false
 
             if (item.type === 'CATEGORY') {
-                if (item.referenceId && catMap.has(item.referenceId)) {
-                    url = `/category/${catMap.get(item.referenceId)}`
+                if (item.referenceId && pathById.has(item.referenceId)) {
+                    url = pathById.get(item.referenceId) || "#"
                 } else {
                     isMissing = true
                     url = "#"

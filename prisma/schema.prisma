@@ -132,6 +132,7 @@ model Product {
   colors      Color[]
   sizes       Size[]
   ages        Age[]
+  materials   Material[]
   reviews     ProductReview[]
 }
 
@@ -217,6 +218,13 @@ model Size {
 }
 
 model Age {
+  id       String    @id @default(cuid())
+  slug     String    @unique
+  name     String
+  products Product[]
+}
+
+model Material {
   id       String    @id @default(cuid())
   slug     String    @unique
   name     String

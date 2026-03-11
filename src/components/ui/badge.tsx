@@ -1,16 +1,5 @@
 import * as React from "react"
-
-
 import { cn } from "@/lib/utils"
-
-// NOTE: class-variance-authority is needed. If not installed, I will install it.
-// Checking package.json before... I didn't verify it. 
-// "class-variance-authority" usually comes with clsx in shadcn but maybe not explicitly.
-// If it fails, I'll switch to standard cn().
-
-// Wait, I saw "Duplicate identifier 'Box'... in sidebar.tsx... Cannot find module 'class-variance-authority'" error in previous turn!
-// So I DON'T have `class-variance-authority`.
-// I will rewrite this WITHOUT CVA.
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
     variant?: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning'

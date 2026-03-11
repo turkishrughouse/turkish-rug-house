@@ -7,7 +7,7 @@ import { addToCart } from "@/lib/storefront/cart"
 import { addEngagementItem } from "@/lib/storefront/engagement"
 import { ProductRatingBadge } from "@/components/storefront/product-rating-badge"
 import { formatCurrency, type CurrencySettings } from "@/lib/storefront/currency"
-import { parseProductImages } from "@/lib/product-images"
+import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 
 type ShopProduct = {
   id: string
@@ -20,10 +20,6 @@ type ShopProduct = {
   isStock?: boolean
 }
 
-function parseImages(images: string) {
-  return parseProductImages(images)
-}
-
 export function ShopProductCard({
   product,
   catalogMode = false,
@@ -33,8 +29,9 @@ export function ShopProductCard({
   catalogMode?: boolean
   currencySettings?: CurrencySettings
 }) {
-  const images = parseImages(product.images)
-  const mainImage = images[0] || "/placeholder.jpg"
+  const images = parseProductImageRecords(product.images)
+  const mainImage = getProductImageUrl(images[0], "large") || "/placeholder.jpg"
+  const mainImageAlt = buildProductImageAlt({ title: product.title, fallbackAlt: images[0]?.alt })
   const stockCount = Math.max(0, product.stockCount ?? 999)
   const canBuy = !catalogMode && (product.isStock ?? true) && stockCount > 0
   const isMarkedOutOfStock = product.isStock === false && stockCount > 0
@@ -63,7 +60,9 @@ export function ShopProductCard({
         ) : null}
         <img
           src={mainImage}
-          alt={product.title}
+          alt={mainImageAlt}
+          loading="lazy"
+          decoding="async"
           className="h-full w-full object-cover object-center transition-transform duration-300 group-hover:scale-105"
         />
         <div className="absolute left-1/2 bottom-4 -translate-x-1/2 translate-y-3 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">

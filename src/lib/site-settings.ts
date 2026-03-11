@@ -41,6 +41,7 @@ export type SiteSettings = {
   maintenanceTitle: string
   maintenanceMessage: string
   maintenanceImageUrl: string
+  maintenanceSocialLinks: FooterSocialLink[]
   shopByCategoryIds: string[]
   categoryCardRadiusLinked: boolean
   categoryCardRadiusTopLeft: number
@@ -176,6 +177,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   maintenanceTitle: "Web sitemiz yapim asamasindadir",
   maintenanceMessage: "Daha guclu bir deneyim icin altyapimizi guncelliyoruz. Lutfen kisa bir sure sonra tekrar ziyaret edin.",
   maintenanceImageUrl: "/uploads/pages/maintenance-default.jpg",
+  maintenanceSocialLinks: [],
   shopByCategoryIds: [],
   categoryCardRadiusLinked: true,
   categoryCardRadiusTopLeft: 15,
@@ -382,6 +384,34 @@ function normalizeSettings(input: unknown): SiteSettings {
       typeof raw.maintenanceImageUrl === "string" && raw.maintenanceImageUrl.trim().length > 0
         ? raw.maintenanceImageUrl.trim()
         : DEFAULT_SITE_SETTINGS.maintenanceImageUrl,
+    maintenanceSocialLinks: Array.isArray(raw.maintenanceSocialLinks)
+      ? raw.maintenanceSocialLinks
+          .map((item) => {
+            if (!item || typeof item !== "object") return null
+            const platform = (item as { platform?: unknown }).platform
+            const label = (item as { label?: unknown }).label
+            const url = (item as { url?: unknown }).url
+            if (
+              platform !== "facebook" &&
+              platform !== "x" &&
+              platform !== "instagram" &&
+              platform !== "youtube" &&
+              platform !== "tiktok" &&
+              platform !== "linkedin" &&
+              platform !== "pinterest"
+            ) {
+              return null
+            }
+            if (typeof label !== "string" || !label.trim()) return null
+            if (typeof url !== "string" || !url.trim()) return null
+            return {
+              platform,
+              label: label.trim(),
+              url: url.trim(),
+            } as FooterSocialLink
+          })
+          .filter((item): item is FooterSocialLink => Boolean(item))
+      : DEFAULT_SITE_SETTINGS.maintenanceSocialLinks,
     shopByCategoryIds: Array.isArray(raw.shopByCategoryIds)
       ? Array.from(new Set(raw.shopByCategoryIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0))).slice(0, 8)
       : Array.isArray((raw as { homeCategoryIds?: unknown }).homeCategoryIds)

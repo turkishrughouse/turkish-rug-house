@@ -6,6 +6,7 @@ import { z } from "zod"
 import { prisma } from "@/lib/db"
 import { sanitizeFolderPath, getManagedMediaRoots } from "@/lib/media-folders"
 import { ensureMediaRegistryTable } from "@/lib/media-registry"
+import { shouldUseProductSkuFolder } from "@/lib/media-sku-roots"
 import { parseProductImages } from "@/lib/product-images"
 import { getStorageProvider } from "@/lib/storage/provider"
 
@@ -133,6 +134,53 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Invalid folder path" }, { status: 400 })
     }
 
+    if (shouldUseProductSkuFolder(safeFolder)) {
+      const parts = safeFolder.split("/").filter(Boolean)
+      if (parts.length >= 3) {
+        const sku = parts[parts.length - 1] || ""
+        const categoryFolder = parts.slice(0, -1).join("/")
+        const categories = await prisma.category.findMany({
+          select: { id: true, slug: true, parentId: true },
+        })
+        const byId = new Map(categories.map((category) => [category.id, category]))
+        const cache = new Map<string, string>()
+        const resolvePath = (id: string): string => {
+          if (cache.has(id)) return cache.get(id) || ""
+          const current = byId.get(id)
+          if (!current) return ""
+          const parentPath = current.parentId ? resolvePath(current.parentId) : ""
+          const currentPath = sanitizeFolderPath(parentPath ? `${parentPath}/${current.slug}` : current.slug)
+          cache.set(id, currentPath)
+          return currentPath
+        }
+
+        const products = await prisma.product.findMany({
+          select: {
+            id: true,
+            categories: { select: { id: true } },
+          },
+        })
+
+        const linkedProduct = await Promise.all(products.map(async (product) => {
+          const skuRows = await prisma.$queryRawUnsafe<Array<{ sku: string | null }>>(
+            `SELECT "sku" FROM "Product" WHERE "id" = ? LIMIT 1`,
+            product.id
+          )
+          const productSku = sanitizeFolderPath(skuRows[0]?.sku || "")
+          if (productSku !== sku) return null
+          const categoryPaths = product.categories.map((category) => resolvePath(category.id))
+          return categoryPaths.includes(categoryFolder) ? product.id : null
+        })).then((rows) => rows.find(Boolean))
+
+        if (linkedProduct) {
+          return NextResponse.json(
+            { error: "Bu SKU klasoru urune bagli. Urunden kategori veya SKU kaldirilmadan silinemez." },
+            { status: 409 }
+          )
+        }
+      }
+    }
+
     await rm(folderPath, { recursive: true, force: true })
     return NextResponse.json({ success: true })
   } catch (error) {
@@ -232,11 +280,6 @@ export async function POST(req: NextRequest) {
     const parts = sourceFolder.split("/").filter(Boolean)
     const sourceLeaf = parts[parts.length - 1] || ""
     const parentPath = parts.slice(0, -1).join("/")
-    const match = sourceLeaf.match(/^(.*?)(\d+)$/)
-    if (!match) {
-      return NextResponse.json({ error: "Folder name must end with a number for clone" }, { status: 400 })
-    }
-    const [, prefix, digits] = match
 
     const topCategories = await prisma.category.findMany({
       where: { parentId: null },
@@ -259,18 +302,32 @@ export async function POST(req: NextRequest) {
     }
 
     const siblings = await readdir(parentAbs, { withFileTypes: true }).catch(() => [])
-    let maxNumber = Number.parseInt(digits, 10)
-    for (const entry of siblings) {
-      if (!entry.isDirectory()) continue
-      const siblingMatch = entry.name.match(/^(.*?)(\d+)$/)
-      if (!siblingMatch) continue
-      if (siblingMatch[1] !== prefix) continue
-      const siblingNumber = Number.parseInt(siblingMatch[2], 10)
-      if (siblingNumber > maxNumber) maxNumber = siblingNumber
-    }
+    let targetFolder = ""
+    const numberedMatch = sourceLeaf.match(/^(.*?)(\d+)$/)
+    if (numberedMatch) {
+      const [, prefix, digits] = numberedMatch
+      let maxNumber = Number.parseInt(digits, 10)
+      for (const entry of siblings) {
+        if (!entry.isDirectory()) continue
+        const siblingMatch = entry.name.match(/^(.*?)(\d+)$/)
+        if (!siblingMatch) continue
+        if (siblingMatch[1] !== prefix) continue
+        const siblingNumber = Number.parseInt(siblingMatch[2], 10)
+        if (siblingNumber > maxNumber) maxNumber = siblingNumber
+      }
 
-    const nextLeaf = `${prefix}${String(maxNumber + 1).padStart(digits.length, "0")}`
-    const targetFolder = parentPath ? `${parentPath}/${nextLeaf}` : nextLeaf
+      const nextLeaf = `${prefix}${String(maxNumber + 1).padStart(digits.length, "0")}`
+      targetFolder = parentPath ? `${parentPath}/${nextLeaf}` : nextLeaf
+    } else {
+      const siblingNames = new Set(siblings.filter((entry) => entry.isDirectory()).map((entry) => entry.name))
+      let nextLeaf = `${sourceLeaf}-copy`
+      let index = 2
+      while (siblingNames.has(nextLeaf)) {
+        nextLeaf = `${sourceLeaf}-copy-${index}`
+        index += 1
+      }
+      targetFolder = parentPath ? `${parentPath}/${nextLeaf}` : nextLeaf
+    }
     const targetAbs = path.join(uploadRoot, targetFolder)
     if (!targetAbs.startsWith(uploadRoot)) {
       return NextResponse.json({ error: "Invalid target folder path" }, { status: 400 })

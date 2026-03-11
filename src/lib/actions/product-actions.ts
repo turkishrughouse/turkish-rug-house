@@ -9,6 +9,21 @@ import { notifyNewProduct, notifyProductDiscount } from "@/lib/customer-messagin
 import { getSessionUser } from "@/lib/auth"
 import { syncProductToInventory } from "@/lib/inventory-sync"
 import { normalizeProductImageRecords } from "@/lib/product-images"
+import { ensureProductSkuFolders, relocateProductImagesToSkuFolders } from "@/lib/media-folders"
+
+type MaterialDelegate = {
+    findMany: (...args: any[]) => Promise<any[]>
+}
+
+function getMaterialDelegate() {
+    return (db as unknown as { material?: MaterialDelegate }).material
+}
+
+async function findMaterials(args?: Parameters<MaterialDelegate["findMany"]>[0]) {
+    const delegate = getMaterialDelegate()
+    if (!delegate?.findMany) return []
+    return delegate.findMany(args)
+}
 
 async function ensureSkuColumn() {
     const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
@@ -116,6 +131,14 @@ type CustomAttribute = {
     visible: boolean
 }
 
+type SupplierRecord = {
+    name: string
+    number: string
+    company: string
+    phone: string
+    note: string
+}
+
 function slugifyText(input: string) {
     const normalized = input
         .toLowerCase()
@@ -144,9 +167,19 @@ async function ensureUniqueProductSlug(baseSlug: string, productId?: string) {
 }
 
 function buildSlugBaseWithSku(baseSlug: string, sku?: string | null) {
-    const normalizedBase = slugifyText(baseSlug)
+    let normalizedBase = slugifyText(baseSlug)
     const normalizedSku = sku && sku.trim().length > 0 ? slugifyText(sku) : ""
     if (!normalizedSku) return normalizedBase
+
+    normalizedBase = normalizedBase
+        .replace(new RegExp(`(?:-${normalizedSku})+$`), "")
+        .replace(/-(?:[a-z]+[a-z0-9]*\d[a-z0-9]*)(?:-\d+)?$/, "")
+        .replace(/-+$/g, "")
+
+    if (!normalizedBase) {
+        return normalizedSku
+    }
+
     if (normalizedBase === normalizedSku || normalizedBase.endsWith(`-${normalizedSku}`)) {
         return normalizedBase
     }
@@ -207,6 +240,39 @@ function normalizeCustomAttributes(input: unknown): CustomAttribute[] {
         .filter((value): value is CustomAttribute => Boolean(value))
 }
 
+function normalizeSuppliers(input: unknown): SupplierRecord[] {
+    if (!Array.isArray(input)) return []
+    return input
+        .map((item) => {
+            if (!item || typeof item !== "object") return null
+            const name = typeof (item as { name?: unknown }).name === "string" ? (item as { name: string }).name.trim() : ""
+            const number = typeof (item as { number?: unknown }).number === "string" ? (item as { number: string }).number.trim().toUpperCase() : ""
+            const company = typeof (item as { company?: unknown }).company === "string" ? (item as { company: string }).company.trim() : ""
+            const phone = typeof (item as { phone?: unknown }).phone === "string" ? (item as { phone: string }).phone.trim() : ""
+            const note = typeof (item as { note?: unknown }).note === "string" ? (item as { note: string }).note.trim() : ""
+            if (!name && !number && !company) return null
+            return { name, number, company, phone, note }
+        })
+        .filter((value): value is SupplierRecord => Boolean(value))
+}
+
+async function findConflictingProductSku(sku: string, currentProductId?: string) {
+    await ensureSkuColumn()
+    await ensureDeletedAtColumn()
+    const normalizedSku = (sku || "").trim()
+    if (!normalizedSku) return null
+    const rows = await db.$queryRawUnsafe<Array<{ id: string; title: string }>>(
+        `SELECT "id", "title"
+         FROM "Product"
+         WHERE "sku" = ?
+           AND ("deletedAt" IS NULL OR "deletedAt" = '')
+           ${currentProductId ? `AND "id" != ?` : ""}
+         LIMIT 1`,
+        ...(currentProductId ? [normalizedSku, currentProductId] : [normalizedSku])
+    )
+    return rows[0] || null
+}
+
 async function ensureCustomAttributesColumn() {
     const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
     const hasColumn = columns.some((column) => column.name === "customAttributes")
@@ -241,6 +307,40 @@ async function setCustomAttributesByProductId(productId: string, attributes: Cus
     )
 }
 
+async function ensureSuppliersColumn() {
+    const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
+    const hasColumn = columns.some((column) => column.name === "suppliers")
+    if (!hasColumn) {
+        await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "suppliers" TEXT`)
+    }
+}
+
+async function getSuppliersByProductId(productId: string): Promise<SupplierRecord[]> {
+    await ensureSuppliersColumn()
+    const rows = await db.$queryRawUnsafe<Array<{ suppliers: string | null }>>(
+        `SELECT "suppliers" FROM "Product" WHERE "id" = ? LIMIT 1`,
+        productId
+    )
+    const raw = rows[0]?.suppliers
+    if (!raw) return []
+    try {
+        return normalizeSuppliers(JSON.parse(raw))
+    } catch {
+        return []
+    }
+}
+
+async function setSuppliersByProductId(productId: string, suppliers: SupplierRecord[] | undefined) {
+    await ensureSuppliersColumn()
+    const normalized = normalizeSuppliers(suppliers || [])
+    const payload = normalized.length > 0 ? JSON.stringify(normalized) : null
+    await db.$executeRawUnsafe(
+        `UPDATE "Product" SET "suppliers" = ? WHERE "id" = ?`,
+        payload,
+        productId
+    )
+}
+
 export async function getProducts(
     page = 1,
     limit = 20,
@@ -254,6 +354,8 @@ export async function getProducts(
         colors?: string[],
         sizes?: string[],
         ages?: string[],
+        materials?: string[],
+        categoryIds?: string[],
         priceMin?: number,
         priceMax?: number,
         inStock?: boolean,
@@ -329,7 +431,11 @@ export async function getProducts(
             { slug: { contains: query } },
         ] : undefined,
         isPublished: status === 'published' ? true : status === 'draft' ? false : undefined,
-        categories: categorySlug ? {
+        categories: filters?.categoryIds?.length ? {
+            some: {
+                id: { in: filters.categoryIds }
+            }
+        } : categorySlug ? {
             some: {
                 slug: categorySlug
             }
@@ -340,6 +446,7 @@ export async function getProducts(
         colors: filters?.colors?.length ? { some: { slug: { in: filters.colors } } } : undefined,
         sizes: filters?.sizes?.length ? { some: { slug: { in: filters.sizes } } } : undefined,
         ages: filters?.ages?.length ? { some: { slug: { in: filters.ages } } } : undefined,
+        materials: filters?.materials?.length ? { some: { slug: { in: filters.materials } } } : undefined,
         price: (filters?.priceMin !== undefined || filters?.priceMax !== undefined) ? {
             gte: filters.priceMin,
             lte: filters.priceMax
@@ -490,28 +597,49 @@ export async function getProduct(id: string) {
     )
     if (deletedRows[0]?.deletedAt) return null
 
-    const product = await db.product.findUnique({
-        where: { id },
-        include: {
-            categories: true,
-            types: true,
-            styles: true,
-            colors: true,
-            sizes: true,
-            ages: true,
+    const product = await (async () => {
+        try {
+            return await db.product.findUnique({
+                where: { id },
+                include: {
+                    categories: true,
+                    types: true,
+                    styles: true,
+                    colors: true,
+                    sizes: true,
+                    ages: true,
+                    materials: true,
+                }
+            })
+        } catch (error) {
+            console.warn("getProduct materials include unavailable, falling back:", error)
+            const fallback = await db.product.findUnique({
+                where: { id },
+                include: {
+                    categories: true,
+                    types: true,
+                    styles: true,
+                    colors: true,
+                    sizes: true,
+                    ages: true,
+                }
+            })
+            return fallback ? { ...fallback, materials: [] } : null
         }
-    })
+    })()
 
     if (!product) return null
     const sku = await getSkuByProductId(product.id)
     const isFeatured = await getFeaturedByProductId(product.id)
     const customAttributes = await getCustomAttributesByProductId(product.id)
+    const suppliers = await getSuppliersByProductId(product.id)
 
     return {
         ...product,
         sku,
         isFeatured,
         customAttributes,
+        suppliers,
         price: product.price.toNumber(),
         compareAtPrice: product.compareAtPrice ? product.compareAtPrice.toNumber() : null,
     }
@@ -525,9 +653,14 @@ export async function createProduct(data: ProductFormValues) {
 
     try {
         const actor = await getSessionUser("admin")
+        const skuConflict = await findConflictingProductSku(validated.sku)
+        if (skuConflict) {
+            return { success: false, error: "SKU already exists. Change SKU and save again." }
+        }
         const uniqueSlug = await ensureUniqueProductSlug(
             buildSlugBaseWithSku(validated.slug || validated.title, validated.sku)
         )
+        const normalizedImages = await relocateProductImagesToSkuFolders(validated.images, validated.categoryIds, validated.sku)
         const categoryRows = validated.categoryIds.length > 0
             ? await db.category.findMany({
                 where: { id: { in: validated.categoryIds } },
@@ -553,7 +686,7 @@ export async function createProduct(data: ProductFormValues) {
                 stockCount: validated.stockCount,
                 isStock: validated.isStock,
                 isPublished: validated.isPublished,
-                images: JSON.stringify(normalizeProductImageRecords(validated.images)),
+                images: JSON.stringify(normalizeProductImageRecords(normalizedImages)),
                 seoTitle: seo.seoTitle,
                 seoDescription: seo.seoDescription,
                 seoKeywords: seo.seoKeywords,
@@ -563,11 +696,14 @@ export async function createProduct(data: ProductFormValues) {
                 colors: { connect: connect(validated.colorIds) },
                 sizes: { connect: connect(validated.sizeIds) },
                 ages: { connect: connect(validated.ageIds) },
+                materials: { connect: connect(validated.materialIds) },
             }
         })
         await setSkuByProductId(created.id, validated.sku || null)
         await setFeaturedByProductId(created.id, validated.isFeatured)
         await setCustomAttributesByProductId(created.id, validated.customAttributes)
+        await setSuppliersByProductId(created.id, validated.suppliers)
+        await ensureProductSkuFolders(validated.categoryIds, validated.sku || null)
         await setProductCreatorByProductId(created.id, {
             id: actor?.id || null,
             name: actor?.name || actor?.email || "Unknown",
@@ -610,8 +746,9 @@ export async function createProduct(data: ProductFormValues) {
                     seoTitle: seo.seoTitle,
                     seoDescription: seo.seoDescription,
                     seoKeywords: seo.seoKeywords,
-                    images: validated.images,
+                    images: normalizedImages,
                     customAttributes: validated.customAttributes,
+                    suppliers: validated.suppliers,
                     categories: categoryRows.map((c) => ({ id: c.id, slug: c.slug, title: c.title })),
                 },
             })
@@ -634,6 +771,10 @@ export async function updateProduct(id: string, data: ProductFormValues) {
     const connect = (ids: string[]) => ids.map(id => ({ id }))
 
     try {
+        const skuConflict = await findConflictingProductSku(validated.sku, id)
+        if (skuConflict) {
+            return { success: false, error: "SKU already exists. Duplicate product cannot be saved without changing SKU." }
+        }
         const before = await db.product.findUnique({
             where: { id },
             select: { compareAtPrice: true, price: true, isPublished: true },
@@ -642,6 +783,7 @@ export async function updateProduct(id: string, data: ProductFormValues) {
             buildSlugBaseWithSku(validated.slug || validated.title, validated.sku),
             id
         )
+        const normalizedImages = await relocateProductImagesToSkuFolders(validated.images, validated.categoryIds, validated.sku)
         const categoryRows = validated.categoryIds.length > 0
             ? await db.category.findMany({
                 where: { id: { in: validated.categoryIds } },
@@ -671,7 +813,7 @@ export async function updateProduct(id: string, data: ProductFormValues) {
                 stockCount: validated.stockCount,
                 isStock: validated.isStock,
                 isPublished: validated.isPublished,
-                images: JSON.stringify(normalizeProductImageRecords(validated.images)),
+                images: JSON.stringify(normalizeProductImageRecords(normalizedImages)),
                 seoTitle: seo.seoTitle,
                 seoDescription: seo.seoDescription,
                 seoKeywords: seo.seoKeywords,
@@ -681,11 +823,14 @@ export async function updateProduct(id: string, data: ProductFormValues) {
                 colors: { set: connect(validated.colorIds) },
                 sizes: { set: connect(validated.sizeIds) },
                 ages: { set: connect(validated.ageIds) },
+                materials: { set: connect(validated.materialIds) },
             }
         })
         await setSkuByProductId(id, validated.sku || null)
         await setFeaturedByProductId(id, validated.isFeatured)
         await setCustomAttributesByProductId(id, validated.customAttributes)
+        await setSuppliersByProductId(id, validated.suppliers)
+        await ensureProductSkuFolders(validated.categoryIds, validated.sku || null)
 
         const hadDiscount = Boolean(
             before?.isPublished &&
@@ -727,8 +872,9 @@ export async function updateProduct(id: string, data: ProductFormValues) {
                     seoTitle: seo.seoTitle,
                     seoDescription: seo.seoDescription,
                     seoKeywords: seo.seoKeywords,
-                    images: validated.images,
+                    images: normalizedImages,
                     customAttributes: validated.customAttributes,
+                    suppliers: validated.suppliers,
                     categories: categoryRows.map((c) => ({ id: c.id, slug: c.slug, title: c.title })),
                 },
             })
@@ -796,6 +942,7 @@ export async function duplicateProduct(id: string) {
         await setSkuByProductId(newProduct.id, original.sku || null)
         await setFeaturedByProductId(newProduct.id, Boolean(original.isFeatured))
         await setCustomAttributesByProductId(newProduct.id, original.customAttributes || [])
+        await setSuppliersByProductId(newProduct.id, original.suppliers || [])
         await setProductCreatorByProductId(newProduct.id, {
             id: actor?.id || null,
             name: actor?.name || actor?.email || "Unknown",
@@ -890,28 +1037,61 @@ export async function bulkPublishProducts(ids: string[], isPublished: boolean) {
 }
 
 export async function getProductOptions() {
-    const [categories, types, styles, colors, sizes, ages, categoriesWithProducts] = await Promise.all([
+    const categoriesWithProductsPromise = (async () => {
+        try {
+            return await db.category.findMany({
+                select: {
+                    id: true,
+                    products: {
+                        select: {
+                            id: true,
+                            types: { select: { id: true } },
+                            styles: { select: { id: true } },
+                            colors: { select: { id: true } },
+                            sizes: { select: { id: true } },
+                            ages: { select: { id: true } },
+                            materials: { select: { id: true } },
+                        }
+                    }
+                }
+            })
+        } catch (error) {
+            console.warn("getProductOptions materials relation unavailable, falling back:", error)
+            const fallback = await db.category.findMany({
+                select: {
+                    id: true,
+                    products: {
+                        select: {
+                            id: true,
+                            types: { select: { id: true } },
+                            styles: { select: { id: true } },
+                            colors: { select: { id: true } },
+                            sizes: { select: { id: true } },
+                            ages: { select: { id: true } },
+                        }
+                    }
+                }
+            })
+
+            return fallback.map((category) => ({
+                ...category,
+                products: category.products.map((product) => ({
+                    ...product,
+                    materials: [],
+                })),
+            }))
+        }
+    })()
+
+    const [categories, types, styles, colors, sizes, ages, materials, categoriesWithProducts] = await Promise.all([
         db.category.findMany(),
         db.type.findMany(),
         db.style.findMany(),
         db.color.findMany(),
         db.size.findMany(),
         db.age.findMany(),
-        db.category.findMany({
-            select: {
-                id: true,
-                products: {
-                    select: {
-                        id: true,
-                        types: { select: { id: true } },
-                        styles: { select: { id: true } },
-                        colors: { select: { id: true } },
-                        sizes: { select: { id: true } },
-                        ages: { select: { id: true } },
-                    }
-                }
-            }
-        })
+        findMaterials(),
+        categoriesWithProductsPromise,
     ])
 
     const categoryAttributeMap: Record<string, {
@@ -920,6 +1100,7 @@ export async function getProductOptions() {
         colorIds: string[]
         sizeIds: string[]
         ageIds: string[]
+        materialIds: string[]
     }> = {}
     const categoryProductCountMap: Record<string, number> = {}
 
@@ -929,6 +1110,7 @@ export async function getProductOptions() {
         const colorIds = new Set<string>()
         const sizeIds = new Set<string>()
         const ageIds = new Set<string>()
+        const materialIds = new Set<string>()
         const productIds = new Set<string>()
 
         category.products.forEach((product) => {
@@ -938,6 +1120,7 @@ export async function getProductOptions() {
             product.colors.forEach((c) => colorIds.add(c.id))
             product.sizes.forEach((s) => sizeIds.add(s.id))
             product.ages.forEach((a) => ageIds.add(a.id))
+            product.materials.forEach((m) => materialIds.add(m.id))
         })
 
         categoryAttributeMap[category.id] = {
@@ -946,6 +1129,7 @@ export async function getProductOptions() {
             colorIds: Array.from(colorIds),
             sizeIds: Array.from(sizeIds),
             ageIds: Array.from(ageIds),
+            materialIds: Array.from(materialIds),
         }
         // Product-based unique count per category.
         categoryProductCountMap[category.id] = productIds.size
@@ -963,6 +1147,7 @@ export async function getProductOptions() {
         colors,
         sizes,
         ages,
+        materials,
         categoryAttributeMap,
     }
 }

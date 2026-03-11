@@ -1,16 +1,10 @@
-import { redirect } from "next/navigation"
 import Link from "next/link"
 import { ShieldCheck, Sparkles, PackageCheck } from "lucide-react"
-import { getSessionUser } from "@/lib/auth"
 import { LoginForm } from "@/components/admin/auth/login-form"
-import { isAdminRole } from "@/lib/rbac"
+
+export const dynamic = "force-dynamic"
 
 export default async function RughouseLoginPage() {
-  const user = await getSessionUser("admin")
-  if (user && isAdminRole(user.role)) {
-    redirect("/dashboard")
-  }
-
   return (
     <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,#dff5ef,transparent_36%),radial-gradient(circle_at_bottom_right,#f4e9d8,transparent_35%),#f4f7fb] p-6 md:p-10">
       <div className="pointer-events-none fixed inset-0 opacity-40 [background-image:linear-gradient(to_right,#cbd5e130_1px,transparent_1px),linear-gradient(to_bottom,#cbd5e130_1px,transparent_1px)] [background-size:34px_34px]" />

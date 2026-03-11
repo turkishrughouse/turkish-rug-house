@@ -105,30 +105,40 @@ export async function POST(req: NextRequest) {
                 { status: 400 }
             )
         }
-        await ensureMediaRegistryTable()
-        const existing = await findMediaByChecksum(processed.checksum)
-        const existingInFolder = existing.filter((item) => normalizeFolderFromObjectKey(item.object_key) === folder)
-        const existingInFolderWithFiles = []
-        for (const item of existingInFolder) {
-            if (await mediaRowExists(item.object_key)) {
-                existingInFolderWithFiles.push(item)
-                continue
+        let registryAvailable = true
+        try {
+            await ensureMediaRegistryTable()
+            const existing = await findMediaByChecksum(processed.checksum)
+            const existingInFolder = existing.filter((item) => normalizeFolderFromObjectKey(item.object_key) === folder)
+            const existingInFolderWithFiles = []
+            for (const item of existingInFolder) {
+                if (await mediaRowExists(item.object_key)) {
+                    existingInFolderWithFiles.push(item)
+                    continue
+                }
+                await prisma.$executeRawUnsafe(`DELETE FROM "MediaAsset" WHERE "image_url" = ?`, item.image_url)
             }
-            await prisma.$executeRawUnsafe(`DELETE FROM "MediaAsset" WHERE "image_url" = ?`, item.image_url)
-        }
-        if (existingInFolderWithFiles.length > 0) {
-            const primary = existingInFolderWithFiles.find((item) => item.is_primary === 1) || existingInFolderWithFiles[0]
-            return NextResponse.json({
-                success: true,
-                duplicate: true,
-                url: primary.image_url,
-                variants: existingInFolderWithFiles.map((item) => ({
-                    variant: item.variant,
-                    url: item.image_url,
-                    width: item.width,
-                    height: item.height,
-                })),
-            })
+            if (existingInFolderWithFiles.length > 0) {
+                const primary = existingInFolderWithFiles.find((item) => item.is_primary === 1) || existingInFolderWithFiles[0]
+                return NextResponse.json({
+                    success: true,
+                    duplicate: true,
+                    url: primary.image_url,
+                    variants: existingInFolderWithFiles.map((item) => ({
+                        variant: item.variant,
+                        url: item.image_url,
+                        width: item.width,
+                        height: item.height,
+                    })),
+                })
+            }
+        } catch (error) {
+            registryAvailable = false
+            logger.warn(
+                "Media registry unavailable during duplicate check; continuing with filesystem upload",
+                { error: error instanceof Error ? error.message : String(error) },
+                "api-upload"
+            )
         }
 
         const storage = getStorageProvider()
@@ -157,23 +167,33 @@ export async function POST(req: NextRequest) {
         }
 
         const master = savedVariants.find((item) => item.variant === "master") || savedVariants[0]
-        for (const variant of savedVariants) {
-            await upsertMediaAsset({
-                id: `${baseName}-${variant.variant}`,
-                image_url: variant.url,
-                width: variant.width ?? processed.width ?? null,
-                height: variant.height ?? processed.height ?? null,
-                alt: "",
-                sort_order: variant.variant === "thumb" ? 0 : variant.variant === "large" ? 1 : 2,
-                is_primary: variant.url === master.url,
-                variant: variant.variant,
-                master_url: master.url,
-                checksum: processed.checksum,
-                mime_type: variant.contentType,
-                size_bytes: variant.size,
-                storage_provider: storage.name,
-                object_key: variant.path,
-            })
+        if (registryAvailable) {
+            try {
+                for (const variant of savedVariants) {
+                    await upsertMediaAsset({
+                        id: `${baseName}-${variant.variant}`,
+                        image_url: variant.url,
+                        width: variant.width ?? processed.width ?? null,
+                        height: variant.height ?? processed.height ?? null,
+                        alt: "",
+                        sort_order: variant.variant === "thumb" ? 0 : variant.variant === "large" ? 1 : 2,
+                        is_primary: variant.url === master.url,
+                        variant: variant.variant,
+                        master_url: master.url,
+                        checksum: processed.checksum,
+                        mime_type: variant.contentType,
+                        size_bytes: variant.size,
+                        storage_provider: storage.name,
+                        object_key: variant.path,
+                    })
+                }
+            } catch (error) {
+                logger.warn(
+                    "Media registry unavailable during upload finalization; file saved without registry sync",
+                    { error: error instanceof Error ? error.message : String(error) },
+                    "api-upload"
+                )
+            }
         }
 
         return NextResponse.json({

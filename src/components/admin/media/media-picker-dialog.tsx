@@ -1,13 +1,14 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Loader2, Upload, Image as ImageIcon, Check, Folder } from "lucide-react"
+import { Loader2, Upload, Image as ImageIcon, Check, Folder as FolderIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { shouldUseProductSkuFolder } from "@/lib/media-sku-roots"
 import { getImageUrl, isManagedUploadUrl } from "@/lib/storage/url"
 
 type Folder = { name: string; count: number }
@@ -91,6 +92,23 @@ function extractFolderFromUploadUrl(url: string) {
   return parts.slice(0, -1).join("/")
 }
 
+function resolveProductUploadFolder(baseFolder: string, sku: string) {
+  const cleanFolder = (baseFolder || "").trim().replace(/^\/+|\/+$/g, "")
+  const cleanSku = (sku || "").trim().replace(/^\/+|\/+$/g, "")
+  if (!cleanFolder) return cleanSku ? cleanSku : ""
+  if (!cleanSku) return cleanFolder
+  if (!shouldUseProductSkuFolder(cleanFolder)) return cleanFolder
+
+  const parts = cleanFolder.split("/").filter(Boolean)
+  const alreadyOnSkuFolder = parts[parts.length - 1] === cleanSku
+
+  if (alreadyOnSkuFolder) {
+    return cleanFolder
+  }
+
+  return `${cleanFolder}/${cleanSku}`
+}
+
 export function MediaPickerDialog({
   open,
   onOpenChange,
@@ -102,9 +120,9 @@ export function MediaPickerDialog({
   const [tab, setTab] = useState<TabKey>("library")
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [search, setSearch] = useState("")
   const [activeFolder, setActiveFolder] = useState("all")
   const [activeSubfolder, setActiveSubfolder] = useState("all")
+  const [selectedChildFolder, setSelectedChildFolder] = useState("")
   const [uploadFolder, setUploadFolder] = useState("categories")
   const [folders, setFolders] = useState<Folder[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
@@ -112,7 +130,6 @@ export function MediaPickerDialog({
   const [didAutoPickFolder, setDidAutoPickFolder] = useState(false)
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [moving, setMoving] = useState(false)
-  const [targetFolder, setTargetFolder] = useState("categories")
   const [folderMenu, setFolderMenu] = useState<{ folder: string; x: number; y: number } | null>(null)
   const [folderColors, setFolderColors] = useState<Record<string, string>>({})
   const [assetLabels, setAssetLabels] = useState<Record<string, string>>({})
@@ -130,7 +147,8 @@ export function MediaPickerDialog({
   const preferredUploadFolder = useMemo(() => {
     const sku = (productMeta?.sku || "").trim()
     const categoryFolderPath = (productMeta?.categoryFolderPath || "").trim()
-    if (sku && categoryFolderPath) return `${categoryFolderPath}/${sku}`
+    const resolved = resolveProductUploadFolder(categoryFolderPath, sku)
+    if (resolved) return resolved
     if (categoryFolderPath) return categoryFolderPath
     return ""
   }, [productMeta?.categoryFolderPath, productMeta?.sku])
@@ -148,9 +166,6 @@ export function MediaPickerDialog({
       }))
       setFolders(nextFolders)
       setAssets(nextAssets)
-      if (!nextFolders.some((folder) => folder.name === uploadFolder)) {
-        setUploadFolder(nextFolders[0]?.name || "categories")
-      }
       return { folders: nextFolders, assets: nextAssets }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to fetch media")
@@ -158,7 +173,7 @@ export function MediaPickerDialog({
     } finally {
       setLoading(false)
     }
-  }, [uploadFolder])
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -169,7 +184,6 @@ export function MediaPickerDialog({
     if (!open) return
     if (!preferredUploadFolder) return
     setUploadFolder(preferredUploadFolder)
-    setTargetFolder(preferredUploadFolder)
   }, [open, preferredUploadFolder])
 
   useEffect(() => {
@@ -205,10 +219,10 @@ export function MediaPickerDialog({
   useEffect(() => {
     if (!open) {
       setSelectedUrls([])
-      setSearch("")
       setTab("library")
       setActiveFolder("all")
       setActiveSubfolder("all")
+      setSelectedChildFolder("")
       setDidAutoPickFolder(false)
       setFolderMenu(null)
       setShowColorPicker(false)
@@ -233,28 +247,11 @@ export function MediaPickerDialog({
   }, [activeFolder, folders])
 
   const currentPath = useMemo(() => {
+    if (selectedChildFolder) return selectedChildFolder
     if (activeSubfolder !== "all") return activeSubfolder
     if (activeFolder !== "all") return activeFolder
     return ""
-  }, [activeFolder, activeSubfolder])
-
-  const rightPaneFolders = useMemo(() => {
-    if (!currentPath || activeFolder === "all") return [] as string[]
-    const prefix = `${currentPath}/`
-    const directChildren = folders
-      .map((folder) => folder.name)
-      .filter((name) => name.startsWith(prefix))
-      .map((name) => name.slice(prefix.length))
-      .filter((rest) => rest.length > 0 && !rest.includes("/"))
-      .map((leaf) => `${currentPath}/${leaf}`)
-      .sort((a, b) => a.localeCompare(b))
-
-    // Keep subcategories only in left pane; do not repeat them in right pane
-    if (activeSubfolder === "all") {
-      return directChildren.filter((name) => !directSubfolders.includes(name))
-    }
-    return directChildren
-  }, [activeFolder, activeSubfolder, currentPath, directSubfolders, folders])
+  }, [activeFolder, activeSubfolder, selectedChildFolder])
 
   const uniqueAssets = useMemo(() => {
     const map = new Map<string, Asset>()
@@ -274,32 +271,15 @@ export function MediaPickerDialog({
     })
   }, [hiddenDeletedUrls, uniqueAssets])
 
-  const folderImageCountMap = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const asset of imageAssets) {
-      if (!isManagedUploadUrl(asset.url)) continue
-      const folder = asset.folder
-      map.set(folder, (map.get(folder) || 0) + 1)
-      const parts = folder.split("/").filter(Boolean)
-      for (let i = parts.length - 1; i >= 1; i -= 1) {
-        const parent = parts.slice(0, i).join("/")
-        map.set(parent, (map.get(parent) || 0) + 1)
-      }
-    }
-    return map
-  }, [imageAssets])
-
   const topFolders = useMemo(() => {
     const names = new Set<string>()
     for (const folder of folders) {
       const top = folder.name.split("/")[0] || folder.name
       if (top) names.add(top)
     }
-    const normalFolders = Array.from(names)
-      .map((name) => ({ name, count: folderImageCountMap.get(name) || 0 }))
-      .sort((a, b) => a.name.localeCompare(b.name))
+    const normalFolders = Array.from(names).map((name) => ({ name, count: 0 })).sort((a, b) => a.name.localeCompare(b.name))
     return [{ name: "all", count: imageAssets.length }, ...normalFolders]
-  }, [folderImageCountMap, folders, imageAssets.length])
+  }, [folders, imageAssets.length])
 
   useEffect(() => {
     if (!open) return
@@ -309,23 +289,37 @@ export function MediaPickerDialog({
     setActiveFolder(topFolders[0].name)
     setActiveSubfolder("all")
     setUploadFolder(topFolders[1]?.name || "categories")
-    setTargetFolder(topFolders[1]?.name || "categories")
     setDidAutoPickFolder(true)
   }, [open, activeFolder, didAutoPickFolder, topFolders])
 
+  const childFolders = useMemo(() => {
+    if (activeSubfolder === "all") return [] as string[]
+    const prefix = `${activeSubfolder}/`
+    return folders
+      .map((folder) => folder.name)
+      .filter((name) => name.startsWith(prefix))
+      .map((name) => name.slice(prefix.length))
+      .filter((rest) => rest.length > 0 && !rest.includes("/"))
+      .map((leaf) => `${activeSubfolder}/${leaf}`)
+      .sort((a, b) => a.localeCompare(b))
+  }, [activeSubfolder, folders])
+
+  const usesSkuFolders = useMemo(() => {
+    if (activeSubfolder === "all") return false
+    return shouldUseProductSkuFolder(activeSubfolder)
+  }, [activeSubfolder])
+
   const filteredAssets = useMemo(() => {
-    const term = search.trim().toLowerCase()
     return imageAssets.filter((asset) => {
-      const inFolder =
-        activeFolder === "all"
-          ? true
-          : activeSubfolder === "all"
-            ? asset.folder === activeFolder
-            : asset.folder === activeSubfolder
-      const inSearch = !term || asset.name.toLowerCase().includes(term) || asset.usedIn.toLowerCase().includes(term)
-      return inFolder && inSearch
+      if (selectedChildFolder) {
+        return asset.folder === selectedChildFolder || asset.folder.startsWith(`${selectedChildFolder}/`)
+      }
+      if (activeFolder === "all") return true
+      if (activeSubfolder === "all") return asset.folder === activeFolder
+      if (usesSkuFolders) return false
+      return asset.folder === activeSubfolder
     })
-  }, [activeFolder, activeSubfolder, imageAssets, search])
+  }, [activeFolder, activeSubfolder, imageAssets, selectedChildFolder, usesSkuFolders])
 
   const sortedFilteredAssets = useMemo(() => {
     return [...filteredAssets].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
@@ -342,14 +336,21 @@ export function MediaPickerDialog({
       return
     }
 
+    let cancelled = false
     const img = new window.Image()
     img.onload = () => {
+      if (cancelled) return
       setSelectedAssetDimensions({ width: img.naturalWidth, height: img.naturalHeight })
     }
     img.onerror = () => {
+      if (cancelled) return
       setSelectedAssetDimensions(null)
     }
     img.src = selectedAsset.url
+
+    return () => {
+      cancelled = true
+    }
   }, [selectedAsset?.url])
 
   const selectedAssetDate = useMemo(() => {
@@ -388,8 +389,7 @@ export function MediaPickerDialog({
     return assetLabels[selectedAssetLabelGroup] || selectedAsset.name
   }, [assetLabels, productMeta?.title, selectedAsset, selectedAssetLabelGroup])
 
-  const effectiveSelectedFolderCount =
-    selectedRightFolders.length > 0 ? selectedRightFolders.length : selectedFolder && rightPaneFolders.includes(selectedFolder) ? 1 : 0
+  const effectiveSelectedFolderCount = selectedRightFolders.length
 
   const totalSelectedCount = selectedUrls.length + effectiveSelectedFolderCount
 
@@ -496,13 +496,16 @@ export function MediaPickerDialog({
     if (files.length === 0) return
     setUploading(true)
     try {
-      if (preferredUploadFolder && productMeta?.categoryFolderPath) {
-        const skuFolder = (productMeta?.sku || "").trim()
-        if (skuFolder) {
+      const targetUploadFolder = resolveProductUploadFolder(uploadFolder || preferredUploadFolder || "categories", productMeta?.sku || "")
+
+      const skuFolder = (productMeta?.sku || "").trim()
+      if (skuFolder && targetUploadFolder.endsWith(`/${skuFolder}`)) {
+        const parentFolder = targetUploadFolder.slice(0, -(skuFolder.length + 1))
+        if (parentFolder) {
           await fetch("/api/admin/media", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ parentFolder: productMeta.categoryFolderPath, name: skuFolder }),
+            body: JSON.stringify({ parentFolder, name: skuFolder }),
           })
         }
       }
@@ -511,7 +514,7 @@ export function MediaPickerDialog({
       for (const [index, file] of files.entries()) {
         const formData = new FormData()
         formData.append("file", file)
-        formData.append("folder", preferredUploadFolder || uploadFolder)
+        formData.append("folder", targetUploadFolder)
         const baseName = buildUploadBaseName(productMeta?.title || "", index, files.length)
         if (baseName) formData.append("baseName", baseName)
         const res = await fetch("/api/upload", {
@@ -530,21 +533,22 @@ export function MediaPickerDialog({
       setHiddenDeletedUrls((prev) => prev.filter((url) => !uploadedUrls.includes(url)))
       const refreshed = await loadMedia()
       setTab("library")
-      setSearch("")
       setSelectedFolder(null)
       setSelectedRightFolders([])
 
-      const focusFolder = uploadedFolders[0] || preferredUploadFolder || uploadFolder
+      const focusFolder = uploadedFolders[0] || targetUploadFolder
       const focusTop = focusFolder.split("/")[0] || "all"
       setActiveFolder(focusTop)
       setActiveSubfolder(focusFolder === focusTop ? "all" : focusFolder)
       setUploadFolder(focusFolder)
-      setTargetFolder(focusFolder)
-
       const assetUrlSet = new Set((refreshed?.assets || []).map((asset) => asset.url))
       const existingUploaded = uploadedUrls.filter((url) => assetUrlSet.has(url))
       if (existingUploaded.length === 0) {
         setSelectedUrls([])
+      } else if (!multiple) {
+        onSelect([existingUploaded[0]])
+        onOpenChange(false)
+        return
       } else if (multiple) {
         setSelectedUrls(existingUploaded)
       } else {
@@ -615,7 +619,6 @@ export function MediaPickerDialog({
       toast.success("Folder renamed")
       if (activeSubfolder === folderPath) setActiveSubfolder(nextFolder)
       if (uploadFolder === folderPath) setUploadFolder(nextFolder)
-      if (targetFolder === folderPath) setTargetFolder(nextFolder)
       await loadMedia()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to rename folder")
@@ -638,7 +641,6 @@ export function MediaPickerDialog({
       toast.success("Folder deleted")
       if (activeSubfolder === folderPath) setActiveSubfolder("all")
       if (uploadFolder === folderPath) setUploadFolder(activeFolder !== "all" ? activeFolder : "categories")
-      if (targetFolder === folderPath) setTargetFolder(activeFolder !== "all" ? activeFolder : "categories")
       setSelectedFolder(null)
       setSelectedRightFolders((prev) => prev.filter((item) => item !== folderPath))
       await loadMedia()
@@ -724,89 +726,6 @@ export function MediaPickerDialog({
     } finally {
       setMoving(false)
     }
-  }
-
-  const moveSelectedAssets = async () => {
-    await moveAssetsToFolder(selectedUrls, targetFolder)
-  }
-
-  const goBackOneLevel = () => {
-    if (activeSubfolder === "all") return
-
-    const parts = activeSubfolder.split("/").filter(Boolean)
-    if (parts.length <= 1) {
-      setActiveSubfolder("all")
-      setSelectedFolder(null)
-      setUploadFolder(activeFolder !== "all" ? activeFolder : "categories")
-      setTargetFolder(activeFolder !== "all" ? activeFolder : "categories")
-      return
-    }
-
-    const parentFolder = parts.slice(0, -1).join("/")
-    if (parentFolder === activeFolder) {
-      setActiveSubfolder("all")
-      setSelectedFolder(parentFolder)
-      setUploadFolder(parentFolder)
-      setTargetFolder(parentFolder)
-      return
-    }
-
-    setActiveSubfolder(parentFolder)
-    setSelectedFolder(parentFolder)
-    setUploadFolder(parentFolder)
-    setTargetFolder(parentFolder)
-  }
-
-  const handleFolderDrop = async (folderPath: string) => {
-    const foldersToMove = selectedRightFolders.filter(
-      (selectedPath) => selectedPath !== folderPath && !folderPath.startsWith(`${selectedPath}/`)
-    )
-    setDragTargetFolder(null)
-    setDraggingUrls([])
-    if (foldersToMove.length > 0) {
-      setMoving(true)
-      try {
-        for (const sourceFolder of foldersToMove) {
-          const currentParent = sourceFolder.includes("/") ? sourceFolder.split("/").slice(0, -1).join("/") : ""
-          if (currentParent === folderPath) continue
-          const res = await fetch("/api/admin/media/folders", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ folder: sourceFolder, targetParent: folderPath }),
-          })
-          const json = await res.json().catch(() => null as null | { error?: string; folder?: string })
-          if (!res.ok) {
-            throw new Error(json?.error || "Failed to move folder")
-          }
-        }
-        toast.success("Selected folders moved")
-        setSelectedFolder(null)
-        setSelectedRightFolders([])
-        await loadMedia()
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Failed to move folder")
-      } finally {
-        setMoving(false)
-      }
-      return
-    }
-
-    const urlsToMove = draggingUrls.length > 0 ? draggingUrls : selectedUrls
-    if (urlsToMove.length === 0) return
-    setTargetFolder(folderPath)
-    await moveAssetsToFolder(urlsToMove, folderPath)
-  }
-
-  const openFolderMenuAtElement = (folder: string, element: HTMLElement) => {
-    const dialogRect = dialogContentRef.current?.getBoundingClientRect()
-    const targetRect = element.getBoundingClientRect()
-    if (!dialogRect) return
-    setFolderMenu({
-      folder,
-      x: targetRect.left - dialogRect.left + 8,
-      y: targetRect.top - dialogRect.top + 8,
-    })
-    setShowColorPicker(false)
   }
 
   const applyFolderColor = (folderPath: string, color: string) => {
@@ -948,235 +867,199 @@ export function MediaPickerDialog({
             </label>
           </div>
         ) : (
-          <div className="flex h-full min-h-0 overflow-hidden">
-            <aside className="flex h-full min-h-0 w-[300px] shrink-0 flex-col border-r border-slate-200 p-4">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Folders</p>
-              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-                {topFolders.map((folder) => {
-                  const isOpen = activeFolder === folder.name
-                  return (
-                    <div key={folder.name} className={`rounded-md border ${isOpen ? "border-teal-400" : "border-slate-200"}`}>
-                      <button
-                        type="button"
-                        className={`flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm ${isOpen ? "bg-teal-50 text-slate-900" : "bg-white text-slate-700 hover:bg-slate-50"}`}
-                        onClick={() => {
-                          if (isOpen) {
-                            setActiveFolder("all")
+          <div className="flex h-full min-h-0 overflow-hidden bg-[#f8fafc]">
+            <div className="flex min-w-0 flex-1 flex-col p-5">
+              <div className="rounded-2xl border border-[#dce3ed] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+                <div className="space-y-6 p-6">
+                  <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-center xl:justify-start">
+                    <div className="flex flex-1 flex-col gap-3 lg:flex-row lg:items-center">
+                      <div className="grid gap-3 sm:grid-cols-[260px_260px_auto]">
+                        <Select
+                          value={activeFolder}
+                          onValueChange={(value) => {
+                            setActiveFolder(value)
                             setActiveSubfolder("all")
+                            setSelectedChildFolder("")
                             setSelectedFolder(null)
                             setSelectedRightFolders([])
-                            return
-                          }
-                          setActiveFolder(folder.name)
-                          setActiveSubfolder("all")
-                          setSelectedFolder(null)
-                          setSelectedRightFolders([])
-                          setUploadFolder(folder.name === "all" ? "categories" : folder.name)
-                          setTargetFolder(folder.name === "all" ? "categories" : folder.name)
-                        }}
-                      >
-                        <span className="inline-flex items-center gap-2">
-                          <Folder className="h-4 w-4 text-amber-500" />
-                          {folder.name === "all" ? "All" : formatFolderLabel(folder.name)}
-                        </span>
-                        <span className="rounded bg-white px-1.5 py-0.5 text-[10px] text-slate-600">
-                          {folder.count}
-                        </span>
-                      </button>
-                      {isOpen && folder.name !== "all" ? (
-                        <div className="border-t border-slate-200 p-2">
-                          {directSubfolders.map((subfolder) => (
-                            <button
-                              key={subfolder}
-                              type="button"
-                              className={`mb-1 flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs ${selectedFolder === subfolder ? "bg-slate-100 font-medium text-slate-900" : "text-slate-600 hover:bg-slate-50"}`}
-                              onClick={() => {
-                                setSelectedFolder(subfolder)
-                                setSelectedRightFolders([])
-                                setActiveSubfolder(subfolder)
-                                setUploadFolder(subfolder)
-                                setTargetFolder(subfolder)
-                              }}
-                            >
-                              <span className="truncate">{formatFolderLabel(subfolder.replace(`${folder.name}/`, ""))}</span>
-                              <span className="rounded bg-white px-1.5 py-0.5 text-[10px] text-slate-600">
-                                {folderImageCountMap.get(subfolder) || 0}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  )
-                })}
-              </div>
-            </aside>
+                            const nextFolder = value === "all" ? preferredUploadFolder || "categories" : value
+                            setUploadFolder(nextFolder)
+                          }}
+                        >
+                          <SelectTrigger className="h-12 border-[#cfd9e4] bg-white text-[15px]">
+                            <SelectValue placeholder="All media items" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All media items</SelectItem>
+                            {topFolders
+                              .filter((folder) => folder.name !== "all")
+                              .map((folder) => (
+                                <SelectItem key={folder.name} value={folder.name}>
+                                  {formatFolderLabel(folder.name)}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
 
-            <div className="flex min-w-0 flex-1 overflow-hidden">
-              <div className="flex min-w-0 flex-1 flex-col">
-                <div className="border-b border-slate-200 p-4">
-                  <div className="flex items-center gap-2">
-                    <Input
-                      placeholder="Search media..."
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                    />
-                    <Select value={targetFolder} onValueChange={setTargetFolder}>
-                      <SelectTrigger className="w-[220px]">
-                        <SelectValue placeholder="Move to folder" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {folders.map((folder) => (
-                          <SelectItem key={folder.name} value={folder.name}>
-                            {folder.name.split("/").map(formatFolderLabel).join(" / ")}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button type="button" size="sm" onClick={() => void moveSelectedAssets()} disabled={moving || selectedUrls.length === 0}>
-                      {moving ? "Moving..." : "Move"}
-                    </Button>
-                  </div>
-                  {activeSubfolder !== "all" ? (
-                    <div className="mt-3">
+                        <Select
+                          value={activeSubfolder}
+                          onValueChange={(value) => {
+                            setActiveSubfolder(value)
+                            setSelectedChildFolder("")
+                            setSelectedFolder(null)
+                            setSelectedRightFolders([])
+                            const nextFolder = value === "all" ? (activeFolder === "all" ? preferredUploadFolder || "categories" : activeFolder) : value
+                            setUploadFolder(nextFolder)
+                          }}
+                          disabled={activeFolder === "all"}
+                        >
+                          <SelectTrigger className="h-12 border-[#cfd9e4] bg-white text-[15px]">
+                            <SelectValue placeholder="All subcategories" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All subcategories</SelectItem>
+                            {directSubfolders.map((folder) => (
+                              <SelectItem key={folder} value={folder}>
+                                {formatFolderLabel(folder.split("/").pop() || folder)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+
+                        <div className="flex gap-2">
+                          <Button type="button" className="h-12 px-5" onClick={() => setTab("upload")} disabled={uploading}>
+                            {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                            Upload files
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 xl:ml-0">
                       <Button
                         type="button"
-                        size="sm"
                         variant="outline"
-                        onClick={goBackOneLevel}
-                        className="border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700"
+                        onClick={() => {
+                          if (selectedUrls.length > 0) {
+                            queueDeleteAssets(selectedUrls, `${selectedUrls.length} medya silinmek üzere işaretlendi`)
+                            return
+                          }
+                          void (selectedFolder ? deleteFolder(selectedFolder) : deleteAllAssets())
+                        }}
+                        disabled={moving || (selectedUrls.length === 0 && !selectedFolder && activeFolder !== "all")}
                       >
-                        Geri
+                        Sil
                       </Button>
                     </div>
-                  ) : null}
-                </div>
+                  </div>
 
-                <div ref={libraryScrollRef} className="min-h-0 flex-1 overflow-y-auto p-4">
-                  {loading ? (
-                    <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Loading media...
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {rightPaneFolders.length > 0 ? (
-                        <div
-                          className="grid gap-3"
-                          style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
-                        >
-                          {rightPaneFolders.map((folderPath) => {
-                            const folderColor = folderColors[folderPath] || "#f59e0b"
-                            const isSelected = selectedRightFolders.includes(folderPath)
+                  <div ref={libraryScrollRef} className="min-h-[520px]">
+                    {loading ? (
+                      <div className="flex h-[520px] items-center justify-center text-sm text-slate-500">
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Loading media...
+                      </div>
+                    ) : !selectedChildFolder && childFolders.length > 0 ? (
+                      <div className="space-y-6">
+                        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+                          {childFolders.map((folder) => {
+                            const selected = selectedFolder === folder
                             return (
-                              <button
-                                key={folderPath}
-                                type="button"
-                                draggable
-                                className={`rounded-md border bg-white p-3 text-left hover:bg-slate-50 ${dragTargetFolder === folderPath ? "ring-2 ring-teal-400" : "border-slate-200"} ${isSelected ? "ring-2 ring-blue-300" : ""}`}
-                                style={{
-                                  borderColor: folderColor,
-                                  backgroundColor: `${folderColor}12`,
-                                }}
+                              <div
+                                key={folder}
+                                role="button"
+                                tabIndex={0}
                                 onClick={(event) => {
-                                  toggleRightFolderSelection(folderPath, event.metaKey || event.ctrlKey)
+                                  const withMultiSelect = event.metaKey || event.ctrlKey
+                                  toggleRightFolderSelection(folder, withMultiSelect)
+                                  setSelectedChildFolder("")
                                 }}
                                 onDoubleClick={() => {
-                                  setSelectedFolder(folderPath)
-                                  setSelectedRightFolders([folderPath])
-                                  setActiveSubfolder(folderPath)
-                                  setUploadFolder(folderPath)
-                                  setTargetFolder(folderPath)
+                                  setSelectedFolder(folder)
+                                  setSelectedRightFolders([folder])
+                                  setSelectedChildFolder(folder)
+                                  setUploadFolder(folder)
                                 }}
-                                onContextMenu={(event) => {
-                                  event.preventDefault()
-                                  setSelectedFolder(folderPath)
-                                  setSelectedRightFolders((prev) => (prev.includes(folderPath) ? prev : [folderPath]))
-                                  openFolderMenuAtElement(folderPath, event.currentTarget)
-                                }}
-                                onDragStart={(event) => {
-                                  const foldersToDrag = selectedRightFolders.includes(folderPath) ? selectedRightFolders : [folderPath]
-                                  if (!selectedRightFolders.includes(folderPath)) {
-                                    setSelectedRightFolders([folderPath])
-                                    setSelectedFolder(folderPath)
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault()
+                                    setSelectedFolder(folder)
+                                    setSelectedRightFolders([folder])
+                                    setSelectedChildFolder(folder)
+                                    setUploadFolder(folder)
                                   }
-                                  event.dataTransfer.setData("text/plain", foldersToDrag.join(","))
                                 }}
-                                onDragOver={(event) => {
-                                  event.preventDefault()
-                                  setDragTargetFolder(folderPath)
-                                }}
-                                onDragLeave={() => {
-                                  setDragTargetFolder((prev) => (prev === folderPath ? null : prev))
-                                }}
-                                onDrop={(event) => {
-                                  event.preventDefault()
-                                  void handleFolderDrop(folderPath)
-                                }}
+                                className={`rounded-[28px] border bg-white p-6 text-left shadow-[0_8px_24px_rgba(15,23,42,0.05)] transition ${selected ? "border-teal-500 ring-2 ring-teal-200" : "border-[#dce3ed]"}`}
                               >
-                                <Folder
-                                  className="mb-2 h-8 w-8"
-                                  style={{ color: folderColor, fill: `${folderColor}33` }}
-                                />
-                                <p className="truncate text-sm font-medium text-slate-800">
-                                  {formatFolderLabel(folderPath.split("/").pop() || folderPath)}
-                                </p>
-                                <p className="text-xs text-slate-500">{folderImageCountMap.get(folderPath) || 0}</p>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      ) : null}
-
-                      {sortedFilteredAssets.length === 0 ? (
-                        <div className="flex h-full min-h-[220px] flex-col items-center justify-center text-sm text-slate-500">
-                          <ImageIcon className="mb-2 h-8 w-8 text-slate-400" />
-                          No images found
-                        </div>
-                      ) : (
-                        <div
-                          className="grid gap-3"
-                          style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
-                        >
-                          {sortedFilteredAssets.map((asset) => {
-                            const selected = selectedUrls.includes(asset.url)
-                            const labelGroup = getAssetLabelGroup(asset)
-                            const displayLabel = assetLabels[labelGroup] || asset.name
-                            return (
-                              <button
-                                key={asset.id}
-                                type="button"
-                                onClick={(event) => toggleAssetWithModifier(asset.url, event.metaKey || event.ctrlKey)}
-                                onDoubleClick={() => handleAssetDoubleClick(asset.url)}
-                                draggable
-                                onDragStart={() => {
-                                  const urls = selectedUrls.includes(asset.url) ? selectedUrls : [asset.url]
-                                  setDraggingUrls(urls)
-                                }}
-                                onDragEnd={() => {
-                                  setDraggingUrls([])
-                                  setDragTargetFolder(null)
-                                }}
-                                className={`relative overflow-hidden rounded-md border bg-white text-left ${selected ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200"}`}
-                              >
-                                <div className="aspect-square overflow-hidden bg-slate-100">
-                                  <img src={asset.url} alt={asset.name} className="h-full w-full object-cover" />
+                                <div className="mb-8 text-[#f59e0b]">
+                                  <FolderIcon className="h-9 w-9" />
                                 </div>
-                                <div className="truncate px-2 py-1 text-[11px] text-slate-700">{displayLabel}</div>
-                                {selected ? (
-                                  <span className="absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white">
-                                    <Check className="h-3 w-3" />
-                                  </span>
-                                ) : null}
-                              </button>
+                                <div className="space-y-2">
+                                  <div className="text-[18px] font-semibold text-slate-900">{folder.split("/").pop() || folder}</div>
+                                  <div className="text-sm text-slate-500">{folder}</div>
+                                </div>
+                              </div>
                             )
                           })}
                         </div>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    ) : sortedFilteredAssets.length === 0 ? (
+                      <div className="flex h-[520px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
+                        <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
+                        No images found
+                      </div>
+                    ) : (
+                      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+                        {sortedFilteredAssets.map((asset) => {
+                          const selected = selectedUrls.includes(asset.url)
+                          const labelGroup = getAssetLabelGroup(asset)
+                          const displayLabel = assetLabels[labelGroup] || asset.name
+                          return (
+                            <div
+                              key={asset.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={(event) => toggleAssetWithModifier(asset.url, event.metaKey || event.ctrlKey)}
+                              onDoubleClick={() => handleAssetDoubleClick(asset.url)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault()
+                                  toggleAssetWithModifier(asset.url, event.metaKey || event.ctrlKey)
+                                }
+                              }}
+                              className={`overflow-hidden rounded-2xl border bg-white text-left transition ${
+                                selected ? "border-teal-500 ring-2 ring-teal-200" : "border-[#dce3ed] hover:border-slate-300"
+                              }`}
+                            >
+                              <div className="relative aspect-square overflow-hidden bg-slate-100">
+                                <div className="absolute left-3 top-3 z-10 rounded-md bg-white/95 p-1.5">
+                                  {multiple ? (
+                                    <Checkbox
+                                      checked={selected}
+                                      onClick={(event: React.MouseEvent<HTMLButtonElement>) => event.stopPropagation()}
+                                      onCheckedChange={() => toggleAssetWithModifier(asset.url, true)}
+                                    />
+                                  ) : (
+                                    <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full border ${selected ? "border-teal-600 bg-teal-600 text-white" : "border-slate-300 bg-white text-transparent"}`}>
+                                      <Check className="h-3 w-3" />
+                                    </span>
+                                  )}
+                                </div>
+                                <img src={asset.url} alt={asset.name} className="h-full w-full object-cover" />
+                              </div>
+                              <div className="space-y-1 p-3">
+                                <p className="truncate text-sm font-medium text-slate-900">{displayLabel}</p>
+                                <p className="truncate text-xs text-slate-500">{asset.folder}</p>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
+            </div>
               <aside className="flex h-full min-h-0 w-[360px] shrink-0 flex-col border-l border-slate-200 bg-slate-50/70">
                 <div className="h-full overflow-y-auto p-4">
                   {selectedAsset ? (
@@ -1235,7 +1118,6 @@ export function MediaPickerDialog({
                 </div>
               </aside>
             </div>
-          </div>
         )}
         </div>
 

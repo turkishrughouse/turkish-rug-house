@@ -6,6 +6,17 @@ const customAttributeSchema = z.object({
     visible: z.boolean().default(true),
 })
 
+const supplierSchema = z.object({
+    name: z.string().trim().default(""),
+    number: z.string().trim().default(""),
+    company: z.string().trim().default(""),
+    phone: z.string().trim().default(""),
+    note: z.string().trim().default(""),
+}).refine(
+    (value) => Boolean(value.name || value.company || value.number),
+    { message: "Supplier must have a name, company, or number" }
+)
+
 export const productFormSchema = z.object({
     title: z.string().min(1, "Title is required"),
     slug: z.string().min(1, "Slug is required").regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Invalid slug format"),
@@ -29,12 +40,14 @@ export const productFormSchema = z.object({
     colorIds: z.array(z.string()).default([]),
     sizeIds: z.array(z.string()).default([]),
     ageIds: z.array(z.string()).default([]),
+    materialIds: z.array(z.string()).default([]),
 
     // SEO
     seoTitle: z.string().optional(),
     seoDescription: z.string().optional(),
     seoKeywords: z.string().optional(),
     customAttributes: z.array(customAttributeSchema).default([]),
+    suppliers: z.array(supplierSchema).default([]),
 })
 
 export type ProductFormInput = z.input<typeof productFormSchema>

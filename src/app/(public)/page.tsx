@@ -1,4 +1,5 @@
 import { DailyCategoryShowcase } from "@/components/storefront/daily-category-showcase"
+import { FeaturedProducts } from "@/components/storefront/featured-products"
 import { HomeFeaturesStrip } from "@/components/storefront/home-features-strip"
 import { RecentlyViewedSection } from "@/components/storefront/recently-viewed-section"
 import { ShopByStyleSection } from "@/components/storefront/shop-by-style-section"
@@ -259,6 +260,27 @@ export default async function HomePage() {
     })
   }
 
+  const featuredResult = await getProducts(1, 8, "", "published", "latest", undefined, {
+    featuredOnly: true,
+  })
+  const latestFallbackResult =
+    featuredResult.products.length > 0
+      ? featuredResult
+      : await getProducts(1, 8, "", "published", "latest")
+
+  const featuredProducts = latestFallbackResult.products.map((item) => ({
+    id: item.id,
+    title: item.title,
+    slug: item.slug,
+    price: Number(item.price),
+    images: item.images,
+    description: item.description,
+    compareAtPrice: item.compareAtPrice ?? null,
+    stockCount: item.stockCount,
+    isStock: item.isStock,
+    categories: item.categories,
+  }))
+
   return (
     <div className="bg-slate-50/30">
       <ShopByStyleSection
@@ -270,6 +292,8 @@ export default async function HomePage() {
           bottomLeft: siteSettings.categoryCardRadiusBottomLeft,
         }}
       />
+
+      <FeaturedProducts products={featuredProducts} title="Featured Rugs" />
 
       <HomeFeaturesStrip items={siteSettings.homeFeatureItems} />
 

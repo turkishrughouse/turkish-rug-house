@@ -28,12 +28,14 @@ export default async function EditProductPage({ params }: PageProps) {
         colors: any[];
         sizes: any[];
         ages: any[];
+        materials: any[];
         categoryAttributeMap?: Record<string, {
             typeIds: string[]
             styleIds: string[]
             colorIds: string[]
             sizeIds: string[]
             ageIds: string[]
+            materialIds: string[]
         }>;
     } = {
         categories: [],
@@ -42,18 +44,36 @@ export default async function EditProductPage({ params }: PageProps) {
         colors: [],
         sizes: [],
         ages: [],
+        materials: [],
         categoryAttributeMap: {}
     }
 
     try {
-        const [prod, opts] = await Promise.all([
-            getProduct(id),
-            getProductOptions()
-        ])
-        product = prod
-        options = opts
+        options = await getProductOptions()
     } catch (error) {
-        console.error("Error fetching product or options:", error)
+        console.error("Error fetching product options:", error)
+    }
+
+    try {
+        product = await getProduct(id)
+        if (!product) {
+            const exists = await prisma.product.findUnique({
+                where: { id },
+                select: { id: true },
+            })
+            if (exists) {
+                product = await getProduct(id)
+            }
+        }
+    } catch (error) {
+        console.error("Error fetching product:", error)
+        const exists = await prisma.product.findUnique({
+            where: { id },
+            select: { id: true },
+        }).catch(() => null)
+        if (exists) {
+            product = await getProduct(id).catch(() => null)
+        }
     }
 
     if (!product) notFound()

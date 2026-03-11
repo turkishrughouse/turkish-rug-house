@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 
-type FixedGroupKey = "types" | "styles" | "colors" | "sizes" | "ages"
+type FixedGroupKey = "types" | "styles" | "colors" | "sizes" | "ages" | "materials"
 
 type CustomOption = {
   id: string
@@ -18,6 +18,16 @@ type CustomGroup = {
 
 const CUSTOM_SETTINGS_KEY = "product_custom_attributes"
 
+function getMaterialDelegate() {
+  return (prisma as unknown as {
+    material?: {
+      findMany: (...args: any[]) => Promise<Array<{ id: string; name: string; slug: string }>>
+      create: (args: any) => Promise<unknown>
+      delete: (args: any) => Promise<unknown>
+    }
+  }).material
+}
+
 function slugify(input: string) {
   return input
     .toLowerCase()
@@ -27,7 +37,7 @@ function slugify(input: string) {
 }
 
 function isFixedGroupKey(value: string): value is FixedGroupKey {
-  return ["types", "styles", "colors", "sizes", "ages"].includes(value)
+  return ["types", "styles", "colors", "sizes", "ages", "materials"].includes(value)
 }
 
 async function getCustomGroups(): Promise<CustomGroup[]> {
@@ -54,12 +64,14 @@ async function saveCustomGroups(groups: CustomGroup[]) {
 }
 
 async function getFixedGroups() {
-  const [types, styles, colors, sizes, ages] = await Promise.all([
+  const materialDelegate = getMaterialDelegate()
+  const [types, styles, colors, sizes, ages, materials] = await Promise.all([
     prisma.type.findMany({ orderBy: { name: "asc" } }),
     prisma.style.findMany({ orderBy: { name: "asc" } }),
     prisma.color.findMany({ orderBy: { name: "asc" } }),
     prisma.size.findMany({ orderBy: { name: "asc" } }),
     prisma.age.findMany({ orderBy: { name: "asc" } }),
+    materialDelegate?.findMany ? materialDelegate.findMany({ orderBy: { name: "asc" } }) : Promise.resolve([]),
   ])
 
   return [
@@ -68,6 +80,7 @@ async function getFixedGroups() {
     { id: "colors", key: "colors", name: "Colors", kind: "fixed", options: colors.map((x) => ({ id: x.id, name: x.name, slug: x.slug, hex: x.hex })) },
     { id: "sizes", key: "sizes", name: "Sizes", kind: "fixed", options: sizes.map((x) => ({ id: x.id, name: x.name, slug: x.slug })) },
     { id: "ages", key: "ages", name: "Ages", kind: "fixed", options: ages.map((x) => ({ id: x.id, name: x.name, slug: x.slug })) },
+    { id: "materials", key: "materials", name: "Materials", kind: "fixed", options: materials.map((x) => ({ id: x.id, name: x.name, slug: x.slug })) },
   ]
 }
 
@@ -91,6 +104,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const materialDelegate = getMaterialDelegate()
     const body = await req.json()
     const action = String(body?.action || "")
 
@@ -110,6 +124,10 @@ export async function POST(req: NextRequest) {
       if (group === "styles") await prisma.style.create({ data: { name, slug } })
       if (group === "sizes") await prisma.size.create({ data: { name, slug } })
       if (group === "ages") await prisma.age.create({ data: { name, slug } })
+      if (group === "materials") {
+        if (!materialDelegate?.create) return NextResponse.json({ error: "Materials are not available yet" }, { status: 503 })
+        await materialDelegate.create({ data: { name, slug } })
+      }
       if (group === "colors") await prisma.color.create({ data: { name, slug, hex } })
 
       return NextResponse.json({ success: true })
@@ -124,6 +142,10 @@ export async function POST(req: NextRequest) {
       if (group === "styles") await prisma.style.delete({ where: { id: optionId } })
       if (group === "sizes") await prisma.size.delete({ where: { id: optionId } })
       if (group === "ages") await prisma.age.delete({ where: { id: optionId } })
+      if (group === "materials") {
+        if (!materialDelegate?.delete) return NextResponse.json({ error: "Materials are not available yet" }, { status: 503 })
+        await materialDelegate.delete({ where: { id: optionId } })
+      }
       if (group === "colors") await prisma.color.delete({ where: { id: optionId } })
 
       return NextResponse.json({ success: true })

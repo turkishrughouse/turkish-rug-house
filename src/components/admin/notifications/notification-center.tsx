@@ -70,8 +70,14 @@ export function NotificationCenter({ lang = "en" }: NotificationCenterProps) {
   })
   const audioContextRef = useRef<AudioContext | null>(null)
   const orderAudioRef = useRef<HTMLAudioElement | null>(null)
+  const lastSaleAlertIdRef = useRef(lastSaleAlertId)
+  const notificationsInFlightRef = useRef(false)
   const isTr = lang === "tr"
   const tx = (en: string, tr: string) => (isTr ? tr : en)
+
+  useEffect(() => {
+    lastSaleAlertIdRef.current = lastSaleAlertId
+  }, [lastSaleAlertId])
 
   const ensureAudioContext = useCallback(() => {
     if (typeof window === "undefined") return null
@@ -134,6 +140,8 @@ export function NotificationCenter({ lang = "en" }: NotificationCenterProps) {
   }, [ensureAudioContext])
 
   const fetchNotifications = useCallback(async () => {
+    if (notificationsInFlightRef.current) return
+    notificationsInFlightRef.current = true
     try {
       const res = await fetch("/api/admin/notifications", { cache: "no-store" })
       if (!res.ok) return
@@ -142,10 +150,11 @@ export function NotificationCenter({ lang = "en" }: NotificationCenterProps) {
 
        const latestSale = json.items.find((item) => item.type === "SALE")
        if (latestSale) {
-         if (!lastSaleAlertId) {
+         const currentLastSaleAlertId = lastSaleAlertIdRef.current
+         if (!currentLastSaleAlertId) {
            localStorage.setItem(LAST_SALE_ALERT_KEY, latestSale.id)
            setLastSaleAlertId(latestSale.id)
-         } else if (latestSale.id !== lastSaleAlertId) {
+         } else if (latestSale.id !== currentLastSaleAlertId) {
            toast.success(latestSale.title, { description: latestSale.description })
            void playOrderBell()
            localStorage.setItem(LAST_SALE_ALERT_KEY, latestSale.id)
@@ -154,8 +163,10 @@ export function NotificationCenter({ lang = "en" }: NotificationCenterProps) {
        }
     } catch {
       // ignore header-level fetch errors
+    } finally {
+      notificationsInFlightRef.current = false
     }
-  }, [lastSaleAlertId, playOrderBell])
+  }, [playOrderBell])
 
   useEffect(() => {
     if (typeof window === "undefined") return

@@ -119,7 +119,15 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
             ],
         },
         { name: t.sidebar.pages, href: "/dashboard/pages", section: "pages", icon: FileText },
-        { name: t.sidebar.media, href: "/dashboard/media", section: "media", icon: ImageIcon },
+        {
+            name: t.sidebar.media,
+            href: "/dashboard/media",
+            section: "media",
+            icon: ImageIcon,
+            items: [
+                { name: "Add New", href: "/dashboard/media/new" },
+            ],
+        },
         { name: t.sidebar.users, href: "/dashboard/users", section: "users", icon: Users },
         { name: t.sidebar.settings, href: "/dashboard/settings", section: "settings", icon: Settings },
     ]
@@ -134,6 +142,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
     const visibleNavItems = navItems.filter((item) => canAccessAdminSection(user.role, item.section))
     const canSeeOrders = canAccessAdminSection(user.role, "orders")
     const canSeeMessages = canAccessAdminSection(user.role, "messages")
+    const sidebarCountsInFlightRef = useRef(false)
 
     useEffect(() => {
         // Close flyout on scroll or resize to prevent misalignment
@@ -157,6 +166,8 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
         let cancelled = false
 
         const fetchSidebarCounts = async () => {
+            if (sidebarCountsInFlightRef.current) return
+            sidebarCountsInFlightRef.current = true
             try {
                 const notificationsResponsePromise = (canSeeOrders || canSeeMessages)
                     ? fetch("/api/admin/notifications", { cache: "no-store" })
@@ -185,6 +196,8 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
                 }
             } catch {
                 // sidebar indicator should not block navigation
+            } finally {
+                sidebarCountsInFlightRef.current = false
             }
         }
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle } from "@/components/ui/dialog"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
@@ -419,6 +419,10 @@ export default function DashboardPage() {
   const [registeredByCountry, setRegisteredByCountry] = useState<Record<string, number>>({})
   const [hoverCountryCode, setHoverCountryCode] = useState<string | null>(null)
   const [worldFeatures, setWorldFeatures] = useState<GeoFeature[]>([])
+  const summaryInFlightRef = useRef(false)
+  const activityInFlightRef = useRef(false)
+  const deviceLoginsInFlightRef = useRef(false)
+  const abandonedCartsInFlightRef = useRef(false)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailData, setDetailData] = useState<CustomerDetailResponse | null>(null)
@@ -496,6 +500,8 @@ export default function DashboardPage() {
     let mounted = true
 
     const loadDeviceLogins = async () => {
+      if (deviceLoginsInFlightRef.current) return
+      deviceLoginsInFlightRef.current = true
       try {
         const res = await fetch("/api/admin/dashboard/device-logins", { cache: "no-store" })
         if (!res.ok) throw new Error("Failed to fetch device logins")
@@ -517,6 +523,8 @@ export default function DashboardPage() {
         setDeviceLogins([])
         setDeviceTopBrowsers([])
         setDeviceTopDevices([])
+      } finally {
+        deviceLoginsInFlightRef.current = false
       }
     }
 
@@ -535,6 +543,8 @@ export default function DashboardPage() {
     let mounted = true
 
     const loadAbandonedCarts = async () => {
+      if (abandonedCartsInFlightRef.current) return
+      abandonedCartsInFlightRef.current = true
       try {
         const res = await fetch("/api/admin/dashboard/abandoned-carts", { cache: "no-store" })
         if (!res.ok) throw new Error("Failed to fetch abandoned carts")
@@ -551,6 +561,8 @@ export default function DashboardPage() {
         if (!mounted) return
         setAbandonedCarts([])
         setAbandonedCartSummary({ total: 0, guestCount: 0, customerCount: 0, lastAt: null })
+      } finally {
+        abandonedCartsInFlightRef.current = false
       }
     }
 
@@ -566,6 +578,8 @@ export default function DashboardPage() {
   }, [])
 
   const loadSummary = useCallback(async () => {
+    if (summaryInFlightRef.current) return
+    summaryInFlightRef.current = true
     try {
       const res = await fetch("/api/admin/dashboard/summary", { cache: "no-store" })
       if (!res.ok) return
@@ -623,6 +637,8 @@ export default function DashboardPage() {
       })
     } catch {
       // keep fallback
+    } finally {
+      summaryInFlightRef.current = false
     }
   }, [])
 
@@ -659,6 +675,8 @@ export default function DashboardPage() {
     let mounted = true
 
     const loadActivity = async () => {
+      if (activityInFlightRef.current) return
+      activityInFlightRef.current = true
       try {
         const res = await fetch("/api/admin/dashboard/customer-activity", { cache: "no-store" })
         if (!res.ok) return
@@ -672,6 +690,8 @@ export default function DashboardPage() {
         setRegisteredByCountry(registered)
       } catch {
         // ignore activity polling errors
+      } finally {
+        activityInFlightRef.current = false
       }
     }
 

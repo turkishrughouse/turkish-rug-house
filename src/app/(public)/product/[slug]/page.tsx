@@ -2,6 +2,8 @@ import { notFound } from "next/navigation"
 import type { Metadata } from "next"
 import { prisma } from "@/lib/db"
 import { ProductDetailView } from "@/components/storefront/product-detail-view"
+import { fetchCategoryPathRows, getCategoryPathById, type CategoryPathRow } from "@/lib/category-paths"
+import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 
 type Props = {
   params: Promise<{ slug: string }>
@@ -11,6 +13,173 @@ type CustomAttribute = {
   name: string
   values: string[]
   visible: boolean
+}
+
+type RelatedProductCard = {
+  id: string
+  slug: string
+  title: string
+  description?: string | null
+  price: number
+  compareAtPrice: number | null
+  images: string
+  stockCount: number
+  isStock: boolean
+  categories: Array<{ id: string; title: string; slug: string }>
+}
+
+function stripHtml(input: string | null | undefined) {
+  if (!input) return ""
+  return input.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
+}
+
+function buildProductMetaDescription(title: string, description: string | null | undefined) {
+  const plainDescription = stripHtml(description)
+  if (plainDescription) {
+    return plainDescription.slice(0, 160)
+  }
+
+  return `${title}. Handmade Turkish rug crafted using traditional Anatolian techniques.`.slice(0, 160)
+}
+
+function getCategoryAncestors(rows: CategoryPathRow[], categoryId: string) {
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  const chain: CategoryPathRow[] = []
+  let current = byId.get(categoryId) || null
+
+  while (current) {
+    chain.unshift(current)
+    current = current.parentId ? byId.get(current.parentId) || null : null
+  }
+
+  return chain
+}
+
+function getDescendantCategoryIds(rows: CategoryPathRow[], rootId: string) {
+  const ids = new Set<string>([rootId])
+  let changed = true
+
+  while (changed) {
+    changed = false
+    for (const row of rows) {
+      if (row.parentId && ids.has(row.parentId) && !ids.has(row.id)) {
+        ids.add(row.id)
+        changed = true
+      }
+    }
+  }
+
+  return Array.from(ids)
+}
+
+async function fetchRelatedProducts(input: {
+  productId: string
+  categoryFamilyIds: string[]
+  colorIds: string[]
+  sizeIds: string[]
+}) {
+  const collected = new Map<string, RelatedProductCard>()
+
+  const baseSelect = {
+    id: true,
+    slug: true,
+    title: true,
+    description: true,
+    price: true,
+    compareAtPrice: true,
+    images: true,
+    stockCount: true,
+    isStock: true,
+    categories: {
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+      },
+    },
+  } as const
+
+  const appendBatch = (items: Array<{
+    id: string
+    slug: string
+    title: string
+    description: string | null
+    price: { toNumber(): number }
+    compareAtPrice: { toNumber(): number } | null
+    images: string
+    stockCount: number
+    isStock: boolean
+    categories: Array<{ id: string; title: string; slug: string }>
+  }>) => {
+    for (const item of items) {
+      if (collected.size >= 8) break
+      if (!collected.has(item.id)) {
+        collected.set(item.id, {
+          id: item.id,
+          slug: item.slug,
+          title: item.title,
+          description: item.description,
+          price: Number(item.price),
+          compareAtPrice: item.compareAtPrice ? Number(item.compareAtPrice) : null,
+          images: item.images,
+          stockCount: item.stockCount,
+          isStock: item.isStock,
+          categories: item.categories,
+        })
+      }
+    }
+  }
+
+  if (input.categoryFamilyIds.length > 0) {
+    const sameCategory = await prisma.product.findMany({
+      where: {
+        id: { not: input.productId },
+        isPublished: true,
+        categories: { some: { id: { in: input.categoryFamilyIds } } },
+      },
+      take: 8,
+      select: baseSelect,
+    })
+    appendBatch(sameCategory)
+  }
+
+  if (collected.size < 8 && input.colorIds.length > 0) {
+    const sameColor = await prisma.product.findMany({
+      where: {
+        id: { notIn: [input.productId, ...collected.keys()] },
+        isPublished: true,
+        colors: { some: { id: { in: input.colorIds } } },
+      },
+      take: 8 - collected.size,
+      select: baseSelect,
+    })
+    appendBatch(sameColor)
+  }
+
+  if (collected.size < 8 && input.sizeIds.length > 0) {
+    const sameSize = await prisma.product.findMany({
+      where: {
+        id: { notIn: [input.productId, ...collected.keys()] },
+        isPublished: true,
+        sizes: { some: { id: { in: input.sizeIds } } },
+      },
+      take: 8 - collected.size,
+      select: baseSelect,
+    })
+    appendBatch(sameSize)
+  }
+
+  return Array.from(collected.values())
+}
+
+function getSiteUrl() {
+  return (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/+$/, "")
+}
+
+function toAbsoluteUrl(path: string) {
+  if (!path) return getSiteUrl()
+  if (path.startsWith("http://") || path.startsWith("https://")) return path
+  return `${getSiteUrl()}${path.startsWith("/") ? path : `/${path}`}`
 }
 
 function parseCustomAttributes(raw: string | null | undefined): CustomAttribute[] {
@@ -43,15 +212,53 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       title: true,
       description: true,
       seoTitle: true,
-      seoDescription: true,
+      images: true,
+      categories: {
+        select: {
+          title: true,
+        },
+      },
     },
   })
 
   if (!product) return { title: "Product Not Found" }
 
+  const imageRecords = parseProductImageRecords(product.images)
+  const primaryImage = getProductImageUrl(imageRecords[0], "large")
+  const imageAlt = buildProductImageAlt({
+    title: product.title,
+    fallbackAlt: imageRecords[0]?.alt,
+    categories: product.categories,
+  })
+  const metaDescription = buildProductMetaDescription(product.title, product.description)
+  const seoTitle = product.seoTitle?.trim() || product.title
+
   return {
-    title: product.seoTitle || `${product.title} | Turkish Rug House`,
-    description: product.seoDescription || product.description || "",
+    title: seoTitle,
+    description: metaDescription,
+    alternates: {
+      canonical: `/product/${slug}`,
+    },
+    openGraph: {
+      title: seoTitle,
+      description: metaDescription,
+      url: `/product/${slug}`,
+      type: "website",
+      images: primaryImage
+        ? [
+            {
+              url: toAbsoluteUrl(primaryImage),
+              alt: imageAlt,
+            },
+          ]
+        : [],
+    },
+    twitter: {
+      card: primaryImage ? "summary_large_image" : "summary",
+      title: seoTitle,
+      description: metaDescription,
+      images: primaryImage ? [toAbsoluteUrl(primaryImage)] : [],
+    },
   }
 }
 
@@ -68,55 +275,39 @@ export default async function ProductPage({ params }: Props) {
           slug: true,
         },
       },
+      colors: {
+        select: {
+          id: true,
+        },
+      },
+      sizes: {
+        select: {
+          id: true,
+        },
+      },
     },
   })
 
   if (!product) notFound()
+  const categoryRows = await fetchCategoryPathRows()
 
-  const categoryIds = product.categories.map((cat) => cat.id)
-
-  const relatedProductsByCategory = await prisma.product.findMany({
-    where: {
-      id: { not: product.id },
-      isPublished: true,
-      ...(categoryIds.length > 0
-        ? { categories: { some: { id: { in: categoryIds } } } }
-        : {}),
-    },
-    orderBy: { updatedAt: "desc" },
-    take: 8,
-    select: {
-      id: true,
-      slug: true,
-      title: true,
-      price: true,
-      compareAtPrice: true,
-      images: true,
-    },
+  const primaryCategory = product.categories[0] || null
+  const primaryChain = primaryCategory ? getCategoryAncestors(categoryRows, primaryCategory.id) : []
+  const mainCategory = primaryChain[0] || null
+  const categoryFamilyIds = mainCategory ? getDescendantCategoryIds(categoryRows, mainCategory.id) : []
+  const relatedProducts = await fetchRelatedProducts({
+    productId: product.id,
+    categoryFamilyIds,
+    colorIds: product.colors.map((item) => item.id),
+    sizeIds: product.sizes.map((item) => item.id),
   })
-
-  const relatedProductsFallback = await prisma.product.findMany({
-    where: {
-      id: { not: product.id },
-      isPublished: true,
-    },
-    orderBy: { updatedAt: "desc" },
-    take: 8,
-    select: {
-      id: true,
-      slug: true,
-      title: true,
-      price: true,
-      compareAtPrice: true,
-      images: true,
-    },
-  })
-
-  const relatedProducts =
-    relatedProductsByCategory.length > 0 ? relatedProductsByCategory : relatedProductsFallback
 
   const serializedProduct = {
     ...product,
+    categories: product.categories.map((category) => ({
+      ...category,
+      path: getCategoryPathById(categoryRows, category.id),
+    })),
     ...(await (async () => {
       try {
         const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
@@ -146,12 +337,6 @@ export default async function ProductPage({ params }: Props) {
     price: Number(product.price),
     compareAtPrice: product.compareAtPrice ? Number(product.compareAtPrice) : null,
   }
-
-  const serializedRelated = relatedProducts.map((item) => ({
-    ...item,
-    price: Number(item.price),
-    compareAtPrice: item.compareAtPrice ? Number(item.compareAtPrice) : null,
-  }))
 
   const previous = await prisma.product.findFirst({
     where: {
@@ -221,14 +406,50 @@ export default async function ProductPage({ params }: Props) {
   })
 
   const shippingContent = shippingPage?.content || shippingPage?.excerpt || null
+  const productImageRecords = parseProductImageRecords(product.images)
+  const productImageUrls = productImageRecords
+    .map((image) => getProductImageUrl(image, "master") || getProductImageUrl(image, "large"))
+    .filter(Boolean)
+    .map((image) => toAbsoluteUrl(image))
+  const productCanonicalUrl = `${getSiteUrl()}/product/${product.slug}`
+  const productMetaDescription = buildProductMetaDescription(product.title, product.description)
+  const productSchema = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.title,
+    description: productMetaDescription,
+    sku: serializedProduct.sku || undefined,
+    image: productImageUrls,
+    category: product.categories.map((category) => category.title).join(", ") || undefined,
+    brand: {
+      "@type": "Brand",
+      name: "Turkish Rug House",
+    },
+    offers: {
+      "@type": "Offer",
+      url: productCanonicalUrl,
+      priceCurrency: "USD",
+      price: Number(product.price).toFixed(2),
+      availability: product.isStock && product.stockCount > 0
+        ? "https://schema.org/InStock"
+        : "https://schema.org/OutOfStock",
+      itemCondition: "https://schema.org/NewCondition",
+    },
+  }
 
   return (
-    <ProductDetailView
-      product={serializedProduct}
-      relatedProducts={serializedRelated}
-      previousProduct={serializedPrevious}
-      nextProduct={serializedNext}
-      shippingContent={shippingContent}
-    />
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(productSchema) }}
+      />
+      <ProductDetailView
+        product={serializedProduct}
+        relatedProducts={relatedProducts}
+        previousProduct={serializedPrevious}
+        nextProduct={serializedNext}
+        shippingContent={shippingContent}
+      />
+    </>
   )
 }

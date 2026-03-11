@@ -41,6 +41,11 @@ const settingsSchema = z.object({
   maintenanceTitle: z.string().optional(),
   maintenanceMessage: z.string().optional(),
   maintenanceImageUrl: z.string().optional(),
+  maintenanceSocialLinks: z.array(z.object({
+    platform: z.enum(["facebook", "x", "instagram", "youtube", "tiktok", "linkedin", "pinterest"]),
+    label: z.string().min(1),
+    url: z.string().min(1),
+  })).optional(),
   shopByCategoryIds: z.array(z.string()).max(8).optional(),
   categoryCardRadiusLinked: z.boolean().optional(),
   categoryCardRadiusTopLeft: z.number().int().min(0).max(200).optional(),

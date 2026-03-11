@@ -26,6 +26,14 @@ function getAuthSecret() {
   return process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || "rughouse-dev-auth-secret"
 }
 
+export function shouldUseSecureCookies(hostname?: string | null) {
+  const normalizedHost = (hostname || "").trim().toLowerCase()
+  if (normalizedHost === "localhost" || normalizedHost === "127.0.0.1" || normalizedHost === "::1") {
+    return false
+  }
+  return process.env.NODE_ENV === "production"
+}
+
 function base64UrlEncode(value: string) {
   return Buffer.from(value).toString("base64url")
 }

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { z } from "zod"
 import { notifyNewCategory } from "@/lib/customer-messaging"
 import { ensureCategoryMediaFolders } from "@/lib/media-folders"
+import { buildCategoryPathMap } from "@/lib/category-paths"
 
 const categorySchema = z.object({
     title: z.string().min(1, "Title is required"),
@@ -12,37 +13,73 @@ const categorySchema = z.object({
     description: z.string().optional(),
 })
 
+type FlatCategoryRow = {
+    id: string
+    slug: string
+    title: string
+    sortOrder: number
+    description: string | null
+    image: string | null
+    parentId: string | null
+    _count: { products: number }
+}
+
+type CategoryTreeNode = FlatCategoryRow & { children: CategoryTreeNode[] }
+
+function buildCategoryTree(rows: FlatCategoryRow[]) {
+    const { pathById } = buildCategoryPathMap(rows)
+    const byParent = new Map<string | null, FlatCategoryRow[]>()
+
+    rows.forEach((row) => {
+        const bucket = byParent.get(row.parentId) || []
+        bucket.push(row)
+        byParent.set(row.parentId, bucket)
+    })
+
+    const sortRows = (items: FlatCategoryRow[]) => items.sort((a, b) => {
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
+        return a.title.localeCompare(b.title)
+    })
+
+    const walk = (parentId: string | null): CategoryTreeNode[] => {
+        const directChildren = sortRows([...(byParent.get(parentId) || [])])
+        return directChildren.map((row) => ({
+            ...row,
+            path: pathById.get(row.id) || `/${row.slug}`,
+            children: walk(row.id),
+        }))
+    }
+
+    return walk(null)
+}
+
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url)
         const tree = searchParams.get("tree")
 
-        // If tree view is requested
         if (tree === "true") {
             const categories = await prisma.category.findMany({
-                where: {
-                    parentId: null, // Get top level
-                },
-                include: {
-                    children: {
-                        include: {
-                            _count: {
-                                select: { products: true }
-                            }
-                        }
-                    },
+                select: {
+                    id: true,
+                    slug: true,
+                    title: true,
+                    sortOrder: true,
+                    description: true,
+                    image: true,
+                    parentId: true,
                     _count: {
-                        select: { products: true }
-                    }
+                        select: { products: true },
+                    },
                 },
                 orderBy: [
-                    { title: 'asc' }
-                ]
+                    { sortOrder: "asc" },
+                    { title: "asc" },
+                ],
             })
-            return NextResponse.json(categories)
+            return NextResponse.json(buildCategoryTree(categories))
         }
 
-        // Flat list
         const categories = await prisma.category.findMany({
             include: {
                 parent: true,
@@ -51,7 +88,7 @@ export async function GET(request: Request) {
                 }
             },
             orderBy: [
-                { title: 'asc' }
+                { title: "asc" }
             ]
         })
 
@@ -65,7 +102,6 @@ export async function GET(request: Request) {
         )
     }
 }
-
 
 export async function POST(request: Request) {
     try {
@@ -82,7 +118,6 @@ export async function POST(request: Request) {
         const { title, parentId, description } = result.data
         let { slug } = result.data
 
-        // Handle Slug Collision: WordPress style (append -2, -3 etc)
         let uniqueSlug = slug
         let counter = 2
 

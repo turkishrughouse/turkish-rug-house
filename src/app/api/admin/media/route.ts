@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db"
 import {
   sanitizeFolderPath,
   ensureCategoryMediaFolders,
+  ensureAllProductSkuFolders,
   ensureManagedMediaFolders,
   cleanupLegacyMediaFolders,
   getManagedMediaRoots,
@@ -79,6 +80,7 @@ const moveAssetSchema = z.object({
 })
 
 const OPTIMIZED_ROOT = "_optimized"
+const SKU_FOLDER_ROOTS = new Set(["by-type", "cushion-covers", "by-age", "by-area"])
 
 function normalizeUploadRelativePath(relativePath: string) {
   return (relativePath || "")
@@ -165,6 +167,12 @@ function escapeRegExp(input: string): string {
 function topFolderName(folder: string) {
   const clean = sanitizeFolderPath(folder)
   return clean.split("/")[0] || clean
+}
+
+function shouldUseSkuFolder(folder: string) {
+  const clean = sanitizeFolderPath(folder)
+  const parts = clean.split("/").filter(Boolean)
+  return parts.length >= 2 && SKU_FOLDER_ROOTS.has(parts[0] || "")
 }
 
 function normalizeAssetUrl(
@@ -489,15 +497,90 @@ async function pruneEmptyUploadFolders(folder: string) {
   }
 }
 
+async function moveUploadedAssetToFolder(url: string, targetFolder: string) {
+  const siblings = await getSiblingUploadAssets(url)
+  if (siblings.length === 0) return null
+
+  const sourceFolder = extractFolderFromUrl(url)
+  if (sourceFolder === targetFolder) return url
+
+  const targetDir = path.join(process.cwd(), "public", "uploads", targetFolder)
+  await mkdir(targetDir, { recursive: true })
+
+  for (const sibling of siblings) {
+    const targetPath = path.join(targetDir, sibling.fileName)
+    const exists = await stat(targetPath).then(() => true).catch(() => false)
+    if (exists) {
+      return null
+    }
+  }
+
+  const storage = getStorageProvider()
+  let nextPrimaryUrl = ""
+  await ensureMediaRegistryTable()
+  for (const sibling of siblings) {
+    const targetPath = path.join(targetDir, sibling.fileName)
+    await rename(sibling.absolutePath, targetPath)
+    const nextUrl = storage.getPublicUrl(`${targetFolder}/${sibling.fileName}`)
+    await replaceUrlReferences(sibling.url, nextUrl)
+    await prisma.$executeRawUnsafe(
+      `UPDATE "MediaAsset" SET "image_url" = ?, "object_key" = ? WHERE "image_url" = ?`,
+      nextUrl,
+      `${targetFolder}/${sibling.fileName}`,
+      sibling.url
+    )
+    if (sibling.fileName.endsWith("-master.webp") || !nextPrimaryUrl) {
+      nextPrimaryUrl = nextUrl
+    }
+  }
+  await pruneEmptyUploadFolders(sourceFolder)
+  return nextPrimaryUrl || url
+}
+
+async function backfillProductSkuFolders(
+  products: Array<{ id: string; title: string; images: string; categories: Array<{ id: string; slug: string; parentId: string | null }> }>,
+  categoryPathMap: Map<string, string>
+) {
+  for (const product of products) {
+    const skuRows = await prisma.$queryRawUnsafe<Array<{ sku: string | null }>>(
+      `SELECT "sku" FROM "Product" WHERE "id" = ? LIMIT 1`,
+      product.id
+    )
+    const sku = sanitizeFolderPath(skuRows[0]?.sku || "")
+    if (!sku) continue
+
+    const targetCategoryFolders = product.categories
+      .map((category) => categoryPathMap.get(category.id) || "")
+      .filter((folder) => shouldUseSkuFolder(folder))
+
+    if (targetCategoryFolders.length === 0) continue
+
+    const productImages = parseProductImages(product.images)
+    for (const baseCategoryFolder of targetCategoryFolders) {
+      const targetFolder = `${baseCategoryFolder}/${sku}`
+      await mkdir(path.join(process.cwd(), "public", "uploads", targetFolder), { recursive: true })
+    }
+
+    for (const imageUrl of productImages) {
+      const currentFolder = extractFolderFromUrl(imageUrl)
+      const matchedCategoryFolder = targetCategoryFolders.find((folder) => currentFolder === folder)
+      if (!matchedCategoryFolder) continue
+      const targetFolder = `${matchedCategoryFolder}/${sku}`
+      await moveUploadedAssetToFolder(imageUrl, targetFolder).catch(() => null)
+    }
+  }
+}
+
 export async function GET() {
   try {
     const uploadRoot = path.join(process.cwd(), "public", "uploads")
     await ensureManagedMediaFolders()
     await cleanupLegacyMediaFolders()
     await ensureCategoryMediaFolders()
+    await ensureAllProductSkuFolders()
     const allowedRoots = await getAllowedFolderRoots()
 
-    const [productsResult, categoriesResult, pagesResult, profilesResult, foldersResult, uploadsResult] = await Promise.allSettled([
+    const [products, categories, pages, profiles] = await Promise.all([
       prisma.product.findMany({
         select: {
           id: true,
@@ -509,20 +592,18 @@ export async function GET() {
       prisma.category.findMany({ select: { id: true, title: true, slug: true, parentId: true, image: true } }),
       prisma.page.findMany({ select: { id: true, title: true, slug: true, featuredImage: true, content: true } }),
       prisma.customerProfile.findMany({ select: { id: true, firstName: true, lastName: true, displayName: true, avatarUrl: true } }),
-      listUploadFolders(uploadRoot),
-      listUploadFiles(uploadRoot),
     ])
 
-    const products = productsResult.status === "fulfilled" ? productsResult.value : []
-    const categories = categoriesResult.status === "fulfilled" ? categoriesResult.value : []
-    const pages = pagesResult.status === "fulfilled" ? pagesResult.value : []
-    const profiles = profilesResult.status === "fulfilled" ? profilesResult.value : []
-    const uploadFolders = foldersResult.status === "fulfilled" ? foldersResult.value : []
-    const uploadedFiles = uploadsResult.status === "fulfilled" ? uploadsResult.value : []
-    const uploadLookup = buildUploadLookup(uploadedFiles)
     const categoryPathMap = buildCategoryPathMap(
       categories.map((category) => ({ id: category.id, slug: category.slug, parentId: category.parentId }))
     )
+    await backfillProductSkuFolders(products, categoryPathMap)
+
+    const [uploadFolders, uploadedFiles] = await Promise.all([
+      listUploadFolders(uploadRoot),
+      listUploadFiles(uploadRoot),
+    ])
+    const uploadLookup = buildUploadLookup(uploadedFiles)
 
     const assets: MediaAsset[] = [...uploadedFiles]
 

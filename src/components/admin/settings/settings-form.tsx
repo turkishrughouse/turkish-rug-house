@@ -1,7 +1,7 @@
 "use client"
 
-import { ChangeEvent, useState } from "react"
-import { Save, Upload } from "lucide-react"
+import { ChangeEvent, useEffect, useState } from "react"
+import { CreditCard, Save, ShieldCheck, Upload, Wallet } from "lucide-react"
 import { toast } from "sonner"
 import { SiteSettings } from "@/lib/site-settings"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { adminText, resolveAdminLanguage } from "@/lib/admin/i18n"
 
 type SettingsFormProps = {
@@ -16,20 +17,119 @@ type SettingsFormProps = {
   initialAdminLocale: string
 }
 
+type SupplierSummary = {
+  name: string
+  number: string
+  company: string
+  phone: string
+  note: string
+  quantity: number
+  soldOut: number
+}
+
+type SocialPlatform = "facebook" | "x" | "instagram" | "youtube" | "tiktok" | "linkedin" | "pinterest"
+
+const maintenancePlatforms: Array<{ platform: SocialPlatform; label: string; placeholder: string }> = [
+  { platform: "instagram", label: "Instagram", placeholder: "https://instagram.com/your-page" },
+  { platform: "facebook", label: "Facebook", placeholder: "https://facebook.com/your-page" },
+  { platform: "x", label: "X", placeholder: "https://x.com/your-page" },
+  { platform: "youtube", label: "YouTube", placeholder: "https://youtube.com/@your-page" },
+  { platform: "tiktok", label: "TikTok", placeholder: "https://tiktok.com/@your-page" },
+  { platform: "linkedin", label: "LinkedIn", placeholder: "https://linkedin.com/company/your-page" },
+  { platform: "pinterest", label: "Pinterest", placeholder: "https://pinterest.com/your-page" },
+]
+
 export function SettingsForm({ initialSettings, initialAdminLocale }: SettingsFormProps) {
   const [settings, setSettings] = useState<SiteSettings>(initialSettings)
   const [adminLocale, setAdminLocale] = useState<string>(initialAdminLocale)
   const [saving, setSaving] = useState(false)
   const [uploadingMaintenanceImage, setUploadingMaintenanceImage] = useState(false)
+  const [suppliers, setSuppliers] = useState<SupplierSummary[]>([])
+  const [loadingSuppliers, setLoadingSuppliers] = useState(true)
+  const [editingSupplier, setEditingSupplier] = useState<SupplierSummary | null>(null)
+  const [supplierDraft, setSupplierDraft] = useState<SupplierSummary | null>(null)
+  const [savingSupplier, setSavingSupplier] = useState(false)
   const lang = resolveAdminLanguage(adminLocale)
   const t = adminText[lang]
 
   const cardSurface = "rounded-xl border border-[#dce3ed] bg-white"
   const inputSurface = "bg-white border-[#dce3ed] text-slate-900 placeholder:text-slate-400"
+  const paymentCard = "rounded-2xl border border-[#dce3ed] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.06)]"
 
   const update = <K extends keyof SiteSettings>(key: K, value: SiteSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }))
   }
+
+  const updateMaintenanceSocialLink = (platform: SocialPlatform, url: string) => {
+    setSettings((prev) => {
+      const current = Array.isArray(prev.maintenanceSocialLinks) ? prev.maintenanceSocialLinks : []
+      const nextUrl = url.trim()
+      const withoutPlatform = current.filter((item) => item.platform !== platform)
+      if (!nextUrl) {
+        return { ...prev, maintenanceSocialLinks: withoutPlatform }
+      }
+      return {
+        ...prev,
+        maintenanceSocialLinks: [
+          ...withoutPlatform,
+          { platform, label: maintenancePlatforms.find((item) => item.platform === platform)?.label || platform, url: nextUrl },
+        ],
+      }
+    })
+  }
+
+  const getMaintenanceSocialValue = (platform: SocialPlatform) =>
+    settings.maintenanceSocialLinks.find((item) => item.platform === platform)?.url || ""
+
+  const loadSuppliers = async () => {
+    setLoadingSuppliers(true)
+    try {
+      const res = await fetch("/api/admin/suppliers", { cache: "no-store" })
+      const json = await res.json().catch(() => ({ suppliers: [] as SupplierSummary[] }))
+      if (!res.ok) throw new Error(json.error || "Failed to load suppliers")
+      setSuppliers(Array.isArray(json.suppliers) ? json.suppliers : [])
+    } catch (error) {
+      setSuppliers([])
+      toast.error(error instanceof Error ? error.message : "Failed to load suppliers")
+    } finally {
+      setLoadingSuppliers(false)
+    }
+  }
+
+  const openSupplierEditor = (supplier: SupplierSummary) => {
+    setEditingSupplier(supplier)
+    setSupplierDraft({ ...supplier })
+  }
+
+  const closeSupplierEditor = () => {
+    setEditingSupplier(null)
+    setSupplierDraft(null)
+  }
+
+  const saveSupplierEdit = async () => {
+    if (!editingSupplier || !supplierDraft) return
+    setSavingSupplier(true)
+    try {
+      const res = await fetch("/api/admin/suppliers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ original: editingSupplier, updated: supplierDraft }),
+      })
+      const json = await res.json().catch(() => ({} as { error?: string }))
+      if (!res.ok) throw new Error(json.error || "Failed to update supplier")
+      toast.success("Supplier guncellendi")
+      closeSupplierEditor()
+      await loadSuppliers()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update supplier")
+    } finally {
+      setSavingSupplier(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadSuppliers().catch(() => null)
+  }, [])
 
   const save = async () => {
     setSaving(true)
@@ -93,6 +193,7 @@ export function SettingsForm({ initialSettings, initialAdminLocale }: SettingsFo
           <TabsTrigger value="general">Genel</TabsTrigger>
           <TabsTrigger value="mail">Mail</TabsTrigger>
           <TabsTrigger value="api">API</TabsTrigger>
+          <TabsTrigger value="supplier">Supplier</TabsTrigger>
           <TabsTrigger value="maintenance">Bakim Modu</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
         </TabsList>
@@ -180,29 +281,99 @@ export function SettingsForm({ initialSettings, initialAdminLocale }: SettingsFo
           </div>
         </TabsContent>
 
+        <TabsContent value="supplier" className="space-y-5">
+          <div className={cardSurface}>
+            <div className="p-5">
+              <h3 className="text-lg font-semibold text-slate-900">Supplier</h3>
+              <p className="mt-1 text-sm text-slate-500">Urunlerde tanimli tedarikciler burada merkezi olarak listelenir. Frontend&apos;e yansimaz, quantity SKU prefix&apos;ine gore otomatik hesaplanir.</p>
+            </div>
+            <div className="border-t border-[#edf1f7] p-5">
+              {loadingSuppliers ? (
+                <div className="rounded-xl border border-dashed border-[#dce3ed] bg-[#f8fafc] px-4 py-6 text-sm text-slate-500">
+                  Supplier kayitlari yukleniyor...
+                </div>
+              ) : suppliers.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-[#dce3ed] bg-[#f8fafc] px-4 py-6 text-sm text-slate-500">
+                  Henuz urunlere bagli supplier kaydi bulunmuyor.
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {suppliers.map((supplier) => (
+                    <div
+                      key={[supplier.name, supplier.number, supplier.company, supplier.phone, supplier.note].join("||")}
+                      className="rounded-xl border border-[#dce3ed] bg-[#f8fafc] p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h4 className="text-sm font-semibold text-slate-900">{supplier.name || supplier.company || supplier.number}</h4>
+                          <p className="mt-1 text-xs text-slate-500">{supplier.company || "Sirket belirtilmedi"}</p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-8 rounded-md border-[#dce3ed] bg-white px-3 text-xs font-medium text-slate-600 shadow-sm transition-all hover:border-[#cbd5e1] hover:bg-[#f8fafc] hover:text-slate-900 hover:shadow-md"
+                          onClick={() => openSupplierEditor(supplier)}
+                        >
+                          Duzenle
+                        </Button>
+                      </div>
+                      <div className="mt-3 grid gap-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-md border border-[#e5e7eb] bg-white px-3 py-2">
+                            <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Number</span>
+                            <span className="text-sm text-slate-800">{supplier.number || "-"}</span>
+                          </div>
+                          <div className="rounded-md border border-[#e5e7eb] bg-white px-3 py-2">
+                            <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Quantity</span>
+                            <span className="text-sm text-slate-800">{supplier.quantity}</span>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-md border border-[#e5e7eb] bg-white px-3 py-2">
+                            <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Phone</span>
+                            <span className="text-xs text-slate-700">{supplier.phone || "-"}</span>
+                          </div>
+                          <div className="rounded-md border border-[#e5e7eb] bg-white px-3 py-2">
+                            <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sold out</span>
+                            <span className="text-xs text-slate-700">{supplier.soldOut}</span>
+                          </div>
+                        </div>
+                        <div className="rounded-md border border-[#e5e7eb] bg-white px-3 py-2">
+                          <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Note</span>
+                          <span className="whitespace-pre-wrap text-sm text-slate-800">{supplier.note || "-"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
         <TabsContent value="maintenance" className="space-y-5">
           <div className={cardSurface}>
             <div className="p-5">
-              <h3 className="text-[40px] font-semibold leading-tight text-slate-900">Bakim Modu</h3>
-              <p className="mt-2 text-3xl text-slate-500">Site durumunu aktif/pasif yonetebilirsiniz. Pasif durumda ziyaretciler bakim sayfasini gorur.</p>
+              <h3 className="text-lg font-semibold text-slate-900">Bakim Modu</h3>
+              <p className="mt-1 text-sm text-slate-500">Site durumunu aktif/pasif yonetebilirsiniz. Acik oldugunda ziyaretciler bakim sayfasini gorur.</p>
             </div>
             <div className="border-t border-[#edf1f7] p-5">
-              <div className="rounded-2xl border border-[#dce3ed] p-6">
+              <div className="rounded-xl border border-[#dce3ed] p-5">
                 <div className="flex items-center gap-4">
                   <Switch
                     id="maintenance-mode"
                     checked={settings.maintenanceMode}
                     onCheckedChange={(value) => update("maintenanceMode", value)}
                   />
-                  <Label htmlFor="maintenance-mode" className="text-4xl font-semibold text-slate-900">Bakim modu aktif</Label>
+                  <Label htmlFor="maintenance-mode" className="text-base font-semibold text-slate-900">Bakim modu aktif</Label>
                 </div>
-                <p className="mt-4 text-2xl text-slate-500">Acik oldugunda tum public sayfalar yerine bakim ekrani gosterilir.</p>
+                <p className="mt-3 text-sm text-slate-500">Admin girisi olan kullanicilar siteyi gormeye devam eder, diger ziyaretciler bakim ekranini gorur.</p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-4 border-t border-[#edf1f7] p-5">
               <div className="space-y-2">
-                <Label className="text-2xl text-slate-900">Bakim Basligi</Label>
+                <Label className="text-sm font-medium text-slate-900">Bakim Basligi</Label>
                 <Input
                   value={settings.maintenanceTitle}
                   onChange={(e) => update("maintenanceTitle", e.target.value)}
@@ -211,7 +382,7 @@ export function SettingsForm({ initialSettings, initialAdminLocale }: SettingsFo
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-2xl text-slate-900">Bakim Mesaji</Label>
+                <Label className="text-sm font-medium text-slate-900">Bakim Mesaji</Label>
                 <Input
                   value={settings.maintenanceMessage}
                   onChange={(e) => update("maintenanceMessage", e.target.value)}
@@ -220,7 +391,7 @@ export function SettingsForm({ initialSettings, initialAdminLocale }: SettingsFo
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-2xl text-slate-900">Bakim Gorseli URL</Label>
+                <Label className="text-sm font-medium text-slate-900">Bakim Gorseli URL</Label>
                 <Input
                   value={settings.maintenanceImageUrl}
                   onChange={(e) => update("maintenanceImageUrl", e.target.value)}
@@ -229,7 +400,7 @@ export function SettingsForm({ initialSettings, initialAdminLocale }: SettingsFo
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-2xl text-slate-900">Bakim Gorseli Yukle</Label>
+                <Label className="text-sm font-medium text-slate-900">Bakim Gorseli Yukle</Label>
                 <div className="flex flex-wrap items-center gap-3">
                   <label className="inline-flex cursor-pointer items-center rounded-full bg-amber-500 px-6 py-2.5 text-base font-semibold text-white hover:bg-amber-600">
                     <Upload className="mr-2 h-4 w-4" />
@@ -239,25 +410,38 @@ export function SettingsForm({ initialSettings, initialAdminLocale }: SettingsFo
                   <p className="text-sm text-slate-500">{uploadingMaintenanceImage ? "Yukleniyor..." : "Yukleme sonrasi bakim sayfasina hemen yansir."}</p>
                 </div>
               </div>
+              <div className="space-y-3">
+                <Label className="text-sm font-medium text-slate-900">Bakim Modu Sosyal Medya Linkleri</Label>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {maintenancePlatforms.map((item) => (
+                    <div key={item.platform} className="space-y-2">
+                      <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">{item.label}</Label>
+                      <Input
+                        value={getMaintenanceSocialValue(item.platform)}
+                        onChange={(e) => updateMaintenanceSocialLink(item.platform, e.target.value)}
+                        placeholder={item.placeholder}
+                        className={inputSurface}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="text-sm text-slate-500">Buraya eklenen linkler sadece bakim modu ekranindaki sosyal medya butonlarini gunceller.</p>
+              </div>
             </div>
           </div>
         </TabsContent>
 
         <TabsContent value="payments" className="space-y-5">
           <div className={cardSurface}>
-            <div className="p-5">
-              <h3 className="text-lg font-semibold text-slate-900">Payment Providers</h3>
-            </div>
-            <div className="grid grid-cols-1 gap-3 border-t border-[#edf1f7] p-5 md:grid-cols-2">
-              <div className="flex items-center justify-between rounded-md border border-[#dce3ed] px-3 py-2"><Label>Stripe</Label><Switch checked={settings.stripeEnabled} onCheckedChange={(v) => update("stripeEnabled", v)} /></div>
-              <div className="flex items-center justify-between rounded-md border border-[#dce3ed] px-3 py-2"><Label>PayPal</Label><Switch checked={settings.paypalEnabled} onCheckedChange={(v) => update("paypalEnabled", v)} /></div>
-              <div className="flex items-center justify-between rounded-md border border-[#dce3ed] px-3 py-2"><Label>Google Pay</Label><Switch checked={settings.googlePayEnabled} onCheckedChange={(v) => update("googlePayEnabled", v)} /></div>
-              <div className="flex items-center justify-between rounded-md border border-[#dce3ed] px-3 py-2"><Label>Apple Pay</Label><Switch checked={settings.applePayEnabled} onCheckedChange={(v) => update("applePayEnabled", v)} /></div>
-              <div className="flex items-center justify-between rounded-md border border-[#dce3ed] px-3 py-2"><Label>PayTR</Label><Switch checked={settings.paytrEnabled} onCheckedChange={(v) => update("paytrEnabled", v)} /></div>
-              <div className="rounded-md border border-[#dce3ed] px-3 py-2">
-                <Label className="mb-2 block">Default Provider</Label>
+            <div className="flex flex-col gap-4 border-b border-[#edf1f7] p-5 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-2xl font-semibold text-slate-900">Odeme Platformlari</h3>
+                <p className="mt-1 text-sm text-slate-500">API girisleri, kimlik bilgileri ve guvenlik ayarlari tek ekranda yonetilir.</p>
+              </div>
+              <div className="rounded-xl border border-[#dce3ed] bg-[#f8fafc] px-4 py-3">
+                <Label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">Varsayilan Platform</Label>
                 <select
-                  className="h-9 w-full rounded-md border border-[#dce3ed] bg-white px-3 text-sm"
+                  className="h-10 min-w-[220px] rounded-xl border border-[#dce3ed] bg-white px-3 text-sm text-slate-900"
                   value={settings.paymentDefaultProvider}
                   onChange={(e) => update("paymentDefaultProvider", e.target.value as SiteSettings["paymentDefaultProvider"])}
                 >
@@ -267,6 +451,129 @@ export function SettingsForm({ initialSettings, initialAdminLocale }: SettingsFo
                   <option value="applepay">Apple Pay</option>
                   <option value="paytr">PayTR</option>
                 </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 p-5 xl:grid-cols-3">
+              <div className={paymentCard}>
+                <div className="flex items-start justify-between border-b border-[#edf1f7] p-5">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-xl bg-[#eef6ff] p-3 text-[#2271b1]"><CreditCard className="h-5 w-5" /></div>
+                    <div>
+                      <h4 className="text-lg font-semibold text-slate-900">Stripe</h4>
+                      <p className="mt-1 text-sm text-slate-500">Kart odemeleri ve webhook guvenligi.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="rounded-full bg-[#f3f4f6] px-3 py-1 text-xs font-semibold text-slate-600">Duzenle</span>
+                    <Switch checked={settings.stripeEnabled} onCheckedChange={(v) => update("stripeEnabled", v)} />
+                  </div>
+                </div>
+                <div className="space-y-4 p-5">
+                  <Input value={settings.stripePublishableKey} onChange={(e) => update("stripePublishableKey", e.target.value)} placeholder="Publishable key" className={inputSurface} />
+                  <Input value={settings.stripeSecretKey} onChange={(e) => update("stripeSecretKey", e.target.value)} placeholder="Secret key" className={inputSurface} />
+                  <Input value={settings.stripeWebhookSecret} onChange={(e) => update("stripeWebhookSecret", e.target.value)} placeholder="Webhook secret" className={inputSurface} />
+                  <Input value={settings.stripeAllowedIps} onChange={(e) => update("stripeAllowedIps", e.target.value)} placeholder="Allowed IPs" className={inputSurface} />
+                </div>
+              </div>
+
+              <div className={paymentCard}>
+                <div className="flex items-start justify-between border-b border-[#edf1f7] p-5">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-xl bg-[#fff4eb] p-3 text-[#f97316]"><Wallet className="h-5 w-5" /></div>
+                    <div>
+                      <h4 className="text-lg font-semibold text-slate-900">PayPal</h4>
+                      <p className="mt-1 text-sm text-slate-500">Client kimligi ve canli/sandbox secimi.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="rounded-full bg-[#f3f4f6] px-3 py-1 text-xs font-semibold text-slate-600">Duzenle</span>
+                    <Switch checked={settings.paypalEnabled} onCheckedChange={(v) => update("paypalEnabled", v)} />
+                  </div>
+                </div>
+                <div className="space-y-4 p-5">
+                  <Input value={settings.paypalClientId} onChange={(e) => update("paypalClientId", e.target.value)} placeholder="Client ID" className={inputSurface} />
+                  <Input value={settings.paypalClientSecret} onChange={(e) => update("paypalClientSecret", e.target.value)} placeholder="Client Secret" className={inputSurface} />
+                  <select
+                    className="h-10 w-full rounded-xl border border-[#dce3ed] bg-white px-3 text-sm text-slate-900"
+                    value={settings.paypalMode}
+                    onChange={(e) => update("paypalMode", e.target.value as SiteSettings["paypalMode"])}
+                  >
+                    <option value="sandbox">Sandbox</option>
+                    <option value="live">Live</option>
+                  </select>
+                  <Input value={settings.paypalAllowedIps} onChange={(e) => update("paypalAllowedIps", e.target.value)} placeholder="Allowed IPs" className={inputSurface} />
+                </div>
+              </div>
+
+              <div className={paymentCard}>
+                <div className="flex items-start justify-between border-b border-[#edf1f7] p-5">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-xl bg-[#eefcf6] p-3 text-[#059669]"><ShieldCheck className="h-5 w-5" /></div>
+                    <div>
+                      <h4 className="text-lg font-semibold text-slate-900">PayTR</h4>
+                      <p className="mt-1 text-sm text-slate-500">Merchant bilgileri ve donus URL ayarlari.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="rounded-full bg-[#f3f4f6] px-3 py-1 text-xs font-semibold text-slate-600">Duzenle</span>
+                    <Switch checked={settings.paytrEnabled} onCheckedChange={(v) => update("paytrEnabled", v)} />
+                  </div>
+                </div>
+                <div className="space-y-4 p-5">
+                  <Input value={settings.paytrMerchantId} onChange={(e) => update("paytrMerchantId", e.target.value)} placeholder="Merchant ID" className={inputSurface} />
+                  <Input value={settings.paytrMerchantKey} onChange={(e) => update("paytrMerchantKey", e.target.value)} placeholder="Merchant key" className={inputSurface} />
+                  <Input value={settings.paytrMerchantSalt} onChange={(e) => update("paytrMerchantSalt", e.target.value)} placeholder="Merchant salt" className={inputSurface} />
+                  <Input value={settings.paytrMerchantOkUrl} onChange={(e) => update("paytrMerchantOkUrl", e.target.value)} placeholder="Success URL" className={inputSurface} />
+                  <Input value={settings.paytrMerchantFailUrl} onChange={(e) => update("paytrMerchantFailUrl", e.target.value)} placeholder="Fail URL" className={inputSurface} />
+                </div>
+              </div>
+
+              <div className={paymentCard}>
+                <div className="flex items-start justify-between border-b border-[#edf1f7] p-5">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-xl bg-[#eef6ff] p-3 text-[#2563eb]"><Wallet className="h-5 w-5" /></div>
+                    <div>
+                      <h4 className="text-lg font-semibold text-slate-900">Google Pay</h4>
+                      <p className="mt-1 text-sm text-slate-500">Merchant tanimi ve API kimlikleri.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="rounded-full bg-[#f3f4f6] px-3 py-1 text-xs font-semibold text-slate-600">Duzenle</span>
+                    <Switch checked={settings.googlePayEnabled} onCheckedChange={(v) => update("googlePayEnabled", v)} />
+                  </div>
+                </div>
+                <div className="space-y-4 p-5">
+                  <Input value={settings.googlePayMerchantId} onChange={(e) => update("googlePayMerchantId", e.target.value)} placeholder="Merchant ID" className={inputSurface} />
+                  <Input value={settings.googlePayMerchantName} onChange={(e) => update("googlePayMerchantName", e.target.value)} placeholder="Merchant name" className={inputSurface} />
+                  <Input value={settings.googlePayApiKey} onChange={(e) => update("googlePayApiKey", e.target.value)} placeholder="API key" className={inputSurface} />
+                  <Input value={settings.googlePayApiSecret} onChange={(e) => update("googlePayApiSecret", e.target.value)} placeholder="API secret" className={inputSurface} />
+                  <Input value={settings.googlePayAllowedIps} onChange={(e) => update("googlePayAllowedIps", e.target.value)} placeholder="Allowed IPs" className={inputSurface} />
+                </div>
+              </div>
+
+              <div className={paymentCard}>
+                <div className="flex items-start justify-between border-b border-[#edf1f7] p-5">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-xl bg-[#f5f3ff] p-3 text-[#7c3aed]"><Wallet className="h-5 w-5" /></div>
+                    <div>
+                      <h4 className="text-lg font-semibold text-slate-900">Apple Pay</h4>
+                      <p className="mt-1 text-sm text-slate-500">Merchant, domain ve guvenlik alanlari.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="rounded-full bg-[#f3f4f6] px-3 py-1 text-xs font-semibold text-slate-600">Duzenle</span>
+                    <Switch checked={settings.applePayEnabled} onCheckedChange={(v) => update("applePayEnabled", v)} />
+                  </div>
+                </div>
+                <div className="space-y-4 p-5">
+                  <Input value={settings.applePayMerchantId} onChange={(e) => update("applePayMerchantId", e.target.value)} placeholder="Merchant ID" className={inputSurface} />
+                  <Input value={settings.applePayMerchantName} onChange={(e) => update("applePayMerchantName", e.target.value)} placeholder="Merchant name" className={inputSurface} />
+                  <Input value={settings.applePayApiKey} onChange={(e) => update("applePayApiKey", e.target.value)} placeholder="API key" className={inputSurface} />
+                  <Input value={settings.applePayApiSecret} onChange={(e) => update("applePayApiSecret", e.target.value)} placeholder="API secret" className={inputSurface} />
+                  <Input value={settings.applePayDomain} onChange={(e) => update("applePayDomain", e.target.value)} placeholder="Verified domain" className={inputSurface} />
+                  <Input value={settings.applePayAllowedIps} onChange={(e) => update("applePayAllowedIps", e.target.value)} placeholder="Allowed IPs" className={inputSurface} />
+                </div>
               </div>
             </div>
           </div>
@@ -279,6 +586,47 @@ export function SettingsForm({ initialSettings, initialAdminLocale }: SettingsFo
           {saving ? t.settingsForm.savingButton : t.settingsForm.saveButton}
         </Button>
       </div>
+
+      <Dialog open={Boolean(editingSupplier)} onOpenChange={(open) => !open && closeSupplierEditor()}>
+        <DialogContent className="border-[#dce3ed] bg-white sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>Supplier Duzenle</DialogTitle>
+            <DialogDescription>Bu supplier kaydi bagli oldugu urunlerde toplu guncellenir.</DialogDescription>
+          </DialogHeader>
+          {supplierDraft ? (
+            <div className="grid gap-4">
+              <div className="grid gap-2">
+                <Label>Name</Label>
+                <Input value={supplierDraft.name} onChange={(e) => setSupplierDraft((prev) => prev ? { ...prev, name: e.target.value } : prev)} className={inputSurface} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Company</Label>
+                <Input value={supplierDraft.company} onChange={(e) => setSupplierDraft((prev) => prev ? { ...prev, company: e.target.value } : prev)} className={inputSurface} />
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label>Number</Label>
+                  <Input value={supplierDraft.number} onChange={(e) => setSupplierDraft((prev) => prev ? { ...prev, number: e.target.value.toUpperCase() } : prev)} className={inputSurface} />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Phone</Label>
+                  <Input value={supplierDraft.phone} onChange={(e) => setSupplierDraft((prev) => prev ? { ...prev, phone: e.target.value } : prev)} className={inputSurface} />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Note</Label>
+                <Input value={supplierDraft.note} onChange={(e) => setSupplierDraft((prev) => prev ? { ...prev, note: e.target.value } : prev)} className={inputSurface} />
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeSupplierEditor}>Vazgec</Button>
+            <Button type="button" onClick={saveSupplierEdit} disabled={savingSupplier}>
+              {savingSupplier ? "Kaydediliyor..." : "Kaydet"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

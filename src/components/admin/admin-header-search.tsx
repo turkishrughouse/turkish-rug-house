@@ -20,6 +20,7 @@ export function AdminHeaderSearch({ placeholder }: AdminHeaderSearchProps) {
   const [results, setResults] = useState<SearchProduct[]>([])
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const activeRequestRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
@@ -34,23 +35,37 @@ export function AdminHeaderSearch({ placeholder }: AdminHeaderSearchProps) {
   useEffect(() => {
     const trimmed = query.trim()
     if (!trimmed) {
+      activeRequestRef.current?.abort()
+      activeRequestRef.current = null
       return
     }
 
     const timer = window.setTimeout(async () => {
+      activeRequestRef.current?.abort()
+      const controller = new AbortController()
+      activeRequestRef.current = controller
       try {
-        const res = await fetch(`/api/admin/products/search?q=${encodeURIComponent(trimmed)}`, { cache: "no-store" })
+        const res = await fetch(`/api/admin/products/search?q=${encodeURIComponent(trimmed)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        })
         const json = await res.json().catch(() => null as null | { products?: SearchProduct[] })
         if (!res.ok) return
+        if (controller.signal.aborted) return
         const next = json?.products || []
         setResults(next)
         setOpen(true)
-      } catch {
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return
         setResults([])
       }
     }, 180)
 
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      activeRequestRef.current?.abort()
+      activeRequestRef.current = null
+    }
   }, [query])
 
   const showEmpty = useMemo(() => query.trim().length > 0 && open && results.length === 0, [open, query, results.length])

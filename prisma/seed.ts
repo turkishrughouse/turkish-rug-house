@@ -1,9 +1,53 @@
 import { PrismaClient } from '@prisma/client'
+import { createHash } from "crypto"
 
 const prisma = new PrismaClient()
+const LOCAL_ADMIN_PASSWORD = "RughouseLocal2026!"
+
+function hashPassword(password: string) {
+    return createHash("sha256").update(password).digest("hex")
+}
 
 async function main() {
     console.log('🌱 Starting database seed...')
+
+    await prisma.user.upsert({
+        where: { email: "senoltr@gmail.com" },
+        update: {
+            name: "Senol Superuser",
+            role: "SUPER_USER",
+            password: hashPassword(LOCAL_ADMIN_PASSWORD),
+            provider: "LOCAL",
+            isBlocked: false,
+        },
+        create: {
+            email: "senoltr@gmail.com",
+            name: "Senol Superuser",
+            role: "SUPER_USER",
+            password: hashPassword(LOCAL_ADMIN_PASSWORD),
+            provider: "LOCAL",
+            isBlocked: false,
+        },
+    })
+
+    await prisma.user.upsert({
+        where: { email: "mulifyco@gmail.com" },
+        update: {
+            name: "Local Admin",
+            role: "ADMIN",
+            password: hashPassword(LOCAL_ADMIN_PASSWORD),
+            provider: "LOCAL",
+            isBlocked: false,
+        },
+        create: {
+            email: "mulifyco@gmail.com",
+            name: "Local Admin",
+            role: "ADMIN",
+            password: hashPassword(LOCAL_ADMIN_PASSWORD),
+            provider: "LOCAL",
+            isBlocked: false,
+        },
+    })
 
     // Clear existing data
     console.log('🗑️  Clearing existing data...')
@@ -102,7 +146,7 @@ async function main() {
     const flatWeave = await prisma.type.create({
         data: { name: 'Flat-Weave', slug: 'flat-weave' }
     })
-    const machineWoven = await prisma.type.create({
+    await prisma.type.create({
         data: { name: 'Machine-Woven', slug: 'machine-woven' }
     })
 
