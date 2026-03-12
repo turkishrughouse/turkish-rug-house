@@ -2029,7 +2029,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                 productMeta={{
                     title: title || "",
                     sku: watch("sku") || "",
-                    description: stripHtmlPreview(shortDescriptionValue || ""),
+                    description: stripHtmlPreview(descriptionValue || ""),
                     categoryFolderPath: primaryCategoryFolderPath,
                 }}
             />

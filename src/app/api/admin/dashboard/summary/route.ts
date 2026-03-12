@@ -56,7 +56,7 @@ export async function GET() {
     const now = new Date()
     const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
-    const [totalOrders, totalCustomers, customerRows, activeProductsRows, productRows, pendingDelivery, pendingDeliveryRows, revenueAgg, weeklyOrders, todayOrders, revenueRows, adminSalesRows] = await Promise.all([
+    const [totalOrders, totalCustomers, customerRows, activeProductsRows, productRows, pendingDeliveryRows, revenueAgg, weeklyOrders, todayOrders, revenueRows, adminSalesRows] = await Promise.all([
       prisma.order.count(),
       prisma.user.count({ where: { role: "CUSTOMER" } }),
       prisma.user.findMany({
@@ -73,21 +73,13 @@ export async function GET() {
         },
       }),
       prisma.$queryRawUnsafe<Array<{ count: number }>>(
-        `SELECT COUNT(*) as count FROM "Product" WHERE "deletedAt" IS NULL`
+        `SELECT COUNT(*) as count FROM "Product" WHERE "deletedAt" IS NULL AND "isPublished" = 1`
       ),
       prisma.$queryRawUnsafe<Array<{ createdAt: Date | string; createdByName: string | null }>>(
         `SELECT "createdAt", "createdByName"
          FROM "Product"
          WHERE "deletedAt" IS NULL`
       ),
-      prisma.order.count({
-        where: {
-          OR: [
-            { status: { in: ["PENDING", "PAID"] } },
-            { shipmentStatus: { in: ["PENDING", "SHIPPED", "IN_TRANSIT"] } },
-          ],
-        },
-      }),
       prisma.order.findMany({
         select: {
           status: true,
@@ -95,6 +87,9 @@ export async function GET() {
         },
       }),
       prisma.order.aggregate({
+        where: {
+          status: { not: "CANCELLED" },
+        },
         _sum: { total: true },
       }),
       prisma.order.findMany({
@@ -292,6 +287,8 @@ export async function GET() {
       }
       pendingDeliveryBreakdown.other += 1
     }
+    const pendingDelivery =
+      pendingDeliveryBreakdown.shipped + pendingDeliveryBreakdown.pending + pendingDeliveryBreakdown.other
     let revenueToday = 0
     let revenueWeek = 0
     let revenueMonth = 0

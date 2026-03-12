@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { getSiteSettings } from "@/lib/site-settings"
 import { notifyOrderUpdate } from "@/lib/customer-messaging"
 import { grantReviewRightForOrder } from "@/lib/review-access"
+import { saveOrderDetails } from "@/lib/order-details"
 
 export async function GET(req: NextRequest) {
   try {
@@ -39,6 +40,12 @@ export async function GET(req: NextRequest) {
         actorType: "SYSTEM",
         isAdmin: false,
       },
+    })
+    await saveOrderDetails(orderId, {
+      paymentStatus: "PAID",
+      paymentMethod: "STRIPE",
+      paymentReference: sessionId,
+      invoiceIssuedAt: new Date().toISOString(),
     })
 
     await notifyOrderUpdate(orderId, "Order received", `Your payment for ${updated.orderNumber} was completed.`, "/account", "CREATE")

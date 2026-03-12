@@ -88,7 +88,7 @@ export default async function AdminLayout({
             <div className="admin-shell-sidebar">
                 <AdminSidebar user={{ ...user, locale: profile?.locale, avatarUrl: profile?.avatarUrl }} />
             </div>
-            <main className="admin-shell-main flex min-h-0 flex-1 flex-col" lang={(profile?.locale || "en_US").replace("_", "-")}>
+            <main className="admin-shell-main flex min-h-0 flex-1 flex-col overflow-hidden" lang={(profile?.locale || "en_US").replace("_", "-")}>
                 <header
                     className="admin-shell-header admin-header-surface h-[80px] border-b border-[#dce3ed] items-center px-6 justify-between sticky top-0 z-30 shrink-0 shadow-[0_1px_0_rgba(15,23,42,0.03)]"
                     style={{ display: "var(--admin-header-display)" }}
@@ -118,7 +118,7 @@ export default async function AdminLayout({
                         </div>
                     </div>
                 </header>
-                <div className="admin-shell-scroll min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+                <div className="admin-shell-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain">
                     {children}
                 </div>
             </main>

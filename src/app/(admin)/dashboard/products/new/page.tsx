@@ -49,7 +49,7 @@ export default async function NewProductPage() {
     }
 
     return (
-        <div className="px-6 pt-6 pb-1">
+        <div className="flex min-h-0 flex-1 flex-col px-6 pt-6 pb-6">
             <ProductForm lang={lang} options={options} />
         </div>
     )

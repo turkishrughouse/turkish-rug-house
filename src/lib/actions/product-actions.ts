@@ -9,7 +9,7 @@ import { notifyNewProduct, notifyProductDiscount } from "@/lib/customer-messagin
 import { getSessionUser } from "@/lib/auth"
 import { syncProductToInventory } from "@/lib/inventory-sync"
 import { normalizeProductImageRecords } from "@/lib/product-images"
-import { ensureProductSkuFolders, relocateProductImagesToSkuFolders } from "@/lib/media-folders"
+import { ensureProductSkuFolders, migrateAllProductsToCanonicalMediaFolders, relocateProductImagesToSkuFolders } from "@/lib/media-folders"
 
 type MaterialDelegate = {
     findMany: (...args: any[]) => Promise<any[]>
@@ -23,6 +23,18 @@ async function findMaterials(args?: Parameters<MaterialDelegate["findMany"]>[0])
     const delegate = getMaterialDelegate()
     if (!delegate?.findMany) return []
     return delegate.findMany(args)
+}
+
+let productMediaMigrationPromise: Promise<void> | null = null
+
+async function ensureCanonicalProductMediaMigration() {
+    if (!productMediaMigrationPromise) {
+        productMediaMigrationPromise = migrateAllProductsToCanonicalMediaFolders().catch((error) => {
+            productMediaMigrationPromise = null
+            throw error
+        })
+    }
+    await productMediaMigrationPromise
 }
 
 async function ensureSkuColumn() {
@@ -369,6 +381,7 @@ export async function getProducts(
     await ensureSkuColumn()
     await ensureFeaturedColumn()
     await ensureDeletedAtColumn()
+    await ensureCanonicalProductMediaMigration()
     await purgeExpiredTrashedProducts()
     const skip = (page - 1) * limit
 
@@ -591,6 +604,7 @@ export async function setProductFeatured(productId: string, featured: boolean) {
 export async function getProduct(id: string) {
     await ensureFeaturedColumn()
     await ensureDeletedAtColumn()
+    await ensureCanonicalProductMediaMigration()
     const deletedRows = await db.$queryRawUnsafe<Array<{ deletedAt: string | null }>>(
         `SELECT "deletedAt" FROM "Product" WHERE "id" = ? LIMIT 1`,
         id
@@ -647,6 +661,7 @@ export async function getProduct(id: string) {
 
 export async function createProduct(data: ProductFormValues) {
     const validated = productFormSchema.parse(data)
+    await ensureCanonicalProductMediaMigration()
 
     // Helper to connect relationships
     const connect = (ids: string[]) => ids.map(id => ({ id }))
@@ -768,6 +783,7 @@ export async function createProduct(data: ProductFormValues) {
 
 export async function updateProduct(id: string, data: ProductFormValues) {
     const validated = productFormSchema.parse(data)
+    await ensureCanonicalProductMediaMigration()
     const connect = (ids: string[]) => ids.map(id => ({ id }))
 
     try {
@@ -1037,51 +1053,28 @@ export async function bulkPublishProducts(ids: string[], isPublished: boolean) {
 }
 
 export async function getProductOptions() {
-    const categoriesWithProductsPromise = (async () => {
-        try {
-            return await db.category.findMany({
+    await ensureCanonicalProductMediaMigration()
+    const categoriesWithProductsPromise = db.category.findMany({
+        select: {
+            id: true,
+            products: {
                 select: {
                     id: true,
-                    products: {
-                        select: {
-                            id: true,
-                            types: { select: { id: true } },
-                            styles: { select: { id: true } },
-                            colors: { select: { id: true } },
-                            sizes: { select: { id: true } },
-                            ages: { select: { id: true } },
-                            materials: { select: { id: true } },
-                        }
-                    }
+                    types: { select: { id: true } },
+                    styles: { select: { id: true } },
+                    colors: { select: { id: true } },
+                    sizes: { select: { id: true } },
+                    ages: { select: { id: true } },
                 }
-            })
-        } catch (error) {
-            console.warn("getProductOptions materials relation unavailable, falling back:", error)
-            const fallback = await db.category.findMany({
-                select: {
-                    id: true,
-                    products: {
-                        select: {
-                            id: true,
-                            types: { select: { id: true } },
-                            styles: { select: { id: true } },
-                            colors: { select: { id: true } },
-                            sizes: { select: { id: true } },
-                            ages: { select: { id: true } },
-                        }
-                    }
-                }
-            })
-
-            return fallback.map((category) => ({
-                ...category,
-                products: category.products.map((product) => ({
-                    ...product,
-                    materials: [],
-                })),
-            }))
+            }
         }
-    })()
+    }).then((rows) => rows.map((category) => ({
+        ...category,
+        products: category.products.map((product) => ({
+            ...product,
+            materials: [],
+        })),
+    })))
 
     const [categories, types, styles, colors, sizes, ages, materials, categoriesWithProducts] = await Promise.all([
         db.category.findMany(),

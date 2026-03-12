@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { shouldUseProductSkuFolder } from "@/lib/media-sku-roots"
@@ -71,6 +72,19 @@ function buildUploadBaseName(title: string, index: number, total: number) {
   return `${base}-${index + 1}`
 }
 
+function prettifyPickerAssetName(asset: Asset) {
+  const productMatch = asset.usedIn.match(/^Product featured:\s*(.+)$/i)
+  if (productMatch?.[1]) return productMatch[1].trim()
+
+  const raw = asset.name
+    .replace(/\.(avif|webp|png|jpe?g|gif)$/i, "")
+    .replace(/-(thumb|large|master)$/i, "")
+    .replace(/[-_]+/g, " ")
+    .trim()
+
+  return raw || asset.name
+}
+
 function normalizePickerAssetUrl(url: string) {
   const value = (url || "").trim()
   if (!value) return ""
@@ -92,19 +106,26 @@ function extractFolderFromUploadUrl(url: string) {
   return parts.slice(0, -1).join("/")
 }
 
+function looksLikeSkuFolderSegment(value: string) {
+  const clean = (value || "").trim()
+  return /[0-9]/.test(clean) && /^[A-Z0-9-]{6,}$/i.test(clean)
+}
+
+function isSkuFolderPath(value: string) {
+  const clean = (value || "").trim()
+  const leaf = clean.split("/").filter(Boolean).pop() || clean
+  return looksLikeSkuFolderSegment(leaf)
+}
+
 function resolveProductUploadFolder(baseFolder: string, sku: string) {
   const cleanFolder = (baseFolder || "").trim().replace(/^\/+|\/+$/g, "")
   const cleanSku = (sku || "").trim().replace(/^\/+|\/+$/g, "")
   if (!cleanFolder) return cleanSku ? cleanSku : ""
   if (!cleanSku) return cleanFolder
-  if (!shouldUseProductSkuFolder(cleanFolder)) return cleanFolder
 
   const parts = cleanFolder.split("/").filter(Boolean)
   const alreadyOnSkuFolder = parts[parts.length - 1] === cleanSku
-
-  if (alreadyOnSkuFolder) {
-    return cleanFolder
-  }
+  if (alreadyOnSkuFolder) return cleanFolder
 
   return `${cleanFolder}/${cleanSku}`
 }
@@ -123,6 +144,7 @@ export function MediaPickerDialog({
   const [activeFolder, setActiveFolder] = useState("all")
   const [activeSubfolder, setActiveSubfolder] = useState("all")
   const [selectedChildFolder, setSelectedChildFolder] = useState("")
+  const [searchTerm, setSearchTerm] = useState("")
   const [uploadFolder, setUploadFolder] = useState("categories")
   const [folders, setFolders] = useState<Folder[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
@@ -223,6 +245,7 @@ export function MediaPickerDialog({
       setActiveFolder("all")
       setActiveSubfolder("all")
       setSelectedChildFolder("")
+      setSearchTerm("")
       setDidAutoPickFolder(false)
       setFolderMenu(null)
       setShowColorPicker(false)
@@ -242,6 +265,7 @@ export function MediaPickerDialog({
       .filter((name) => name.startsWith(prefix))
       .map((name) => name.slice(prefix.length))
       .filter((rest) => rest.length > 0 && !rest.includes("/"))
+      .filter((leaf) => !looksLikeSkuFolderSegment(leaf))
       .map((leaf) => `${activeFolder}/${leaf}`)
       .sort((a, b) => a.localeCompare(b))
   }, [activeFolder, folders])
@@ -304,22 +328,90 @@ export function MediaPickerDialog({
       .sort((a, b) => a.localeCompare(b))
   }, [activeSubfolder, folders])
 
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase()
+
+  const currentLevelFolders = useMemo(() => {
+    if (selectedChildFolder) return [] as string[]
+    if (activeSubfolder !== "all") return childFolders
+    return directSubfolders
+  }, [activeSubfolder, childFolders, directSubfolders, selectedChildFolder])
+
+  const searchableFolders = useMemo(() => {
+    const allFolderNames = folders.map((folder) => folder.name)
+
+    if (selectedChildFolder) {
+      const prefix = `${selectedChildFolder}/`
+      return allFolderNames
+        .filter((name) => name.startsWith(prefix))
+        .sort((a, b) => a.localeCompare(b))
+    }
+
+    if (activeSubfolder !== "all") {
+      const prefix = `${activeSubfolder}/`
+      return allFolderNames
+        .filter((name) => name.startsWith(prefix))
+        .sort((a, b) => a.localeCompare(b))
+    }
+
+    if (activeFolder !== "all") {
+      const prefix = `${activeFolder}/`
+      return allFolderNames
+        .filter((name) => name.startsWith(prefix))
+        .sort((a, b) => a.localeCompare(b))
+    }
+
+    return allFolderNames.sort((a, b) => a.localeCompare(b))
+  }, [activeFolder, activeSubfolder, folders, selectedChildFolder])
+
+  const visibleCurrentLevelFolders = useMemo(() => {
+    if (!normalizedSearchTerm) return currentLevelFolders
+    return searchableFolders.filter((folder) => {
+      const folderLeaf = folder.split("/").pop() || folder
+      return folder.toLowerCase().includes(normalizedSearchTerm) || folderLeaf.toLowerCase().includes(normalizedSearchTerm)
+    })
+  }, [currentLevelFolders, normalizedSearchTerm, searchableFolders])
+
   const usesSkuFolders = useMemo(() => {
     if (activeSubfolder === "all") return false
     return shouldUseProductSkuFolder(activeSubfolder)
   }, [activeSubfolder])
 
+  const getAssetLabelGroup = useCallback((asset: Asset) => {
+    const folderLeaf = asset.folder.split("/").filter(Boolean).pop() || asset.folder
+    return folderLeaf || (productMeta?.sku?.trim() || "")
+  }, [productMeta?.sku])
+
   const filteredAssets = useMemo(() => {
     return imageAssets.filter((asset) => {
       if (selectedChildFolder) {
-        return asset.folder === selectedChildFolder || asset.folder.startsWith(`${selectedChildFolder}/`)
+        const inFolder = asset.folder === selectedChildFolder || asset.folder.startsWith(`${selectedChildFolder}/`)
+        if (!inFolder) return false
+      } else if (activeFolder === "all") {
+        // keep all assets
+      } else if (activeSubfolder === "all") {
+        const inTopFolder =
+          asset.folder === activeFolder ||
+          (normalizedSearchTerm.length > 0 && asset.folder.startsWith(`${activeFolder}/`))
+        if (!inTopFolder) return false
+      } else if (usesSkuFolders) {
+        return false
+      } else if (asset.folder !== activeSubfolder && !asset.folder.startsWith(`${activeSubfolder}/`)) {
+        return false
       }
-      if (activeFolder === "all") return true
-      if (activeSubfolder === "all") return asset.folder === activeFolder
-      if (usesSkuFolders) return false
-      return asset.folder === activeSubfolder
+
+      if (!normalizedSearchTerm) return true
+
+      const labelGroup = getAssetLabelGroup(asset).toLowerCase()
+      const displayLabel = (assetLabels[getAssetLabelGroup(asset)] || prettifyPickerAssetName(asset)).toLowerCase()
+      return (
+        asset.name.toLowerCase().includes(normalizedSearchTerm) ||
+        asset.folder.toLowerCase().includes(normalizedSearchTerm) ||
+        asset.usedIn.toLowerCase().includes(normalizedSearchTerm) ||
+        labelGroup.includes(normalizedSearchTerm) ||
+        displayLabel.includes(normalizedSearchTerm)
+      )
     })
-  }, [activeFolder, activeSubfolder, imageAssets, selectedChildFolder, usesSkuFolders])
+  }, [activeFolder, activeSubfolder, assetLabels, getAssetLabelGroup, imageAssets, normalizedSearchTerm, selectedChildFolder, usesSkuFolders])
 
   const sortedFilteredAssets = useMemo(() => {
     return [...filteredAssets].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
@@ -371,11 +463,6 @@ export function MediaPickerDialog({
     }
     return `${Math.max(1, Math.round(selectedAsset.sizeBytes / 1024))} KB`
   }, [selectedAsset?.sizeBytes])
-
-  const getAssetLabelGroup = useCallback((asset: Asset) => {
-    const folderLeaf = asset.folder.split("/").filter(Boolean).pop() || asset.folder
-    return folderLeaf || (productMeta?.sku?.trim() || "")
-  }, [productMeta?.sku])
 
   const selectedAssetLabelGroup = useMemo(
     () => (selectedAsset ? getAssetLabelGroup(selectedAsset) : ""),
@@ -771,7 +858,7 @@ export function MediaPickerDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         ref={dialogContentRef}
-        className="!left-1/2 !top-1/2 !translate-x-[-50%] !translate-y-[-50%] !flex flex-col overflow-hidden p-0"
+        className="!left-1/2 !top-1/2 !translate-x-[-50%] !translate-y-[-50%] !flex flex-col gap-0 overflow-hidden p-0"
         style={{ width: "98vw", maxWidth: "98vw", height: "96vh", maxHeight: "96vh" }}
       >
         <DialogHeader className="border-b border-slate-200 px-6 py-4">
@@ -867,13 +954,13 @@ export function MediaPickerDialog({
             </label>
           </div>
         ) : (
-          <div className="flex h-full min-h-0 overflow-hidden bg-[#f8fafc]">
+          <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#f8fafc] lg:flex-row">
             <div className="flex min-w-0 flex-1 flex-col p-5">
-              <div className="rounded-2xl border border-[#dce3ed] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-                <div className="space-y-6 p-6">
+              <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-[#dce3ed] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+                <div className="shrink-0 p-6">
                   <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-center xl:justify-start">
                     <div className="flex flex-1 flex-col gap-3 lg:flex-row lg:items-center">
-                      <div className="grid gap-3 sm:grid-cols-[260px_260px_auto]">
+                      <div className="grid gap-3 sm:grid-cols-[260px_260px_minmax(220px,1fr)_auto]">
                         <Select
                           value={activeFolder}
                           onValueChange={(value) => {
@@ -926,6 +1013,13 @@ export function MediaPickerDialog({
                           </SelectContent>
                         </Select>
 
+                        <Input
+                          value={searchTerm}
+                          onChange={(event) => setSearchTerm(event.target.value)}
+                          placeholder="Search folders or images"
+                          className="h-12 border-[#cfd9e4] bg-white text-[15px]"
+                        />
+
                         <div className="flex gap-2">
                           <Button type="button" className="h-12 px-5" onClick={() => setTab("upload")} disabled={uploading}>
                             {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
@@ -952,115 +1046,118 @@ export function MediaPickerDialog({
                       </Button>
                     </div>
                   </div>
+                </div>
 
-                  <div ref={libraryScrollRef} className="min-h-[520px]">
-                    {loading ? (
-                      <div className="flex h-[520px] items-center justify-center text-sm text-slate-500">
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Loading media...
-                      </div>
-                    ) : !selectedChildFolder && childFolders.length > 0 ? (
-                      <div className="space-y-6">
-                        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-                          {childFolders.map((folder) => {
-                            const selected = selectedFolder === folder
-                            return (
-                              <div
-                                key={folder}
-                                role="button"
-                                tabIndex={0}
-                                onClick={(event) => {
-                                  const withMultiSelect = event.metaKey || event.ctrlKey
-                                  toggleRightFolderSelection(folder, withMultiSelect)
-                                  setSelectedChildFolder("")
-                                }}
-                                onDoubleClick={() => {
+                <div
+                  ref={libraryScrollRef}
+                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6"
+                >
+                  {loading ? (
+                    <div className="flex h-[520px] items-center justify-center text-sm text-slate-500">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Loading media...
+                    </div>
+                  ) : !selectedChildFolder && visibleCurrentLevelFolders.length > 0 ? (
+                    <div className="space-y-6">
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+                        {visibleCurrentLevelFolders.map((folder) => {
+                          const selected = selectedFolder === folder
+                          const folderLeaf = folder.split("/").pop() || folder
+                          return (
+                            <div
+                              key={folder}
+                              role="button"
+                              tabIndex={0}
+                              onClick={(event) => {
+                                const withMultiSelect = event.metaKey || event.ctrlKey
+                                toggleRightFolderSelection(folder, withMultiSelect)
+                                setSelectedChildFolder("")
+                              }}
+                              onDoubleClick={() => {
+                                setSelectedFolder(folder)
+                                setSelectedRightFolders([folder])
+                                setSelectedChildFolder(folder)
+                                setUploadFolder(folder)
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault()
                                   setSelectedFolder(folder)
                                   setSelectedRightFolders([folder])
                                   setSelectedChildFolder(folder)
                                   setUploadFolder(folder)
-                                }}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter" || event.key === " ") {
-                                    event.preventDefault()
-                                    setSelectedFolder(folder)
-                                    setSelectedRightFolders([folder])
-                                    setSelectedChildFolder(folder)
-                                    setUploadFolder(folder)
-                                  }
-                                }}
-                                className={`rounded-[28px] border bg-white p-6 text-left shadow-[0_8px_24px_rgba(15,23,42,0.05)] transition ${selected ? "border-teal-500 ring-2 ring-teal-200" : "border-[#dce3ed]"}`}
-                              >
-                                <div className="mb-8 text-[#f59e0b]">
-                                  <FolderIcon className="h-9 w-9" />
-                                </div>
-                                <div className="space-y-2">
-                                  <div className="text-[18px] font-semibold text-slate-900">{folder.split("/").pop() || folder}</div>
-                                  <div className="text-sm text-slate-500">{folder}</div>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    ) : sortedFilteredAssets.length === 0 ? (
-                      <div className="flex h-[520px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
-                        <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
-                        No images found
-                      </div>
-                    ) : (
-                      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-                        {sortedFilteredAssets.map((asset) => {
-                          const selected = selectedUrls.includes(asset.url)
-                          const labelGroup = getAssetLabelGroup(asset)
-                          const displayLabel = assetLabels[labelGroup] || asset.name
-                          return (
-                            <div
-                              key={asset.id}
-                              role="button"
-                              tabIndex={0}
-                              onClick={(event) => toggleAssetWithModifier(asset.url, event.metaKey || event.ctrlKey)}
-                              onDoubleClick={() => handleAssetDoubleClick(asset.url)}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter" || event.key === " ") {
-                                  event.preventDefault()
-                                  toggleAssetWithModifier(asset.url, event.metaKey || event.ctrlKey)
                                 }
                               }}
-                              className={`overflow-hidden rounded-2xl border bg-white text-left transition ${
-                                selected ? "border-teal-500 ring-2 ring-teal-200" : "border-[#dce3ed] hover:border-slate-300"
-                              }`}
+                              className={`rounded-[28px] border bg-white p-6 text-left shadow-[0_8px_24px_rgba(15,23,42,0.05)] transition ${selected ? "border-teal-500 ring-2 ring-teal-200" : "border-[#dce3ed]"}`}
                             >
-                              <div className="relative aspect-square overflow-hidden bg-slate-100">
-                                <div className="absolute left-3 top-3 z-10 rounded-md bg-white/95 p-1.5">
-                                  {multiple ? (
-                                    <Checkbox
-                                      checked={selected}
-                                      onClick={(event: React.MouseEvent<HTMLButtonElement>) => event.stopPropagation()}
-                                      onCheckedChange={() => toggleAssetWithModifier(asset.url, true)}
-                                    />
-                                  ) : (
-                                    <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full border ${selected ? "border-teal-600 bg-teal-600 text-white" : "border-slate-300 bg-white text-transparent"}`}>
-                                      <Check className="h-3 w-3" />
-                                    </span>
-                                  )}
-                                </div>
-                                <img src={asset.url} alt={asset.name} className="h-full w-full object-cover" />
+                              <div className="mb-8 text-[#f59e0b]">
+                                <FolderIcon className="h-9 w-9" />
                               </div>
-                              <div className="space-y-1 p-3">
-                                <p className="truncate text-sm font-medium text-slate-900">{displayLabel}</p>
-                                <p className="truncate text-xs text-slate-500">{asset.folder}</p>
+                              <div>
+                                <div className="text-[18px] font-semibold text-slate-900">{folderLeaf}</div>
                               </div>
                             </div>
                           )
                         })}
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  ) : sortedFilteredAssets.length === 0 ? (
+                    <div className="flex h-[520px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
+                      <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
+                      No images found
+                    </div>
+                  ) : (
+                    <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+                      {sortedFilteredAssets.map((asset) => {
+                        const selected = selectedUrls.includes(asset.url)
+                        const labelGroup = getAssetLabelGroup(asset)
+                        const displayLabel = assetLabels[labelGroup] || prettifyPickerAssetName(asset)
+                        return (
+                          <div
+                            key={asset.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={(event) => toggleAssetWithModifier(asset.url, event.metaKey || event.ctrlKey)}
+                            onDoubleClick={() => handleAssetDoubleClick(asset.url)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault()
+                                toggleAssetWithModifier(asset.url, event.metaKey || event.ctrlKey)
+                              }
+                            }}
+                            className={`overflow-hidden rounded-2xl border bg-white text-left transition ${
+                              selected ? "border-teal-500 ring-2 ring-teal-200" : "border-[#dce3ed] hover:border-slate-300"
+                            }`}
+                          >
+                            <div className="relative aspect-square overflow-hidden bg-slate-100">
+                              <div className="absolute left-3 top-3 z-10 rounded-md bg-white/95 p-1.5">
+                                {multiple ? (
+                                  <Checkbox
+                                    checked={selected}
+                                    onClick={(event: React.MouseEvent<HTMLButtonElement>) => event.stopPropagation()}
+                                    onCheckedChange={() => toggleAssetWithModifier(asset.url, true)}
+                                  />
+                                ) : (
+                                  <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full border ${selected ? "border-teal-600 bg-teal-600 text-white" : "border-slate-300 bg-white text-transparent"}`}>
+                                    <Check className="h-3 w-3" />
+                                  </span>
+                                )}
+                              </div>
+                              <img src={asset.url} alt={asset.name} className="block h-full w-full object-cover" loading="lazy" />
+                            </div>
+                            <div className="space-y-1 p-3">
+                              <p className="truncate text-sm font-medium text-slate-900">{displayLabel}</p>
+                              <p className="truncate text-xs text-slate-500">{asset.folder}</p>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-              <aside className="flex h-full min-h-0 w-[360px] shrink-0 flex-col border-l border-slate-200 bg-slate-50/70">
+              <aside className="flex min-h-0 w-full shrink-0 flex-col border-t border-slate-200 bg-slate-50/70 lg:h-full lg:w-[360px] lg:border-l lg:border-t-0">
                 <div className="h-full overflow-y-auto p-4">
                   {selectedAsset ? (
                     <div className="space-y-4">

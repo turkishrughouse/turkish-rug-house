@@ -4,13 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle } from "@/components/ui/dialog"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
-import { Progress } from "@/components/ui/progress"
-import { DASHBOARD_DATA } from "@/lib/dashboard-mock"
+import { Button } from "@/components/ui/button"
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell
 } from 'recharts'
-import { ChevronLeft, ChevronRight, DollarSign, ShoppingBag, Users, Package, Globe2, Boxes, X } from "lucide-react"
+import { ChevronLeft, ChevronRight, DollarSign, ShoppingBag, Users, Package, Globe2, Boxes, X, ClipboardList } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { parseProductImages } from "@/lib/product-images"
@@ -24,9 +22,11 @@ type DashboardProduct = {
   id: string
   title: string
   slug: string
+  sku?: string | null
   price: number
   stockCount: number
   images: string
+  soldCount?: number
   categories?: Array<{ id: string; title: string }>
 }
 
@@ -126,83 +126,73 @@ type AbandonedCartSummary = {
   lastAt: string | null
 }
 
-const DEVICE_LOGIN_EXAMPLES: DeviceLoginEntry[] = [
-  {
-    id: "device-demo-1",
-    actorKey: "device-demo-1",
-    name: "Aylin Demir",
-    browser: "Safari",
-    device: "iPhone",
-    country: "Turkey",
-    currentPath: "/category/oushak-rugs",
-    createdAt: "2026-02-27T10:10:00.000Z",
-  },
-  {
-    id: "device-demo-2",
-    actorKey: "device-demo-2",
-    name: "Mert Kaya",
-    browser: "Chrome",
-    device: "iPad",
-    country: "United States",
-    currentPath: "/basket",
-    createdAt: "2026-02-27T10:06:00.000Z",
-  },
-  {
-    id: "device-demo-3",
-    actorKey: "device-demo-3",
-    name: "Selin Aras",
-    browser: "Chrome",
-    device: "Mac",
-    country: "Germany",
-    currentPath: "/product/vintage-rug",
-    createdAt: "2026-02-27T10:03:00.000Z",
-  },
-  {
-    id: "device-demo-4",
-    actorKey: "device-demo-4",
-    name: "Can Yildiz",
-    browser: "Samsung Internet",
-    device: "Samsung",
-    country: "United Kingdom",
-    currentPath: "/checkout",
-    createdAt: "2026-02-27T10:01:00.000Z",
-  },
-]
+type ProductCreatorUserOption = {
+  id: string
+  label: string
+  email: string
+  count: number
+}
 
-const ABANDONED_CART_EXAMPLES: AbandonedCartEntry[] = [
-  {
-    id: "abandoned-1",
-    actorKey: "guest:demo-1",
-    customerName: "Aylin Demir",
-    action: "Added to cart • Oushak Rugs",
-    currentPath: "/basket",
-    createdAt: "2026-02-27T09:55:00.000Z",
-    isGuest: true,
-  },
-  {
-    id: "abandoned-2",
-    actorKey: "customer-2",
-    customerName: "Mert Kaya",
-    action: "Added to cart • Vintage Rugs",
-    currentPath: "/checkout",
-    createdAt: "2026-02-27T09:41:00.000Z",
-    isGuest: false,
-  },
-  {
-    id: "abandoned-3",
-    actorKey: "guest:demo-3",
-    customerName: "Selin Aras",
-    action: "Added to cart • Beige Rug",
-    currentPath: "/basket",
-    createdAt: "2026-02-27T09:22:00.000Z",
-    isGuest: true,
-  },
-]
+type ProductCreatorProduct = {
+  id: string
+  title: string
+  slug: string
+  sku: string | null
+  createdAt: string
+}
+
+type ProductCreatorSection = {
+  selectedUserId: string
+  total: number
+  products: ProductCreatorProduct[]
+}
+
+type ProductCreatorResponse = {
+  period: "week" | "month" | "year"
+  superUsers: ProductCreatorUserOption[]
+  adminUsers: ProductCreatorUserOption[]
+  superUserSection: ProductCreatorSection
+  adminSection: ProductCreatorSection
+}
+
+type DashboardTask = {
+  id: string
+  title: string
+  description: string
+  badge: string
+}
 
 type GeoCollection = {
   type: "FeatureCollection"
   features: GeoFeature[]
 }
+
+const PRODUCT_PERIOD_OPTIONS = [
+  { value: "week", labelEn: "This Week", labelTr: "Bu Hafta" },
+  { value: "month", labelEn: "This Month", labelTr: "Bu Ay" },
+  { value: "year", labelEn: "This Year", labelTr: "Bu Yıl" },
+] as const
+
+const DASHBOARD_TASKS: DashboardTask[] = [
+  {
+    id: "task-review-drafts",
+    title: "Review draft products",
+    description: "Check draft products waiting for final publish review and confirm their content quality before release.",
+    badge: "Review",
+  },
+  {
+    id: "task-media-cleanup",
+    title: "Clean product media folders",
+    description: "Audit product folders with missing or duplicate media so the team can archive sold-product assets faster.",
+    badge: "Media",
+  },
+  {
+    id: "task-stock-audit",
+    title: "Verify low-stock records",
+    description: "Open a stock audit pass for products that need inventory confirmation before new orders arrive.",
+    badge: "Stock",
+  },
+] as const
 
 const COUNTRY_COORDS: Record<string, { lat: number; lng: number }> = {
   US: { lat: 39, lng: -98 },
@@ -429,6 +419,13 @@ export default function DashboardPage() {
   const [selectedCountryCode, setSelectedCountryCode] = useState<string | null>(null)
   const [hoveredActorKey, setHoveredActorKey] = useState<string | null>(null)
   const [isProductsDetailOpen, setIsProductsDetailOpen] = useState(false)
+  const [productCreatorData, setProductCreatorData] = useState<ProductCreatorResponse | null>(null)
+  const [productCreatorLoading, setProductCreatorLoading] = useState(false)
+  const [selectedSuperUserId, setSelectedSuperUserId] = useState("")
+  const [selectedSuperUserPeriod, setSelectedSuperUserPeriod] = useState<"week" | "month" | "year">("week")
+  const [selectedAdminUserId, setSelectedAdminUserId] = useState("")
+  const [selectedAdminUserPeriod, setSelectedAdminUserPeriod] = useState<"week" | "month" | "year">("week")
+  const [selectedTask, setSelectedTask] = useState<DashboardTask | null>(null)
   const [isOrdersDetailOpen, setIsOrdersDetailOpen] = useState(false)
   const [ordersCountryFilter, setOrdersCountryFilter] = useState<string | null>(null)
   const [isCustomersDetailOpen, setIsCustomersDetailOpen] = useState(false)
@@ -451,28 +448,8 @@ export default function DashboardPage() {
     lastAt: null,
   })
   const [isAbandonedCartsOpen, setIsAbandonedCartsOpen] = useState(false)
-  const deviceLoginsForDisplay = deviceLogins.length > 0 ? deviceLogins : DEVICE_LOGIN_EXAMPLES
-  const deviceTopBrowsersForDisplay = deviceTopBrowsers.length > 0
-    ? deviceTopBrowsers
-    : Array.from(new Map(DEVICE_LOGIN_EXAMPLES.map((item) => [item.browser, 0])).keys()).map((label) => ({
-        label,
-        count: DEVICE_LOGIN_EXAMPLES.filter((item) => item.browser === label).length,
-      }))
-  const deviceTopDevicesForDisplay = deviceTopDevices.length > 0
-    ? deviceTopDevices
-    : Array.from(new Map(DEVICE_LOGIN_EXAMPLES.map((item) => [item.device, 0])).keys()).map((label) => ({
-        label,
-        count: DEVICE_LOGIN_EXAMPLES.filter((item) => item.device === label).length,
-      }))
-  const abandonedCartsForDisplay = abandonedCarts.length > 0 ? abandonedCarts : ABANDONED_CART_EXAMPLES
-  const abandonedCartStats = abandonedCarts.length > 0
-    ? abandonedCartSummary
-    : {
-        total: ABANDONED_CART_EXAMPLES.length,
-        guestCount: ABANDONED_CART_EXAMPLES.filter((item) => item.isGuest).length,
-        customerCount: ABANDONED_CART_EXAMPLES.filter((item) => !item.isGuest).length,
-        lastAt: ABANDONED_CART_EXAMPLES[0]?.createdAt || null,
-      }
+  const hasDeviceData = deviceLogins.length > 0
+  const hasAbandonedCartData = abandonedCarts.length > 0
 
   useEffect(() => {
     const langFromMain = document.querySelector("main[lang]")?.getAttribute("lang") || document.documentElement.lang || "en"
@@ -482,7 +459,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const loadProducts = async () => {
       try {
-        const res = await fetch("/api/v1/public/products?limit=10&sort=latest", { cache: "no-store" })
+        const res = await fetch("/api/admin/dashboard/top-products", { cache: "no-store" })
         if (!res.ok) throw new Error("Failed to fetch products")
         const data = await res.json()
         setTopProducts((data?.products || []) as DashboardProduct[])
@@ -672,6 +649,45 @@ export default function DashboardPage() {
   }, [isProductsDetailOpen, loadSummary])
 
   useEffect(() => {
+    if (!isProductsDetailOpen) return
+
+    let cancelled = false
+    const loadProductCreatorData = async () => {
+      setProductCreatorLoading(true)
+      try {
+        const params = new URLSearchParams({
+          superUserId: selectedSuperUserId,
+          superPeriod: selectedSuperUserPeriod,
+          adminUserId: selectedAdminUserId,
+          adminPeriod: selectedAdminUserPeriod,
+        })
+        const res = await fetch(`/api/admin/dashboard/product-creators?${params.toString()}`, { cache: "no-store" })
+        if (!res.ok) throw new Error("Failed to load product creator data")
+        const data = (await res.json()) as ProductCreatorResponse
+        if (cancelled) return
+        setProductCreatorData(data)
+        if (!selectedSuperUserId && data.superUsers[0]?.id) {
+          setSelectedSuperUserId(data.superUsers[0].id)
+        }
+        if (!selectedAdminUserId && data.adminUsers[0]?.id) {
+          setSelectedAdminUserId(data.adminUsers[0].id)
+        }
+      } catch {
+        if (!cancelled) {
+          setProductCreatorData(null)
+        }
+      } finally {
+        if (!cancelled) setProductCreatorLoading(false)
+      }
+    }
+
+    void loadProductCreatorData()
+    return () => {
+      cancelled = true
+    }
+  }, [isProductsDetailOpen, selectedAdminUserId, selectedAdminUserPeriod, selectedSuperUserId, selectedSuperUserPeriod])
+
+  useEffect(() => {
     let mounted = true
 
     const loadActivity = async () => {
@@ -712,10 +728,13 @@ export default function DashboardPage() {
     if (minutes > 0) return `${minutes}m ${seconds}s`
     return `${seconds}s`
   }
-  const formatCompactCurrency = (value: number) =>
-    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }).format(
-      Number(value || 0)
-    )
+  const formatCompactCurrency = (value: number) => {
+    const amount = Number(value || 0)
+    const absolute = Math.abs(amount)
+    if (absolute >= 1_000_000) return `$${(amount / 1_000_000).toFixed(1)}M`
+    if (absolute >= 1_000) return `$${(amount / 1_000).toFixed(1)}K`
+    return `$${amount.toFixed(1)}`
+  }
   const filteredOrdersTodayDetails = useMemo(() => {
     if (!ordersCountryFilter) return summary.ordersTodayDetails
     return summary.ordersTodayDetails.filter((order) => order.country === ordersCountryFilter)
@@ -909,54 +928,6 @@ export default function DashboardPage() {
     setDeviceVisitorDetail(null)
     setDeviceVisitorDetailLoading(true)
     setIsDeviceVisitorDetailOpen(true)
-    if (visitor.actorKey.startsWith("device-demo-")) {
-      setDeviceVisitorDetail({
-        customer: {
-          actorKey: visitor.actorKey,
-          userId: null,
-          name: visitor.name,
-          email: null,
-          country: visitor.country,
-          lastActiveAt: visitor.createdAt,
-          currentPath: visitor.currentPath || "/",
-          currentPageTitle: visitor.currentPath?.includes("/product/")
-            ? "Vintage Rug Product Page"
-            : visitor.currentPath?.includes("/category/")
-              ? "Oushak Rugs Category"
-              : "Store Page",
-          lastAction: "Live visit",
-          lastHoverLabel: visitor.currentPath?.includes("/product/") ? "Vintage Rug" : "Oushak Rugs",
-          lastHoverType: visitor.currentPath?.includes("/product/") ? "Product" : "Category",
-          longestStayPath: visitor.currentPath || "/",
-          longestStayTitle: visitor.currentPath?.includes("/product/") ? "Vintage Rug Product Page" : "Collection Page",
-          longestStayMs: 86000,
-        },
-        pages: [
-          {
-            path: visitor.currentPath || "/",
-            source: "Live visit",
-            count: 4,
-            lastAt: visitor.createdAt,
-            totalMs: 86000,
-            title: visitor.currentPath?.includes("/product/") ? "Vintage Rug Product Page" : "Oushak Rugs Category",
-            lastHoverLabel: visitor.currentPath?.includes("/product/") ? "Vintage Rug" : "Oushak Rugs",
-            lastHoverType: visitor.currentPath?.includes("/product/") ? "Product" : "Category",
-          },
-          {
-            path: "/collections",
-            source: "Live visit",
-            count: 2,
-            lastAt: visitor.createdAt,
-            totalMs: 34000,
-            title: "Collections",
-            lastHoverLabel: "Shop All Rugs",
-            lastHoverType: "Heading",
-          },
-        ],
-      })
-      setDeviceVisitorDetailLoading(false)
-      return
-    }
     try {
       const res = await fetch(`/api/admin/dashboard/customer-activity/detail?actorKey=${encodeURIComponent(visitor.actorKey)}`, {
         cache: "no-store",
@@ -975,6 +946,15 @@ export default function DashboardPage() {
     closeAllOverlays()
     setIsProductsDetailOpen(true)
   }
+
+  const selectedSuperUserOption = useMemo(
+    () => productCreatorData?.superUsers.find((entry) => entry.id === selectedSuperUserId) || null,
+    [productCreatorData?.superUsers, selectedSuperUserId]
+  )
+  const selectedAdminUserOption = useMemo(
+    () => productCreatorData?.adminUsers.find((entry) => entry.id === selectedAdminUserId) || null,
+    [productCreatorData?.adminUsers, selectedAdminUserId]
+  )
 
   const openOrdersOverlay = (country: string | null = null) => {
     closeAllOverlays()
@@ -1057,52 +1037,64 @@ export default function DashboardPage() {
       </div>
       <div className="grid grid-cols-1 justify-items-center gap-4 py-1 sm:grid-cols-2 lg:grid-cols-3">
         <Card
-          className={cn(DASHBOARD_CARD, "h-[118px] w-full max-w-[450px] cursor-pointer transition-all duration-300 hover:shadow-md")}
+          className={cn(DASHBOARD_CARD, "min-h-[138px] w-full max-w-[450px] cursor-pointer transition-all duration-300 hover:shadow-md")}
           onClick={() => setIsDeviceLoginsOpen(true)}
         >
           <CardHeader className="pb-1 pt-3">
             <div className="flex items-center justify-between gap-3">
               <CardTitle className="text-xs font-semibold text-slate-600">{tx("Browsers & Devices", "Tarayıcılar ve Cihazlar")}</CardTitle>
-              <span className="text-[10px] font-semibold text-slate-500">{deviceLoginsForDisplay.length}</span>
+              <span className="text-[10px] font-semibold text-slate-500">{deviceLogins.length}</span>
             </div>
           </CardHeader>
           <CardContent className="pb-2 pt-0">
-            <div className="grid grid-cols-4 gap-2">
-              {deviceLoginsForDisplay.slice(0, 4).map((item) => (
-                <div key={item.id} className="rounded-lg bg-slate-50 px-2 py-2 text-center">
-                  <p className="truncate text-[11px] font-semibold text-slate-700">{item.browser}</p>
-                  <p className="mt-1 truncate text-[10px] text-slate-500">{item.device}</p>
-                  <p className="mt-1 truncate text-[10px] text-slate-400">{item.country}</p>
-                </div>
-              ))}
-            </div>
+            {hasDeviceData ? (
+              <div className="grid grid-cols-4 gap-2">
+                {deviceLogins.slice(0, 4).map((item) => (
+                  <div key={item.id} className="rounded-lg bg-slate-50 px-2 py-2 text-center">
+                    <p className="truncate text-[11px] font-semibold text-slate-700">{item.browser}</p>
+                    <p className="mt-1 truncate text-[10px] text-slate-500">{item.device}</p>
+                    <p className="mt-1 truncate text-[10px] text-slate-400">{item.country}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex h-[62px] items-center justify-center rounded-lg bg-slate-50 px-3 text-center text-[11px] text-slate-500">
+                {tx("No recent browser or device activity yet.", "Henüz tarayıcı veya cihaz aktivitesi yok.")}
+              </div>
+            )}
           </CardContent>
         </Card>
 
         <Card
-          className={cn(DASHBOARD_CARD, "h-[118px] w-full max-w-[450px] cursor-pointer transition-all duration-300 hover:shadow-md")}
+          className={cn(DASHBOARD_CARD, "min-h-[138px] w-full max-w-[450px] cursor-pointer transition-all duration-300 hover:shadow-md")}
           onClick={() => setIsAbandonedCartsOpen(true)}
         >
           <CardHeader className="pb-1 pt-3">
             <div className="flex items-center justify-between gap-3">
               <CardTitle className="text-xs font-semibold text-slate-600">{tx("Abandoned carts", "Sepette bırakılanlar")}</CardTitle>
-              <span className="text-[10px] font-semibold text-slate-500">{abandonedCartStats.total}</span>
+              <span className="text-[10px] font-semibold text-slate-500">{abandonedCartSummary.total}</span>
             </div>
           </CardHeader>
           <CardContent className="pb-2 pt-0">
-            <div className="grid grid-cols-3 gap-2">
-              {abandonedCartsForDisplay.slice(0, 3).map((item) => (
-                <div key={item.id} className="rounded-lg bg-slate-50 px-2 py-2 text-center">
-                  <p className="truncate text-[12px] font-medium text-slate-700">{item.customerName}</p>
-                  <p className="mt-1 text-[10px] uppercase tracking-wide text-slate-400">{item.isGuest ? "Guest" : "Customer"}</p>
-                </div>
-              ))}
-            </div>
+            {hasAbandonedCartData ? (
+              <div className="grid grid-cols-3 gap-2">
+                {abandonedCarts.slice(0, 3).map((item) => (
+                  <div key={item.id} className="rounded-lg bg-slate-50 px-2 py-2 text-center">
+                    <p className="truncate text-[12px] font-medium text-slate-700">{item.customerName}</p>
+                    <p className="mt-1 text-[10px] uppercase tracking-wide text-slate-400">{item.isGuest ? "Guest" : "Customer"}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex h-[62px] items-center justify-center rounded-lg bg-slate-50 px-3 text-center text-[11px] text-slate-500">
+                {tx("No confirmed abandoned carts right now.", "Şu anda doğrulanmış terk edilmiş sepet yok.")}
+              </div>
+            )}
           </CardContent>
         </Card>
 
         <Card
-          className={cn(DASHBOARD_CARD, "h-[118px] w-full max-w-[450px] cursor-pointer transition-all duration-300 hover:shadow-md")}
+          className={cn(DASHBOARD_CARD, "min-h-[138px] w-full max-w-[450px] cursor-pointer transition-all duration-300 hover:shadow-md")}
           onClick={openProductsOverlay}
         >
           <CardHeader className="pb-1 pt-3">
@@ -1127,7 +1119,7 @@ export default function DashboardPage() {
                 </div>
               ))}
             </div>
-            <p className="mt-2 truncate text-[10px] leading-4 text-slate-500">
+            <p className="mt-2 text-[10px] leading-4 text-slate-500">
               {tx("Total active products", "Toplam aktif ürün")}: {summary.totalProducts.toLocaleString()}
             </p>
           </CardContent>
@@ -1156,31 +1148,31 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                   <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-3">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Total live", "Canlı toplam")}</p>
-                    <p className="mt-2 text-2xl font-bold text-slate-900">{deviceLoginsForDisplay.length}</p>
+                    <p className="mt-2 text-2xl font-bold text-slate-900">{deviceLogins.length}</p>
                   </div>
                   <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-3">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Top browser", "En sık tarayıcı")}</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-900">{deviceTopBrowsersForDisplay[0]?.label || "Other"}</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-900">{deviceTopBrowsers[0]?.label || tx("No data", "Veri yok")}</p>
                   </div>
                   <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-3">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Top device", "En sık cihaz")}</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-900">{deviceTopDevicesForDisplay[0]?.label || "Other"}</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-900">{deviceTopDevices[0]?.label || tx("No data", "Veri yok")}</p>
                   </div>
                   <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-3">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Last activity", "Son aktivite")}</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-900">{formatSocialLoginDate(deviceLoginsForDisplay[0]?.createdAt || null)}</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-900">{formatSocialLoginDate(deviceLogins[0]?.createdAt || null)}</p>
                   </div>
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
-                  {deviceTopBrowsersForDisplay.slice(0, 3).map((item) => (
+                  {deviceTopBrowsers.slice(0, 3).map((item) => (
                     <div key={`browser-${item.label}`} className="rounded-xl border border-[#dce3ed] bg-white p-3">
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{tx("Browser", "Tarayıcı")}</p>
                       <p className="mt-2 text-sm font-semibold text-slate-900">{item.label}</p>
                       <p className="mt-1 text-xs text-slate-500">{item.count}</p>
                     </div>
                   ))}
-                  {deviceTopDevicesForDisplay.slice(0, 3).map((item) => (
+                  {deviceTopDevices.slice(0, 3).map((item) => (
                     <div key={`device-${item.label}`} className="rounded-xl border border-[#dce3ed] bg-white p-3">
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{tx("Device", "Cihaz")}</p>
                       <p className="mt-2 text-sm font-semibold text-slate-900">{item.label}</p>
@@ -1190,7 +1182,11 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="mt-4 space-y-3 pr-1">
-                  {deviceLoginsForDisplay.map((item) => (
+                  {deviceLogins.length === 0 ? (
+                    <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-4 text-sm text-slate-500">
+                      {tx("No recent browser or device activity yet.", "Henüz tarayıcı veya cihaz aktivitesi yok.")}
+                    </div>
+                  ) : deviceLogins.map((item) => (
                     <button
                       key={item.id}
                       type="button"
@@ -1264,24 +1260,28 @@ export default function DashboardPage() {
                   <div className="grid grid-cols-4 gap-3">
                     <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-3">
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Total", "Toplam")}</p>
-                      <p className="mt-2 text-2xl font-bold text-slate-900">{abandonedCartStats.total}</p>
+                      <p className="mt-2 text-2xl font-bold text-slate-900">{abandonedCartSummary.total}</p>
                     </div>
                     <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-3">
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Guests", "Misafir")}</p>
-                      <p className="mt-2 text-2xl font-bold text-slate-900">{abandonedCartStats.guestCount}</p>
+                      <p className="mt-2 text-2xl font-bold text-slate-900">{abandonedCartSummary.guestCount}</p>
                     </div>
                     <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-3">
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Customers", "Müşteri")}</p>
-                      <p className="mt-2 text-2xl font-bold text-slate-900">{abandonedCartStats.customerCount}</p>
+                      <p className="mt-2 text-2xl font-bold text-slate-900">{abandonedCartSummary.customerCount}</p>
                     </div>
                     <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-3">
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Last activity", "Son aktivite")}</p>
-                      <p className="mt-2 text-sm font-semibold text-slate-900">{formatSocialLoginDate(abandonedCartStats.lastAt)}</p>
+                      <p className="mt-2 text-sm font-semibold text-slate-900">{formatSocialLoginDate(abandonedCartSummary.lastAt)}</p>
                     </div>
                   </div>
 
                   <div className="mt-4 space-y-3 pr-1">
-                    {abandonedCartsForDisplay.map((item) => (
+                    {abandonedCarts.length === 0 ? (
+                      <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-4 text-sm text-slate-500">
+                        {tx("No confirmed abandoned carts right now.", "Şu anda doğrulanmış terk edilmiş sepet yok.")}
+                      </div>
+                    ) : abandonedCarts.map((item) => (
                       <div key={item.id} className="rounded-xl border border-[#dce3ed] bg-white p-4">
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0">
@@ -1458,30 +1458,155 @@ export default function DashboardPage() {
               </DialogHeader>
 
               <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto px-5 py-4">
-                <div className="min-w-[900px]">
-                  <div className="grid grid-cols-3 gap-3">
-                    {[
-                      { key: "today", title: tx("Today", "Bugün"), data: summary.productsAddedBy.today },
-                      { key: "week", title: tx("This week", "Bu hafta"), data: summary.productsAddedBy.week },
-                      { key: "month", title: tx("This month", "Bu ay"), data: summary.productsAddedBy.month },
-                      { key: "year", title: tx("This year", "Bu yıl"), data: summary.productsAddedBy.year },
-                    ].map((section) => (
-                      <div key={section.key} className="rounded-md border border-[#e6ecf4] bg-slate-50 p-3">
-                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">{section.title}</p>
-                        {section.data.length === 0 ? (
-                          <p className="text-xs text-slate-500">{tx("No product added in this period.", "Bu dönemde ürün eklenmedi.")}</p>
-                        ) : (
-                          <div className="space-y-1.5">
-                            {section.data.map((row) => (
-                              <div key={`${section.key}-${row.creator}`} className="flex items-center justify-between rounded bg-white px-2.5 py-1.5 text-xs">
-                                <span className="truncate text-slate-700">{row.creator}</span>
-                                <span className="font-semibold text-slate-900">{row.count}</span>
-                              </div>
-                            ))}
+                <div className="min-w-[1100px]">
+                  <div className="grid gap-4 xl:grid-cols-3">
+                    <div className="rounded-xl border border-[#e6ecf4] bg-slate-50 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{tx("Super Users", "Super Userlar")}</p>
+                          <p className="mt-1 text-xs text-slate-500">{tx("Real product creation data by selected super user.", "Seçilen super user için gerçek ürün oluşturma verisi.")}</p>
+                        </div>
+                        <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                          {productCreatorData?.superUserSection.total || 0} {tx("products", "ürün")}
+                        </div>
+                      </div>
+                      <div className="mt-4 grid gap-3">
+                        <select
+                          value={selectedSuperUserId}
+                          onChange={(event) => setSelectedSuperUserId(event.target.value)}
+                          className="h-11 rounded-md border border-[#dce3ed] bg-white px-3 text-sm text-slate-700"
+                        >
+                          <option value="">{tx("Select super user", "Super user seç")}</option>
+                          {(productCreatorData?.superUsers || []).map((user) => (
+                            <option key={user.id} value={user.id}>{user.label}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={selectedSuperUserPeriod}
+                          onChange={(event) => setSelectedSuperUserPeriod(event.target.value as "week" | "month" | "year")}
+                          className="h-11 rounded-md border border-[#dce3ed] bg-white px-3 text-sm text-slate-700"
+                        >
+                          {PRODUCT_PERIOD_OPTIONS.map((option) => (
+                            <option key={`super-${option.value}`} value={option.value}>{isTr ? option.labelTr : option.labelEn}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="mt-4 rounded-lg border border-[#e6ecf4] bg-white p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">{selectedSuperUserOption?.label || tx("No super user selected", "Super user seçilmedi")}</p>
+                            <p className="truncate text-xs text-slate-500">{selectedSuperUserOption?.email || tx("Choose a super user to inspect their product activity.", "Ürün aktivitesini görmek için bir super user seçin.")}</p>
                           </div>
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{productCreatorData?.superUserSection.total || 0}</span>
+                        </div>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {productCreatorLoading ? (
+                          <div className="rounded-lg border border-[#e6ecf4] bg-white p-3 text-xs text-slate-500">{tx("Loading products...", "Ürünler yükleniyor...")}</div>
+                        ) : !productCreatorData?.superUserSection.products.length ? (
+                          <div className="rounded-lg border border-[#e6ecf4] bg-white p-3 text-xs text-slate-500">{tx("No products found for this super user in the selected period.", "Seçilen dönemde bu super user için ürün bulunamadı.")}</div>
+                        ) : (
+                          productCreatorData.superUserSection.products.map((product) => (
+                            <div key={`super-product-${product.id}`} className="rounded-lg border border-[#e6ecf4] bg-white p-3">
+                              <p className="truncate text-sm font-semibold text-slate-900">{product.title}</p>
+                              <div className="mt-1 flex items-center justify-between gap-3 text-xs text-slate-500">
+                                <span className="truncate">{product.sku || product.slug}</span>
+                                <span className="shrink-0">{new Date(product.createdAt).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                          ))
                         )}
                       </div>
-                    ))}
+                    </div>
+
+                    <div className="rounded-xl border border-[#e6ecf4] bg-slate-50 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{tx("Admin Users", "Admin Kullanıcılar")}</p>
+                          <p className="mt-1 text-xs text-slate-500">{tx("Real product creation data by selected admin user.", "Seçilen admin kullanıcı için gerçek ürün oluşturma verisi.")}</p>
+                        </div>
+                        <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                          {productCreatorData?.adminSection.total || 0} {tx("products", "ürün")}
+                        </div>
+                      </div>
+                      <div className="mt-4 grid gap-3">
+                        <select
+                          value={selectedAdminUserId}
+                          onChange={(event) => setSelectedAdminUserId(event.target.value)}
+                          className="h-11 rounded-md border border-[#dce3ed] bg-white px-3 text-sm text-slate-700"
+                        >
+                          <option value="">{tx("Select admin user", "Admin kullanıcı seç")}</option>
+                          {(productCreatorData?.adminUsers || []).map((user) => (
+                            <option key={user.id} value={user.id}>{user.label}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={selectedAdminUserPeriod}
+                          onChange={(event) => setSelectedAdminUserPeriod(event.target.value as "week" | "month" | "year")}
+                          className="h-11 rounded-md border border-[#dce3ed] bg-white px-3 text-sm text-slate-700"
+                        >
+                          {PRODUCT_PERIOD_OPTIONS.map((option) => (
+                            <option key={`admin-${option.value}`} value={option.value}>{isTr ? option.labelTr : option.labelEn}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="mt-4 rounded-lg border border-[#e6ecf4] bg-white p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">{selectedAdminUserOption?.label || tx("No admin user selected", "Admin kullanıcı seçilmedi")}</p>
+                            <p className="truncate text-xs text-slate-500">{selectedAdminUserOption?.email || tx("Choose an admin user to inspect their product activity.", "Ürün aktivitesini görmek için bir admin kullanıcı seçin.")}</p>
+                          </div>
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{productCreatorData?.adminSection.total || 0}</span>
+                        </div>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {productCreatorLoading ? (
+                          <div className="rounded-lg border border-[#e6ecf4] bg-white p-3 text-xs text-slate-500">{tx("Loading products...", "Ürünler yükleniyor...")}</div>
+                        ) : !productCreatorData?.adminSection.products.length ? (
+                          <div className="rounded-lg border border-[#e6ecf4] bg-white p-3 text-xs text-slate-500">{tx("No products found for this admin user in the selected period.", "Seçilen dönemde bu admin kullanıcı için ürün bulunamadı.")}</div>
+                        ) : (
+                          productCreatorData.adminSection.products.map((product) => (
+                            <div key={`admin-product-${product.id}`} className="rounded-lg border border-[#e6ecf4] bg-white p-3">
+                              <p className="truncate text-sm font-semibold text-slate-900">{product.title}</p>
+                              <div className="mt-1 flex items-center justify-between gap-3 text-xs text-slate-500">
+                                <span className="truncate">{product.sku || product.slug}</span>
+                                <span className="shrink-0">{new Date(product.createdAt).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-[#e6ecf4] bg-slate-50 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{tx("Task Area", "Görev Alanı")}</p>
+                          <p className="mt-1 text-xs text-slate-500">{tx("Prepared task structure for dashboard operations.", "Dashboard operasyonları için hazırlanmış görev yapısı.")}</p>
+                        </div>
+                        <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                          {DASHBOARD_TASKS.length} {tx("tasks", "görev")}
+                        </div>
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        {DASHBOARD_TASKS.map((task) => (
+                          <button
+                            key={task.id}
+                            type="button"
+                            onClick={() => setSelectedTask(task)}
+                            className="w-full rounded-lg border border-[#e6ecf4] bg-white p-3 text-left transition-colors hover:border-slate-300"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-slate-900">{task.title}</p>
+                                <p className="mt-1 line-clamp-2 text-xs text-slate-500">{task.description}</p>
+                              </div>
+                              <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{task.badge}</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1493,6 +1618,29 @@ export default function DashboardPage() {
             </div>
           </DialogPrimitive.Content>
         </DialogPortal>
+      </Dialog>
+      <Dialog open={Boolean(selectedTask)} onOpenChange={(open) => !open && setSelectedTask(null)}>
+        <DialogContent className="flex max-w-xl flex-col overflow-hidden border-[#dce3ed] bg-white p-0">
+          <DialogHeader className="shrink-0 border-b border-[#dce3ed] px-6 py-4 pr-14">
+            <DialogTitle>{selectedTask?.title || tx("Task detail", "Görev detayı")}</DialogTitle>
+          </DialogHeader>
+          <div className="flex min-h-[240px] flex-1 flex-col justify-between px-6 py-5">
+            <div className="space-y-3">
+              <div className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                <ClipboardList className="mr-2 h-3.5 w-3.5" />
+                {selectedTask?.badge || tx("Task", "Görev")}
+              </div>
+              <p className="text-sm leading-6 text-slate-600">
+                {selectedTask?.description || tx("Task description will appear here.", "Görev açıklaması burada görünecek.")}
+              </p>
+            </div>
+            <div className="pt-6">
+              <Button type="button" variant="outline" className="h-10 px-5">
+                {tx("Take Task", "Görevi Al")}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
       </Dialog>
       <Dialog open={isOrdersDetailOpen} onOpenChange={setIsOrdersDetailOpen}>
         <DialogContent className="flex max-h-[92dvh] w-[94vw] max-w-5xl flex-col overflow-hidden border-[#dce3ed] bg-white p-0">
@@ -1727,69 +1875,76 @@ export default function DashboardPage() {
           <CardContent>
             <div className="rounded-lg border border-[#dce3ed] bg-[#eef2f7] p-3">
               <div className="relative h-[240px] overflow-hidden rounded-md bg-[#e8edf4]">
-                <svg viewBox="0 0 1200 560" className="absolute inset-0 h-full w-full">
-                  <defs>
-                    <pattern id="world-grid" width="60" height="30" patternUnits="userSpaceOnUse">
-                      <path d="M 60 0 L 0 0 0 30" fill="none" stroke="#d8e0ea" strokeWidth="1" />
-                    </pattern>
-                  </defs>
-                  <rect x="0" y="0" width="1200" height="560" fill="url(#world-grid)" />
-                  {worldShapes.map((shape) => {
-                    const code = shape.code
-                    const activeCount = code ? Number(activeCountByCountry.get(code) || 0) : 0
-                    const isHover = Boolean(code && hoverCountryCode === code)
-                    const palette = getTierPalette(activeCount)
-                    return (
-                      <path
-                        key={shape.key}
-                        d={shape.path}
-                        fill={isHover ? "#2b6f9e" : palette.fill}
-                        stroke={isHover ? "#184d75" : palette.stroke}
-                        strokeWidth={isHover ? 1.4 : 0.8}
-                      />
-                    )
-                  })}
-                  {recentRoutes.map((route) => (
-                    <line
-                      key={route.id}
-                      x1={(route.from.x / 100) * 1200}
-                      y1={(route.from.y / 100) * 560}
-                      x2={(route.to.x / 100) * 1200}
-                      y2={(route.to.y / 100) * 560}
-                      stroke="#0f172a"
-                      strokeWidth="2"
-                      strokeDasharray="2 9"
-                      className="animate-[dashmove_10s_linear_infinite]"
-                    />
-                  ))}
-                </svg>
-                <svg viewBox="0 0 1200 560" className="absolute inset-0 z-10 h-full w-full">
-                  {worldShapes.map((shape) => {
-                    const code = shape.code
-                    if (!code) return null
-                    const hasActive = Number(activeCountByCountry.get(code) || 0) > 0
-                    return (
-                      <path
-                        key={`hit-${shape.key}`}
-                        d={shape.path}
-                        fill="transparent"
-                        onMouseEnter={() => setHoverCountryCode(code)}
-                        onMouseLeave={() => setHoverCountryCode(null)}
-                        onClick={() => hasActive && openCountryDetail(code)}
-                        className={hasActive ? "cursor-pointer" : undefined}
-                      />
-                    )
-                  })}
-                </svg>
-
-                {hoveredCountryName ? (
-                  <div className="absolute left-3 top-3 z-30 rounded-md border border-teal-300 bg-white/95 px-2.5 py-1.5 shadow-sm">
-                    <p className="text-xs font-semibold text-slate-900">{hoveredCountryName}</p>
-                    <p className="text-[11px] text-slate-600">{hoveredActiveCustomers} {tx("active customers", "aktif musteri")}</p>
-                    <p className="text-[11px] text-slate-600">{hoveredRegisteredCustomers} {tx("registered customers", "kayitli musteri")}</p>
+                {worldShapes.length === 0 ? (
+                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-slate-500">
+                    {tx("Map geometry is unavailable right now, but live country activity is still tracked below.", "Harita geometrisi şu anda yüklenemedi, ancak canlı ülke aktivitesi aşağıda izlenmeye devam ediyor.")}
                   </div>
-                ) : null}
+                ) : (
+                  <>
+                    <svg viewBox="0 0 1200 560" className="absolute inset-0 h-full w-full">
+                      <defs>
+                        <pattern id="world-grid" width="60" height="30" patternUnits="userSpaceOnUse">
+                          <path d="M 60 0 L 0 0 0 30" fill="none" stroke="#d8e0ea" strokeWidth="1" />
+                        </pattern>
+                      </defs>
+                      <rect x="0" y="0" width="1200" height="560" fill="url(#world-grid)" />
+                      {worldShapes.map((shape) => {
+                        const code = shape.code
+                        const activeCount = code ? Number(activeCountByCountry.get(code) || 0) : 0
+                        const isHover = Boolean(code && hoverCountryCode === code)
+                        const palette = getTierPalette(activeCount)
+                        return (
+                          <path
+                            key={shape.key}
+                            d={shape.path}
+                            fill={isHover ? "#2b6f9e" : palette.fill}
+                            stroke={isHover ? "#184d75" : palette.stroke}
+                            strokeWidth={isHover ? 1.4 : 0.8}
+                          />
+                        )
+                      })}
+                      {recentRoutes.map((route) => (
+                        <line
+                          key={route.id}
+                          x1={(route.from.x / 100) * 1200}
+                          y1={(route.from.y / 100) * 560}
+                          x2={(route.to.x / 100) * 1200}
+                          y2={(route.to.y / 100) * 560}
+                          stroke="#0f172a"
+                          strokeWidth="2"
+                          strokeDasharray="2 9"
+                          className="animate-[dashmove_10s_linear_infinite]"
+                        />
+                      ))}
+                    </svg>
+                    <svg viewBox="0 0 1200 560" className="absolute inset-0 z-10 h-full w-full">
+                      {worldShapes.map((shape) => {
+                        const code = shape.code
+                        if (!code) return null
+                        const hasActive = Number(activeCountByCountry.get(code) || 0) > 0
+                        return (
+                          <path
+                            key={`hit-${shape.key}`}
+                            d={shape.path}
+                            fill="transparent"
+                            onMouseEnter={() => setHoverCountryCode(code)}
+                            onMouseLeave={() => setHoverCountryCode(null)}
+                            onClick={() => hasActive && openCountryDetail(code)}
+                            className={hasActive ? "cursor-pointer" : undefined}
+                          />
+                        )
+                      })}
+                    </svg>
 
+                    {hoveredCountryName ? (
+                      <div className="absolute left-3 top-3 z-30 rounded-md border border-teal-300 bg-white/95 px-2.5 py-1.5 shadow-sm">
+                        <p className="text-xs font-semibold text-slate-900">{hoveredCountryName}</p>
+                        <p className="text-[11px] text-slate-600">{hoveredActiveCustomers} {tx("active customers", "aktif musteri")}</p>
+                        <p className="text-[11px] text-slate-600">{hoveredRegisteredCustomers} {tx("registered customers", "kayitli musteri")}</p>
+                      </div>
+                    ) : null}
+                  </>
+                )}
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
@@ -1859,7 +2014,7 @@ export default function DashboardPage() {
               {productsLoading ? (
                 <div className="px-4 py-8 text-sm text-slate-500">{tx("Loading products...", "Urunler yukleniyor...")}</div>
               ) : topProducts.length === 0 ? (
-                <div className="px-4 py-8 text-sm text-slate-500">{tx("No products found.", "Urun bulunamadi.")}</div>
+                <div className="px-4 py-8 text-sm text-slate-500">{tx("No sold products found yet.", "Henüz satış görmüş ürün yok.")}</div>
               ) : (
                 <div className="divide-y divide-[#edf2f8]">
                   {topProducts.map((product) => {
@@ -1878,7 +2033,7 @@ export default function DashboardPage() {
                           </div>
                           <div className="min-w-0">
                             <p className="font-semibold text-slate-900 truncate">{product.title}</p>
-                            <p className="text-xs text-slate-500 truncate">SKU: {product.slug}</p>
+                            <p className="text-xs text-slate-500 truncate">SKU: {product.sku?.trim() || product.slug}</p>
                           </div>
                         </div>
                         <div className="col-span-3 text-sm text-slate-700 truncate">
@@ -1906,27 +2061,8 @@ export default function DashboardPage() {
             <p className="text-sm text-slate-600 font-normal">{tx("Daily progress", "Gunluk ilerleme")}</p>
           </CardHeader>
           <CardContent className="flex flex-col items-center justify-center p-6">
-            <div className="h-[200px] w-full relative">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={DASHBOARD_DATA.salesTarget}
-                    innerRadius={65}
-                    outerRadius={85}
-                    paddingAngle={4}
-                    dataKey="value"
-                    stroke="none"
-                    cornerRadius={4}
-                  >
-                    <Cell fill="#0D9488" />
-                    <Cell fill="#f1f5f9" />
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute inset-0 flex items-center justify-center flex-col">
-                <span className="text-3xl font-bold text-slate-900">75%</span>
-                <span className="text-xs text-slate-600 font-medium uppercase tracking-wide">{tx("Achieved", "Tamamlandi")}</span>
-              </div>
+            <div className="flex h-[200px] w-full items-center justify-center rounded-xl border border-dashed border-[#dce3ed] bg-slate-50 px-6 text-center text-sm text-slate-500">
+              {tx("No real sales target source is configured yet.", "Henüz gerçek satış hedefi kaynağı tanımlı değil.")}
             </div>
             <div className="w-full mt-6 space-y-4">
               <div className="flex justify-between text-sm items-center">
@@ -1934,14 +2070,14 @@ export default function DashboardPage() {
                   <span className="w-2 h-2 rounded-full bg-teal-500" />
                   <span className="text-slate-600">{tx("Daily Target", "Gunluk Hedef")}</span>
                 </div>
-                <span className="font-bold text-slate-900">$650</span>
+                <span className="font-bold text-slate-900">{tx("No data", "Veri yok")}</span>
               </div>
               <div className="flex justify-between text-sm items-center">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-slate-200" />
                   <span className="text-slate-600">{tx("Monthly Target", "Aylik Hedef")}</span>
                 </div>
-                <span className="font-bold text-slate-900">$45K</span>
+                <span className="font-bold text-slate-900">{tx("No data", "Veri yok")}</span>
               </div>
             </div>
           </CardContent>
@@ -1957,17 +2093,8 @@ export default function DashboardPage() {
             <p className="text-sm text-slate-600 font-normal">{tx("Active promotions", "Aktif kampanyalar")}</p>
           </CardHeader>
           <CardContent className="space-y-8">
-            {DASHBOARD_DATA.offers.map((offer, i) => (
-              <div key={i} className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="font-medium text-slate-700">{offer.label}</span>
-                  <span className="text-slate-600 font-medium">{offer.value}%</span>
-                </div>
-                <Progress value={offer.value} className="h-1.5 bg-slate-100" />
-              </div>
-            ))}
-            <div className="pt-2">
-              <button className="text-sm font-medium hover:text-teal-600 text-slate-700 w-full text-center transition-colors">{tx("View all offers", "Tum teklifleri gor")}</button>
+            <div className="flex min-h-[160px] items-center justify-center rounded-xl border border-dashed border-[#dce3ed] bg-slate-50 px-6 text-center text-sm text-slate-500">
+              {tx("No live promotion source is configured yet.", "Henüz canlı kampanya kaynağı tanımlı değil.")}
             </div>
           </CardContent>
         </Card>

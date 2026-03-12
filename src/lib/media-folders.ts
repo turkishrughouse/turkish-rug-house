@@ -2,7 +2,7 @@ import { mkdir, readdir, rename, rm, rmdir, stat } from "fs/promises"
 import path from "path"
 import { prisma } from "@/lib/db"
 import { ensureMediaRegistryTable } from "@/lib/media-registry"
-import { shouldUseProductSkuFolder } from "@/lib/media-sku-roots"
+import { normalizeProductImageRecords } from "@/lib/product-images"
 import { getStorageProvider } from "@/lib/storage/provider"
 
 const MANAGED_MEDIA_ROOTS = ["categories", "pages", "profile"] as const
@@ -86,35 +86,13 @@ export async function ensureCategoryMediaFolders() {
 }
 
 export async function ensureProductSkuFolders(categoryIds: string[], sku: string | null | undefined) {
-  const normalizedSku = sanitizeFolderPath(sku || "")
-  if (!normalizedSku || categoryIds.length === 0) return
+  const targetFolder = await resolveCanonicalProductFolder(categoryIds, sku)
+  if (!targetFolder) return
 
   const uploadRoot = path.join(process.cwd(), "public", "uploads")
   await mkdir(uploadRoot, { recursive: true })
   await ensureCategoryMediaFolders()
-
-  const categories = await prisma.category.findMany({
-    select: { id: true, slug: true, parentId: true },
-  })
-
-  const byId = new Map(categories.map((category) => [category.id, category]))
-  const cache = new Map<string, string>()
-
-  const resolvePath = (id: string): string => {
-    if (cache.has(id)) return cache.get(id) || ""
-    const current = byId.get(id)
-    if (!current) return ""
-    const parentPath = current.parentId ? resolvePath(current.parentId) : ""
-    const currentPath = sanitizeFolderPath(parentPath ? `${parentPath}/${current.slug}` : current.slug)
-    cache.set(id, currentPath)
-    return currentPath
-  }
-
-  for (const categoryId of categoryIds) {
-    const categoryPath = resolvePath(categoryId)
-    if (!categoryPath || !shouldUseProductSkuFolder(categoryPath)) continue
-    await mkdir(path.join(uploadRoot, categoryPath, normalizedSku), { recursive: true })
-  }
+  await mkdir(path.join(uploadRoot, targetFolder), { recursive: true })
 }
 
 export async function ensureAllProductSkuFolders() {
@@ -140,8 +118,8 @@ export async function ensureAllProductSkuFolders() {
   }
 }
 
-async function getCategoryPathMap(categoryIds: string[]) {
-  if (categoryIds.length === 0) return new Map<string, string>()
+async function getOrderedCategoryPaths(categoryIds: string[]) {
+  if (categoryIds.length === 0) return [] as string[]
   const categories = await prisma.category.findMany({
     select: { id: true, slug: true, parentId: true },
   })
@@ -159,11 +137,50 @@ async function getCategoryPathMap(categoryIds: string[]) {
     return currentPath
   }
 
+  const folders: string[] = []
   for (const categoryId of categoryIds) {
-    resolvePath(categoryId)
+    const categoryPath = resolvePath(categoryId)
+    if (categoryPath && !folders.includes(categoryPath)) {
+      folders.push(categoryPath)
+    }
   }
 
-  return cache
+  return folders
+}
+
+async function resolveCanonicalProductFolder(
+  categoryIds: string[],
+  sku: string | null | undefined,
+  imageUrls: string[] = []
+) {
+  const candidateFolders = await getOrderedCategoryPaths(categoryIds)
+  const imageFolderCandidates = imageUrls
+    .map((url) => extractFolderFromManagedUrl(url))
+    .filter(Boolean)
+
+  const matchedFromImages = imageFolderCandidates
+    .flatMap((folder) => {
+      const topFolder = folder.split("/").filter(Boolean)[0] || ""
+      return candidateFolders
+        .filter((candidate) => {
+          const candidateTopFolder = candidate.split("/").filter(Boolean)[0] || ""
+          return candidateTopFolder === topFolder
+        })
+        .sort((a, b) => b.length - a.length)
+    })[0]
+
+  const baseFolder = matchedFromImages || candidateFolders[0] || ""
+  const normalizedSku = sanitizeFolderPath(sku || "")
+  if (!baseFolder || !normalizedSku) return ""
+  return `${baseFolder}/${normalizedSku}`
+}
+
+function replaceManagedUrlFolder(url: string | undefined, targetFolder: string) {
+  const storage = getStorageProvider()
+  const relativePath = storage.toRelativePath(url || "")
+  const fileName = relativePath ? path.posix.basename(relativePath) : ""
+  if (!fileName) return url || ""
+  return storage.getPublicUrl(`${targetFolder}/${fileName}`)
 }
 
 function extractFolderFromManagedUrl(url: string) {
@@ -231,15 +248,16 @@ export async function moveManagedAssetGroupToFolder(url: string, targetFolder: s
   const targetDir = path.join(process.cwd(), "public", "uploads", safeTargetFolder)
   await mkdir(targetDir, { recursive: true })
 
+  const storage = getStorageProvider()
+  const masterSibling = siblings.find((sibling) => sibling.fileName.includes("-master.")) || siblings[0]
   for (const sibling of siblings) {
     const targetPath = path.join(targetDir, sibling.fileName)
     const exists = await stat(targetPath).then(() => true).catch(() => false)
     if (exists) {
-      return url
+      return storage.getPublicUrl(`${safeTargetFolder}/${masterSibling.fileName}`)
     }
   }
 
-  const storage = getStorageProvider()
   let nextPrimaryUrl = url
   await ensureMediaRegistryTable()
   for (const sibling of siblings) {
@@ -262,35 +280,69 @@ export async function moveManagedAssetGroupToFolder(url: string, targetFolder: s
 }
 
 export async function relocateProductImagesToSkuFolders(imageUrls: string[], categoryIds: string[], sku: string | null | undefined) {
-  const normalizedSku = sanitizeFolderPath(sku || "")
-  if (!normalizedSku || categoryIds.length === 0 || imageUrls.length === 0) {
-    return imageUrls
-  }
-
-  const categoryPathMap = await getCategoryPathMap(categoryIds)
-  const targetCategoryFolders = Array.from(new Set(categoryIds
-    .map((categoryId) => categoryPathMap.get(categoryId) || "")
-    .filter((folder) => shouldUseProductSkuFolder(folder))))
-
-  if (targetCategoryFolders.length === 0) {
+  const targetFolder = await resolveCanonicalProductFolder(categoryIds, sku, imageUrls)
+  if (!targetFolder || imageUrls.length === 0) {
     return imageUrls
   }
 
   const nextUrls: string[] = []
   for (const url of imageUrls) {
     const currentFolder = extractFolderFromManagedUrl(url)
-    const matchedBaseFolder = targetCategoryFolders.find((folder) => currentFolder === folder)
-    const targetBaseFolder = matchedBaseFolder || targetCategoryFolders[0] || ""
-    if (!targetBaseFolder) {
+    if (currentFolder === targetFolder) {
       nextUrls.push(url)
       continue
     }
-
-    const targetFolder = `${targetBaseFolder}/${normalizedSku}`
     await mkdir(path.join(process.cwd(), "public", "uploads", targetFolder), { recursive: true })
     const movedUrl = await moveManagedAssetGroupToFolder(url, targetFolder)
     nextUrls.push(movedUrl)
   }
 
   return nextUrls
+}
+
+export async function migrateAllProductsToCanonicalMediaFolders() {
+  const products = await prisma.product.findMany({
+    select: {
+      id: true,
+      sku: true,
+      images: true,
+      categories: {
+        select: { id: true },
+      },
+    },
+  })
+
+  for (const product of products) {
+    const categoryIds = product.categories.map((category) => category.id)
+    const sku = sanitizeFolderPath(product.sku || "")
+    if (!sku || categoryIds.length === 0) continue
+
+    const currentImages = normalizeProductImageRecords(product.images)
+    if (currentImages.length === 0) continue
+
+    const currentUrls = currentImages.map((image) => image.image_url)
+    const nextUrls = await relocateProductImagesToSkuFolders(currentUrls, categoryIds, sku)
+    const didChange = nextUrls.some((url, index) => url !== currentUrls[index])
+    if (!didChange) continue
+
+    const targetFolder = await resolveCanonicalProductFolder(categoryIds, sku, currentUrls)
+    if (!targetFolder) continue
+
+    const nextImages = currentImages.map((image, index) => ({
+      ...image,
+      image_url: nextUrls[index] || image.image_url,
+      variants: {
+        thumb: replaceManagedUrlFolder(image.variants?.thumb || image.image_url, targetFolder),
+        large: replaceManagedUrlFolder(image.variants?.large || image.image_url, targetFolder),
+        master: replaceManagedUrlFolder(image.variants?.master || image.image_url, targetFolder),
+      },
+    }))
+
+    await prisma.product.update({
+      where: { id: product.id },
+      data: {
+        images: JSON.stringify(nextImages),
+      },
+    })
+  }
 }

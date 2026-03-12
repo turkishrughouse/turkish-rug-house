@@ -37,7 +37,7 @@ export function OrderTimeline({ events }: OrderTimelineProps) {
                 <div className="absolute left-[15px] top-2 bottom-4 w-[1px] bg-slate-200 dark:bg-slate-800" />
 
                 <div className="space-y-6">
-                    {events.map((event, index) => {
+                    {events.map((event) => {
                         const Icon = getEventIcon(event.type)
                         const colorClass = getEventColor(event.type)
 
@@ -96,8 +96,10 @@ function getEventIcon(type: string) {
         case 'CREATED': return Package
         case 'PAYMENT': return CreditCard
         case 'FULFILLMENT': return Truck
+        case 'STATUS': return RefreshCw
         case 'DELIVERED': return CheckCircle2
         case 'CANCELLED': return XCircle
+        case 'REFUNDED': return CreditCard
         case 'NOTE': return MessageSquare
         default: return Circle
     }
@@ -107,7 +109,9 @@ function getEventColor(type: string) {
     switch (type.toUpperCase()) {
         case 'PAYMENT': return "border-emerald-100 text-emerald-600"
         case 'FULFILLMENT': return "border-blue-100 text-blue-600"
+        case 'STATUS': return "border-slate-200 text-slate-600"
         case 'CANCELLED': return "border-red-100 text-red-600"
+        case 'REFUNDED': return "border-amber-100 text-amber-700"
         case 'NOTE': return "border-amber-100 text-amber-600"
         case 'CREATED': return "border-slate-200 text-slate-600"
         default: return "border-slate-200 text-slate-500"

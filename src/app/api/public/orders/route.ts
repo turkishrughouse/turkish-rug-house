@@ -5,6 +5,7 @@ import { getSessionUser } from "@/lib/auth"
 import { notifyOrderUpdate } from "@/lib/customer-messaging"
 import { getSiteSettings } from "@/lib/site-settings"
 import { grantReviewRightForOrder } from "@/lib/review-access"
+import { ensureOrderDetailsColumn, saveOrderDetails } from "@/lib/order-details"
 
 const checkoutSchema = z.object({
   customerName: z.string().min(1),
@@ -36,6 +37,7 @@ async function nextOrderNumber() {
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureOrderDetailsColumn()
     const sessionUser = await getSessionUser("customer")
     const body = await req.json()
     const parsed = checkoutSchema.safeParse(body)
@@ -95,6 +97,22 @@ export async function POST(req: NextRequest) {
       "/account",
       "CREATE"
     )
+    await saveOrderDetails(order.id, {
+      customerPhone: parsed.data.customerPhone?.trim() || null,
+      addressLine1: parsed.data.addressLine1?.trim() || null,
+      city: parsed.data.city?.trim() || null,
+      postcode: parsed.data.postcode?.trim() || null,
+      paymentMethod: "Manual",
+      paymentStatus: "PAID",
+      shippingMethod: "Standard",
+      shippingCost: 0,
+      subtotalAmount: parsed.data.items.reduce((sum, item) => sum + item.quantity * item.price, 0),
+      taxAmount: 0,
+      discountAmount: 0,
+      currency: "USD",
+      invoiceNumber: `INV-${order.orderNumber}`,
+      invoiceIssuedAt: new Date().toISOString(),
+    })
     await grantReviewRightForOrder(order.id)
 
     return NextResponse.json({ success: true, orderNumber: order.orderNumber, orderId: order.id }, { status: 201 })

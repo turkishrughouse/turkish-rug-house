@@ -4,8 +4,11 @@ import { prisma as db } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 import { notifyOrderUpdate } from "@/lib/customer-messaging"
 import { grantReviewRightForOrder } from "@/lib/review-access"
+import { ensureOrderDetailsColumn, getOrderDetailsMap, getSingleOrderDetails, saveOrderDetails } from "@/lib/order-details"
 
 type ShipmentStatus = "PENDING" | "SHIPPED" | "IN_TRANSIT" | "DELIVERED"
+type AdminOrderStatus = "PENDING" | "PAID" | "PROCESSING" | "SHIPPED" | "DELIVERED" | "CANCELLED" | "REFUNDED" | "TRASHED"
+type PaymentStatus = "PENDING" | "PAID" | "REFUNDED" | "FAILED" | "PARTIALLY_REFUNDED"
 
 const TRACKING_STATUS_LABEL: Record<ShipmentStatus, string> = {
     PENDING: "Pending",
@@ -38,52 +41,157 @@ function buildTrackingUrl(carrier: string, trackingNumber: string) {
     return `https://www.google.com/search?q=${encodeURIComponent(`${carrierValue} ${trackingValue} tracking`)}`
 }
 
-export async function getOrders(page = 1, limit = 20) {
+function normalizeOrderStatus(input: string | null | undefined): AdminOrderStatus {
+    const value = (input || "").trim().toUpperCase()
+    if (value === "FULFILLED") return "SHIPPED"
+    if (value === "TRASHED") return "TRASHED"
+    if (value === "PENDING" || value === "PAID" || value === "PROCESSING" || value === "SHIPPED" || value === "DELIVERED" || value === "CANCELLED" || value === "REFUNDED") {
+        return value
+    }
+    return "PENDING"
+}
+
+function nextStatusForShipment(shipmentStatus: ShipmentStatus): AdminOrderStatus {
+    if (shipmentStatus === "DELIVERED") return "DELIVERED"
+    if (shipmentStatus === "SHIPPED" || shipmentStatus === "IN_TRANSIT") return "SHIPPED"
+    return "PROCESSING"
+}
+
+export async function getOrders(
+    page = 1,
+    limit = 20,
+    filters?: {
+        query?: string
+        status?: string
+        paymentStatus?: string
+        sort?: string
+        dateFrom?: string
+        dateTo?: string
+    }
+) {
+    await ensureOrderDetailsColumn()
     const skip = (page - 1) * limit
+    const query = (filters?.query || "").trim().toLowerCase()
+    const status = (filters?.status || "").trim().toUpperCase()
+    const paymentStatus = (filters?.paymentStatus || "").trim().toUpperCase()
+    const dateFrom = filters?.dateFrom ? new Date(filters.dateFrom) : null
+    const dateTo = filters?.dateTo ? new Date(filters.dateTo) : null
+    const sort = (filters?.sort || "createdAt-desc").trim()
+    const orderBy =
+        sort === "createdAt-asc"
+            ? { createdAt: "asc" as const }
+            : sort === "total-asc"
+                ? { total: "asc" as const }
+                : sort === "total-desc"
+                    ? { total: "desc" as const }
+                    : { createdAt: "desc" as const }
 
-    // We fetch raw and serialize manually to avoid Decimal errors
-    const orders = await db.order.findMany({
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        include: { _count: { select: { items: true } } }
-    })
+    const where = {
+        status: { not: "TRASHED" as const },
+        ...(query
+            ? {
+                OR: [
+                    { orderNumber: { contains: query } },
+                    { customerEmail: { contains: query } },
+                    { customerName: { contains: query } },
+                ],
+            }
+            : {}),
+        ...(status ? { status } : {}),
+        ...(dateFrom || dateTo
+            ? {
+                createdAt: {
+                    ...(dateFrom ? { gte: dateFrom } : {}),
+                    ...(dateTo ? { lte: dateTo } : {}),
+                },
+            }
+            : {}),
+    }
 
-    const total = await db.order.count()
+    const [orders, total] = await Promise.all([
+        db.order.findMany({
+            ...(paymentStatus ? {} : { skip, take: limit }),
+            where,
+            orderBy,
+            include: { _count: { select: { items: true } } }
+        }),
+        db.order.count({ where }),
+    ])
 
-    // Serialize
-    const serialized = orders.map(o => ({
-        ...o,
-        total: o.total.toNumber(),
-    }))
+    const detailsMap = await getOrderDetailsMap(orders.map((order) => order.id))
+
+    const filtered = orders
+        .map((o) => {
+            const details = detailsMap.get(o.id)
+            return {
+                ...o,
+                status: normalizeOrderStatus(o.status),
+                total: o.total.toNumber(),
+                paymentStatus: details?.paymentStatus || (normalizeOrderStatus(o.status) === "PAID" ? "PAID" : "PENDING"),
+                paymentMethod: details?.paymentMethod || null,
+                details,
+            }
+        })
+        .filter((order) => !paymentStatus || (order.paymentStatus || "").toUpperCase() === paymentStatus)
+
+    const serialized = paymentStatus ? filtered.slice(skip, skip + limit) : filtered
 
     return {
         orders: serialized,
         metadata: {
-            total,
+            total: paymentStatus ? filtered.length : total,
             page,
             limit,
-            totalPages: Math.ceil(total / limit)
+            totalPages: Math.max(1, Math.ceil((paymentStatus ? filtered.length : total) / limit))
         }
     }
 }
 
 export async function getOrder(id: string) {
+    await ensureOrderDetailsColumn()
     const order = await db.order.findUnique({
         where: { id },
         include: {
             items: true,
             events: {
                 orderBy: { createdAt: 'desc' }
-            }
+            },
+            user: {
+                select: {
+                    email: true,
+                    phone: true,
+                    customerProfile: {
+                        select: {
+                            addressLine1: true,
+                            addressLine2: true,
+                            city: true,
+                            state: true,
+                            postalCode: true,
+                            country: true,
+                        },
+                    },
+                },
+            },
         }
     })
 
     if (!order) return null
+    const details = await getSingleOrderDetails(id)
 
     return {
         ...order,
+        status: normalizeOrderStatus(order.status),
         total: order.total.toNumber(),
+        details: {
+            ...details,
+            customerPhone: details.customerPhone || order.user?.phone || null,
+            addressLine1: details.addressLine1 || order.user?.customerProfile?.addressLine1 || null,
+            addressLine2: details.addressLine2 || order.user?.customerProfile?.addressLine2 || null,
+            city: details.city || order.user?.customerProfile?.city || null,
+            state: details.state || order.user?.customerProfile?.state || null,
+            postcode: details.postcode || order.user?.customerProfile?.postalCode || null,
+            country: details.country || order.user?.customerProfile?.country || null,
+        },
         items: order.items.map(item => ({
             ...item,
             price: item.price.toNumber()
@@ -127,6 +235,7 @@ export async function addOrderEvent(orderId: string, type: string, title: string
 
 // Seed helper for verify
 export async function createMockOrder(input?: { preferredEmail?: string }) {
+    await ensureOrderDetailsColumn()
     const preferred = (input?.preferredEmail || "").trim().toLowerCase()
     const fallbackUser = await db.user.findFirst({
         where: {
@@ -168,6 +277,18 @@ export async function createMockOrder(input?: { preferredEmail?: string }) {
         "CREATE",
         { sendCustomerPanelMessage: true }
     )
+    await saveOrderDetails(order.id, {
+        paymentMethod: "Manual",
+        paymentStatus: "PAID",
+        shippingMethod: "DHL Express",
+        subtotalAmount: 299.99,
+        taxAmount: 0,
+        discountAmount: 0,
+        shippingCost: 0,
+        invoiceNumber: `INV-${order.orderNumber}`,
+        invoiceIssuedAt: new Date().toISOString(),
+        currency: "USD",
+    })
     await grantReviewRightForOrder(order.id)
     return order.id
 }
@@ -178,12 +299,16 @@ export async function fulfillOrder(orderId: string, carrier: string, trackingNum
         const updatedOrder = await db.order.update({
             where: { id: orderId },
             data: {
-                status: 'FULFILLED',
+                status: 'SHIPPED',
                 shipmentStatus: 'SHIPPED',
                 trackingCarrier: carrier,
                 trackingNumber,
                 trackingUrl,
             }
+        })
+        await saveOrderDetails(orderId, {
+            invoiceNumber: `INV-${updatedOrder.orderNumber}`,
+            invoiceIssuedAt: new Date().toISOString(),
         })
 
         await db.orderEvent.create({
@@ -247,9 +372,7 @@ export async function updateOrderTracking(
             shipmentStatus,
             deliveredAt: shipmentStatus === "DELIVERED" ? new Date() : null,
         }
-        if (shipmentStatus !== "PENDING") {
-            updateData.status = "FULFILLED"
-        }
+        updateData.status = nextStatusForShipment(shipmentStatus)
 
         const updatedOrder = await db.order.update({
             where: { id: orderId },
@@ -278,6 +401,10 @@ export async function updateOrderTracking(
                 isAdmin: true,
             },
         })
+        await saveOrderDetails(orderId, {
+            invoiceNumber: `INV-${updatedOrder.orderNumber}`,
+            invoiceIssuedAt: new Date().toISOString(),
+        })
 
         await notifyOrderUpdate(
             orderId,
@@ -298,12 +425,80 @@ export async function updateOrderTracking(
     }
 }
 
+export async function updateOrderWorkflow(
+    orderId: string,
+    input: {
+        status?: AdminOrderStatus
+        paymentStatus?: PaymentStatus
+        notes?: string
+        refundedAmount?: number
+    }
+) {
+    try {
+        const order = await db.order.findUnique({
+            where: { id: orderId },
+            select: { id: true, orderNumber: true, total: true, shipmentStatus: true },
+        })
+        if (!order) return { success: false, error: "Order not found" }
+
+        const nextStatus = input.status ? normalizeOrderStatus(input.status) : undefined
+        const nextPaymentStatus = input.paymentStatus?.trim().toUpperCase() as PaymentStatus | undefined
+        const notes = (input.notes || "").trim()
+
+        await db.order.update({
+            where: { id: orderId },
+            data: {
+                ...(nextStatus ? { status: nextStatus } : {}),
+                ...(nextStatus === "DELIVERED"
+                    ? { deliveredAt: new Date(), shipmentStatus: "DELIVERED" }
+                    : nextStatus === "SHIPPED"
+                        ? { shipmentStatus: "SHIPPED" }
+                        : nextStatus === "PROCESSING"
+                            ? { shipmentStatus: "PENDING" }
+                            : nextStatus === "CANCELLED" || nextStatus === "REFUNDED"
+                                ? { shipmentStatus: order.shipmentStatus }
+                                : {}),
+            },
+        })
+
+        const detailsPatch: Record<string, unknown> = {}
+        if (nextPaymentStatus) detailsPatch.paymentStatus = nextPaymentStatus
+        if (nextStatus === "PAID" && !nextPaymentStatus) detailsPatch.paymentStatus = "PAID"
+        if (nextStatus === "REFUNDED") {
+            detailsPatch.paymentStatus = "REFUNDED"
+            detailsPatch.refundedAmount = Number(input.refundedAmount || order.total.toNumber())
+        } else if (typeof input.refundedAmount === "number") {
+            detailsPatch.refundedAmount = Number(input.refundedAmount || 0)
+        }
+        if (Object.keys(detailsPatch).length > 0) {
+            await saveOrderDetails(orderId, detailsPatch)
+        }
+
+        const eventTitle = nextStatus
+            ? `Order ${nextStatus.toLowerCase()}`
+            : nextPaymentStatus
+                ? `Payment ${nextPaymentStatus.toLowerCase()}`
+                : "Order updated"
+        const eventDescription = [nextStatus ? `Status: ${nextStatus}` : "", nextPaymentStatus ? `Payment: ${nextPaymentStatus}` : "", notes].filter(Boolean).join(" • ")
+
+        await addOrderEvent(orderId, nextStatus === "REFUNDED" ? "PAYMENT" : nextStatus === "CANCELLED" ? "CANCELLED" : "STATUS", eventTitle, eventDescription, "ADMIN")
+        revalidatePath("/dashboard/orders")
+        revalidatePath(`/dashboard/orders/${orderId}`)
+        revalidatePath("/account")
+        return { success: true }
+    } catch (error) {
+        console.error("Order workflow update error:", error)
+        return { success: false, error: "Failed to update order" }
+    }
+}
+
 export async function applyBulkOrderAction(
     orderIds: string[],
     action:
         | "MARK_PAID"
         | "MARK_FULFILLED"
         | "MARK_CANCELLED"
+        | "MARK_REFUNDED"
         | "MARK_SHIPPED"
         | "MARK_IN_TRANSIT"
         | "MARK_DELIVERED"
@@ -348,11 +543,12 @@ export async function applyBulkOrderAction(
         const now = new Date()
         const dataByAction: Record<Exclude<typeof action, "DELETE">, { status?: string; shipmentStatus?: ShipmentStatus; deliveredAt?: Date | null }> = {
             MARK_PAID: { status: "PAID" },
-            MARK_FULFILLED: { status: "FULFILLED" },
+            MARK_FULFILLED: { status: "PROCESSING" },
             MARK_CANCELLED: { status: "CANCELLED" },
-            MARK_SHIPPED: { shipmentStatus: "SHIPPED", status: "FULFILLED" },
-            MARK_IN_TRANSIT: { shipmentStatus: "IN_TRANSIT", status: "FULFILLED" },
-            MARK_DELIVERED: { shipmentStatus: "DELIVERED", status: "FULFILLED", deliveredAt: now },
+            MARK_REFUNDED: { status: "REFUNDED" },
+            MARK_SHIPPED: { shipmentStatus: "SHIPPED", status: "SHIPPED" },
+            MARK_IN_TRANSIT: { shipmentStatus: "IN_TRANSIT", status: "SHIPPED" },
+            MARK_DELIVERED: { shipmentStatus: "DELIVERED", status: "DELIVERED", deliveredAt: now },
         }
         const updateData = dataByAction[action]
 
@@ -365,6 +561,7 @@ export async function applyBulkOrderAction(
             MARK_PAID: "Order marked as paid",
             MARK_FULFILLED: "Order fulfilled",
             MARK_CANCELLED: "Order cancelled",
+            MARK_REFUNDED: "Order refunded",
             MARK_SHIPPED: "Shipment marked as shipped",
             MARK_IN_TRANSIT: "Shipment marked in transit",
             MARK_DELIVERED: "Order delivered",
@@ -380,6 +577,17 @@ export async function applyBulkOrderAction(
                 isAdmin: true,
             })),
         })
+
+        if (action === "MARK_PAID" || action === "MARK_CANCELLED" || action === "MARK_REFUNDED" || action === "MARK_DELIVERED" || action === "MARK_SHIPPED" || action === "MARK_IN_TRANSIT" || action === "MARK_FULFILLED") {
+            await Promise.all(
+                ids.map((id) =>
+                    saveOrderDetails(id, {
+                        ...(action === "MARK_PAID" ? { paymentStatus: "PAID" } : {}),
+                        ...(action === "MARK_REFUNDED" ? { paymentStatus: "REFUNDED" as PaymentStatus } : {}),
+                    })
+                )
+            )
+        }
 
         await Promise.all(
             ids.map((id) =>

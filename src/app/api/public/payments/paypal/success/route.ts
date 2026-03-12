@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { getSiteSettings } from "@/lib/site-settings"
 import { notifyOrderUpdate } from "@/lib/customer-messaging"
 import { grantReviewRightForOrder } from "@/lib/review-access"
+import { saveOrderDetails } from "@/lib/order-details"
 
 async function getPayPalToken(clientId: string, clientSecret: string, sandbox: boolean) {
   const base = sandbox ? "https://api-m.sandbox.paypal.com" : "https://api-m.paypal.com"
@@ -60,6 +61,12 @@ export async function GET(req: NextRequest) {
         actorType: "SYSTEM",
         isAdmin: false,
       },
+    })
+    await saveOrderDetails(orderId, {
+      paymentStatus: "PAID",
+      paymentMethod: "PAYPAL",
+      paymentReference: paypalOrderId,
+      invoiceIssuedAt: new Date().toISOString(),
     })
     await notifyOrderUpdate(orderId, "Order received", `Your payment for ${updated.orderNumber} was completed.`, "/account", "CREATE")
     await grantReviewRightForOrder(orderId)

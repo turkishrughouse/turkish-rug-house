@@ -13,8 +13,18 @@ export async function GET() {
   const admin = await requireAdminUser()
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const items = getLiveVisitorEvents(60 * 60 * 1000, 200)
-    .filter((event) => event.action.toLowerCase().startsWith("added to cart"))
+  const now = Date.now()
+  const abandonmentWindowMs = 30 * 60 * 1000
+
+  const items = getLiveVisitorEvents(2 * 60 * 60 * 1000, 200)
+    .filter((event) => {
+      const action = event.action.toLowerCase()
+      if (!action.startsWith("added to cart")) return false
+      if (event.currentPath?.startsWith("/checkout")) return false
+      const eventTime = new Date(event.createdAt).getTime()
+      if (Number.isNaN(eventTime)) return false
+      return now - eventTime >= abandonmentWindowMs
+    })
     .slice(0, 24)
 
   const guestCount = items.filter((item) => item.actorKey.startsWith("guest:")).length

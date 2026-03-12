@@ -4,6 +4,7 @@ import { z } from "zod"
 import { prisma } from "@/lib/db"
 import { getSessionUser } from "@/lib/auth"
 import { getSiteSettings } from "@/lib/site-settings"
+import { ensureOrderDetailsColumn, saveOrderDetails } from "@/lib/order-details"
 
 const payloadSchema = z.object({
   provider: z.enum(["stripe", "paypal", "paytr", "gpay", "applepay"]),
@@ -237,6 +238,7 @@ async function createPayTRToken(input: {
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureOrderDetailsColumn()
     const body = await req.json()
     const parsed = payloadSchema.safeParse(body)
     if (!parsed.success) return NextResponse.json({ error: "Invalid payment payload" }, { status: 400 })
@@ -282,6 +284,22 @@ export async function POST(req: NextRequest) {
           ],
         },
       },
+    })
+    await saveOrderDetails(order.id, {
+      customerPhone: input.customerPhone?.trim() || null,
+      addressLine1: input.addressLine1?.trim() || null,
+      city: input.city?.trim() || null,
+      postcode: input.postcode?.trim() || null,
+      country: input.country?.trim() || null,
+      paymentMethod: input.provider.toUpperCase(),
+      paymentStatus: "PENDING",
+      shippingMethod: input.shippingMethod?.trim() || null,
+      shippingCost: Number(input.shippingCost || 0),
+      subtotalAmount: Number(input.subtotal || 0),
+      taxAmount: Number(input.taxAmount || 0),
+      discountAmount: 0,
+      currency: settings.defaultCurrency || "USD",
+      invoiceNumber: `INV-${order.orderNumber}`,
     })
 
     if (input.provider === "stripe" || input.provider === "gpay" || input.provider === "applepay") {

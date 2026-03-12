@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { isManagedUploadUrl } from "@/lib/storage/url"
 
@@ -69,6 +70,7 @@ export function MediaBrowser() {
   const [selectedTopFolder, setSelectedTopFolder] = useState(ALL_TOP)
   const [selectedSubfolder, setSelectedSubfolder] = useState(ALL_SUB)
   const [selectedChildFolder, setSelectedChildFolder] = useState("")
+  const [searchTerm, setSearchTerm] = useState("")
   const [selectedFolderCard, setSelectedFolderCard] = useState("")
   const [selectedUrls, setSelectedUrls] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
@@ -120,12 +122,14 @@ export function MediaBrowser() {
   useEffect(() => {
     setSelectedSubfolder(ALL_SUB)
     setSelectedChildFolder("")
+    setSearchTerm("")
     setSelectedFolderCard("")
     setSelectedUrls([])
   }, [selectedTopFolder])
 
   useEffect(() => {
     setSelectedChildFolder("")
+    setSearchTerm("")
     setSelectedFolderCard("")
     setSelectedUrls([])
   }, [selectedSubfolder])
@@ -144,6 +148,49 @@ export function MediaBrowser() {
       .sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
   }, [folders, selectedSubfolder])
 
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase()
+
+  const currentLevelFolders = useMemo(() => {
+    if (selectedChildFolder) return [] as string[]
+    if (selectedSubfolder !== ALL_SUB) return childFolders
+    return subfolders
+  }, [childFolders, selectedChildFolder, selectedSubfolder, subfolders])
+
+  const searchableFolders = useMemo(() => {
+    const allFolderNames = folders.map((folder) => folder.name)
+
+    if (selectedChildFolder) {
+      const prefix = `${selectedChildFolder}/`
+      return allFolderNames
+        .filter((name) => name.startsWith(prefix))
+        .sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
+    }
+
+    if (selectedSubfolder !== ALL_SUB) {
+      const prefix = `${selectedSubfolder}/`
+      return allFolderNames
+        .filter((name) => name.startsWith(prefix))
+        .sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
+    }
+
+    if (selectedTopFolder !== ALL_TOP) {
+      const prefix = `${selectedTopFolder}/`
+      return allFolderNames
+        .filter((name) => name.startsWith(prefix))
+        .sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
+    }
+
+    return allFolderNames.sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
+  }, [folders, selectedChildFolder, selectedSubfolder, selectedTopFolder])
+
+  const visibleCurrentLevelFolders = useMemo(() => {
+    if (!normalizedSearchTerm) return currentLevelFolders
+    return searchableFolders.filter((folder) => {
+      const folderLeaf = folder.split("/").pop() || folder
+      return folder.toLowerCase().includes(normalizedSearchTerm) || folderLeaf.toLowerCase().includes(normalizedSearchTerm)
+    })
+  }, [currentLevelFolders, normalizedSearchTerm, searchableFolders])
+
   const usesSkuFolders = useMemo(() => {
     if (selectedSubfolder === ALL_SUB) return false
     const root = selectedTopFolder !== ALL_TOP ? selectedTopFolder : selectedSubfolder.split("/")[0] || ""
@@ -153,21 +200,31 @@ export function MediaBrowser() {
   const filteredAssets = useMemo(() => {
     return assets.filter((asset) => {
       if (selectedChildFolder) {
-        return asset.folder === selectedChildFolder || asset.folder.startsWith(`${selectedChildFolder}/`)
-      }
-
-      if (selectedSubfolder !== ALL_SUB) {
+        const inFolder = asset.folder === selectedChildFolder || asset.folder.startsWith(`${selectedChildFolder}/`)
+        if (!inFolder) return false
+      } else if (selectedSubfolder !== ALL_SUB) {
         if (usesSkuFolders) return false
-        return asset.folder === selectedSubfolder
+        const inSubfolder = asset.folder === selectedSubfolder || asset.folder.startsWith(`${selectedSubfolder}/`)
+        if (!inSubfolder) return false
+      } else {
+        const inFolder =
+          !activeFolder ||
+          asset.folder === activeFolder ||
+          asset.folder.startsWith(`${activeFolder}/`)
+        if (!inFolder) return false
       }
 
-      const inFolder =
-        !activeFolder ||
-        asset.folder === activeFolder ||
-        asset.folder.startsWith(`${activeFolder}/`)
-      return inFolder
+      if (!normalizedSearchTerm) return true
+
+      const displayName = prettifyAssetName(asset).toLowerCase()
+      return (
+        displayName.includes(normalizedSearchTerm) ||
+        asset.name.toLowerCase().includes(normalizedSearchTerm) ||
+        asset.folder.toLowerCase().includes(normalizedSearchTerm) ||
+        asset.usedIn.toLowerCase().includes(normalizedSearchTerm)
+      )
     })
-  }, [activeFolder, assets, selectedChildFolder, selectedSubfolder, usesSkuFolders])
+  }, [activeFolder, assets, normalizedSearchTerm, selectedChildFolder, selectedSubfolder, usesSkuFolders])
 
   const renameSelectedFolder = async () => {
     if (!selectedFolderCard) return
@@ -339,7 +396,7 @@ export function MediaBrowser() {
         <CardContent className="space-y-6 p-6">
           <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-center xl:justify-start">
             <div className="flex flex-1 flex-col gap-3 lg:flex-row lg:items-center">
-              <div className="grid gap-3 sm:grid-cols-[260px_260px_auto]">
+              <div className="grid gap-3 sm:grid-cols-[260px_260px_minmax(220px,1fr)_auto]">
                 <Select value={selectedTopFolder} onValueChange={setSelectedTopFolder}>
                   <SelectTrigger className="h-12 border-[#cfd9e4] bg-white text-[15px]">
                     <SelectValue placeholder="Ana sayfalar" />
@@ -374,6 +431,13 @@ export function MediaBrowser() {
                     ))}
                   </SelectContent>
                 </Select>
+
+                <Input
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Klasor veya fotograf ara"
+                  className="h-12 border-[#cfd9e4] bg-white text-[15px]"
+                />
 
                 {selectedSubfolder !== ALL_SUB ? (
                   <div className="flex gap-2">
@@ -413,9 +477,9 @@ export function MediaBrowser() {
             </div>
           ) : null}
 
-          {!selectedChildFolder && childFolders.length > 0 ? (
+          {!selectedChildFolder && visibleCurrentLevelFolders.length > 0 ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-              {childFolders.map((folderPath) => (
+              {visibleCurrentLevelFolders.map((folderPath) => (
                 <button
                   key={folderPath}
                   type="button"
@@ -437,7 +501,6 @@ export function MediaBrowser() {
                     <p className="truncate text-sm font-medium text-slate-900">
                       {folderLabel(folderPath.split("/").pop() || folderPath)}
                     </p>
-                    <p className="truncate text-xs text-slate-500">{folderPath}</p>
                   </div>
                 </button>
               ))}
@@ -458,12 +521,12 @@ export function MediaBrowser() {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Loading media...
             </div>
-          ) : filteredAssets.length === 0 ? (
+          ) : filteredAssets.length === 0 && visibleCurrentLevelFolders.length === 0 ? (
             <div className="flex h-[420px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
               <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
               No images found
             </div>
-          ) : (
+          ) : visibleCurrentLevelFolders.length === 0 ? (
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
               {filteredAssets.map((asset) => {
                 const selected = selectedUrls.includes(asset.url)
@@ -512,7 +575,7 @@ export function MediaBrowser() {
                 )
               })}
             </div>
-          )}
+          ) : null}
         </CardContent>
       </Card>
 

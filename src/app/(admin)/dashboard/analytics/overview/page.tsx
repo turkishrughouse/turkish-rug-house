@@ -1,119 +1,201 @@
-import { ChevronDown, LineChart, BarChart3, MoreVertical } from "lucide-react"
-import { adminText } from "@/lib/admin/i18n"
-import { getAdminLanguage } from "@/lib/admin/server-language"
+import {
+  buildTrendSeries,
+  calculatePercentChange,
+  formatAnalyticsCurrency,
+  formatAnalyticsDateTime,
+  formatAnalyticsNumber,
+  getAnalyticsSnapshot,
+  getCategoryPerformance,
+  getDistinctCustomerCount,
+  getNearRealtimeTimestamp,
+  getOrderNetAmount,
+  getRecentActivity,
+  getTopProducts,
+  isAnalyticsEmpty,
+  resolveAnalyticsRangeKey,
+} from "@/lib/admin-analytics"
+import {
+  AnalyticsBarList,
+  AnalyticsEmptyState,
+  AnalyticsPage,
+  AnalyticsSection,
+  AnalyticsStatCard,
+  AnalyticsStatGrid,
+  AnalyticsTable,
+} from "@/components/admin/analytics/analytics-ui"
 
-export default async function AnalyticsOverviewPage() {
-  const lang = await getAdminLanguage()
-  const t = adminText[lang].analyticsOverview
+export const dynamic = "force-dynamic"
+
+export default async function AnalyticsOverviewPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ range?: string }> | { range?: string }
+}) {
+  const params = searchParams ? await searchParams : {}
+  const rangeKey = resolveAnalyticsRangeKey(params?.range)
+  const snapshot = await getAnalyticsSnapshot(rangeKey)
+  const currency = snapshot.orders[0]?.details.currency || "USD"
+  const revenue = snapshot.ordersInRange.reduce((sum, order) => sum + getOrderNetAmount(order), 0)
+  const previousRevenue = snapshot.previousOrdersInRange.reduce((sum, order) => sum + getOrderNetAmount(order), 0)
+  const customers = getDistinctCustomerCount(snapshot.ordersInRange)
+  const previousCustomers = getDistinctCustomerCount(snapshot.previousOrdersInRange)
+  const productsAdded = snapshot.productsInRange.length
+  const previousProductsAdded = snapshot.previousProductsInRange.length
+  const itemsSold = snapshot.ordersInRange.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0)
+  const previousItemsSold = snapshot.previousOrdersInRange.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0)
+  const revenueTrend = buildTrendSeries(snapshot.range, snapshot.ordersInRange, (order) => getOrderNetAmount(order))
+  const orderTrend = buildTrendSeries(snapshot.range, snapshot.ordersInRange, () => 1)
+  const categoryPerformance = getCategoryPerformance(snapshot.categories, snapshot.ordersInRange).slice(0, 6)
+  const topProducts = getTopProducts(snapshot.ordersInRange, 6)
+  const recentActivity = getRecentActivity(snapshot)
 
   return (
-    <div className="flex-1 space-y-8 p-6 pt-5 text-slate-900">
-      <section className="max-w-[650px] space-y-2">
-        <p className="admin-muted">{t.dateRange}</p>
-        <button
-          type="button"
-          className="flex w-full items-center justify-between rounded-md border border-[#8c8f94] bg-white px-5 py-3 text-left shadow-sm"
-        >
-          <div className="space-y-0.5">
-            <p className="admin-page-title">{t.monthToDate}</p>
-            <p className="admin-body">{t.previousYear}</p>
+    <AnalyticsPage
+      title="Analytics Overview"
+      description="High-level business performance built from current orders, catalog, customer, and fulfillment records."
+      range={rangeKey}
+    >
+      <AnalyticsStatGrid>
+        <AnalyticsStatCard
+          label="Net revenue"
+          value={formatAnalyticsCurrency(revenue, currency)}
+          helper={`${calculatePercentChange(revenue, previousRevenue)}% vs previous period`}
+        />
+        <AnalyticsStatCard
+          label="Orders"
+          value={formatAnalyticsNumber(snapshot.ordersInRange.length)}
+          helper={`${calculatePercentChange(snapshot.ordersInRange.length, snapshot.previousOrdersInRange.length)}% vs previous period`}
+        />
+        <AnalyticsStatCard
+          label="Customers"
+          value={formatAnalyticsNumber(customers)}
+          helper={`${calculatePercentChange(customers, previousCustomers)}% vs previous period`}
+        />
+        <AnalyticsStatCard
+          label="Products added"
+          value={formatAnalyticsNumber(productsAdded)}
+          helper={`${calculatePercentChange(productsAdded, previousProductsAdded)}% vs previous period`}
+        />
+      </AnalyticsStatGrid>
+
+      {isAnalyticsEmpty(snapshot.orders, snapshot.products) ? (
+        <AnalyticsSection title="Overview state" summary="This analytics area is live and waiting for real activity.">
+          <AnalyticsEmptyState
+            title="No analytics activity yet"
+            description="Orders, product creation, customer growth, and revenue trends will appear here automatically once real records start flowing through the store."
+          />
+        </AnalyticsSection>
+      ) : (
+        <>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <AnalyticsSection
+              title="Revenue trend"
+              summary={`${snapshot.range.label} revenue from non-cancelled orders, net of recorded refunds.`}
+            >
+              <AnalyticsBarList
+                rows={revenueTrend.map((point) => ({ label: point.label, value: point.value }))}
+                formatter={(value) => formatAnalyticsCurrency(value, currency)}
+              />
+            </AnalyticsSection>
+            <AnalyticsSection
+              title="Order velocity"
+              summary={`${snapshot.range.label} order intake based on real order creation timestamps.`}
+            >
+              <AnalyticsBarList rows={orderTrend.map((point) => ({ label: point.label, value: point.value }))} />
+            </AnalyticsSection>
           </div>
-          <ChevronDown className="h-6 w-6 text-slate-700" />
-        </button>
-      </section>
 
-      <section className="space-y-4">
-        <div className="flex items-center gap-4">
-          <h2 className="text-[20px] font-semibold leading-none text-slate-900">{t.performance}</h2>
-          <div className="h-px flex-1 bg-[#d8dadd]" />
-          <button type="button" className="rounded p-1 text-slate-700 hover:bg-slate-100">
-            <MoreVertical className="h-6 w-6" />
-          </button>
-        </div>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <AnalyticsSection
+              title="Category contribution"
+              summary="Revenue and order contribution grouped by real catalog categories."
+            >
+              {categoryPerformance.length > 0 ? (
+                <AnalyticsTable
+                  columns={["Category", "Products", "Orders", "Revenue"]}
+                  rows={categoryPerformance.map((row) => [
+                    row.title,
+                    formatAnalyticsNumber(row.productCount),
+                    formatAnalyticsNumber(row.orderCount),
+                    formatAnalyticsCurrency(row.revenue, currency),
+                  ])}
+                />
+              ) : (
+                <AnalyticsEmptyState
+                  title="No category sales yet"
+                  description="Category contribution will appear as soon as sold order items can be tied back to products in live categories."
+                />
+              )}
+            </AnalyticsSection>
+            <AnalyticsSection
+              title="Top products"
+              summary={`Best-selling products for ${snapshot.range.label}.`}
+            >
+              {topProducts.length > 0 ? (
+                <AnalyticsTable
+                  columns={["Product", "Units", "Orders", "Revenue"]}
+                  rows={topProducts.map((row) => [
+                    row.title,
+                    formatAnalyticsNumber(row.quantity),
+                    formatAnalyticsNumber(row.orders),
+                    formatAnalyticsCurrency(row.revenue, currency),
+                  ])}
+                />
+              ) : (
+                <AnalyticsEmptyState
+                  title="No product sales yet"
+                  description="Top-performing products will populate automatically when paid or fulfilled orders start landing."
+                />
+              )}
+            </AnalyticsSection>
+          </div>
 
-        <div className="grid gap-0 rounded-md border border-[#d8dadd] bg-white md:grid-cols-5">
-          {[
-            { label: t.totalSales, value: "₺0,00" },
-            { label: t.netSales, value: "₺0,00" },
-            { label: t.orders, value: "0" },
-            { label: t.productsSold, value: "0" },
-            { label: t.variationsSold, value: "0" },
-          ].map((item) => (
-            <div key={item.label} className="border-b border-[#d8dadd] p-4 md:border-b-0 md:border-r last:border-r-0">
-              <p className="text-[14px] font-medium leading-tight text-slate-800">{item.label}</p>
-              <div className="mt-3 flex items-center justify-between">
-                <p className="text-[22px] leading-none font-medium text-slate-900">{item.value}</p>
-                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[12px] font-semibold text-slate-700">0%</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="space-y-4">
-        <div className="flex items-center gap-4">
-          <h2 className="admin-section-title">{t.charts}</h2>
-          <div className="h-px flex-1 bg-[#d8dadd]" />
-          <button type="button" className="inline-flex items-center gap-3 rounded-md border border-[#d8dadd] bg-white px-4 py-2 text-lg text-slate-700">
-            {t.byDay}
-            <ChevronDown className="h-5 w-5" />
-          </button>
-          <button type="button" className="rounded-md p-2 text-slate-700 hover:bg-slate-100">
-            <LineChart className="h-6 w-6" />
-          </button>
-          <button type="button" className="rounded-md p-2 text-slate-300">
-            <BarChart3 className="h-6 w-6" />
-          </button>
-          <button type="button" className="rounded p-1 text-slate-700 hover:bg-slate-100">
-            <MoreVertical className="h-6 w-6" />
-          </button>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-2">
-          {[
-            { title: t.netSales, left: "₺0,00", right: "₺0,00" },
-            { title: t.orders, left: "0", right: "0" },
-          ].map((chart) => (
-            <div key={chart.title} className="overflow-hidden rounded-xl border border-[#d8dadd] bg-white">
-              <div className="border-b border-[#d8dadd] px-6 py-4 admin-card-title">{chart.title}</div>
-              <div className="flex min-h-[290px] items-center justify-center px-6 text-center text-[24px] font-semibold text-slate-500">
-                {t.noDataSelectedRange}
-              </div>
-              <div className="border-t border-[#d8dadd] bg-[#f8f9fb] px-6 py-5">
-                <div className="flex items-center justify-between admin-body">
-                  <span>{t.monthToDate.replace("vs. ", "")}</span>
-                  <span className="font-semibold text-slate-700">{chart.left}</span>
-                </div>
-                <div className="mt-3 flex items-center justify-between admin-body">
-                  <span>{t.previousYear.replace("vs. ", "")}</span>
-                  <span className="font-semibold text-slate-700">{chart.right}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="space-y-4">
-        <div className="flex items-center gap-4">
-          <h2 className="admin-section-title">{t.leaderboards}</h2>
-          <div className="h-px flex-1 bg-[#d8dadd]" />
-          <button type="button" className="rounded p-1 text-slate-700 hover:bg-slate-100">
-            <MoreVertical className="h-6 w-6" />
-          </button>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-2">
-          {[t.topCategories, t.topProducts].map((title) => (
-            <div key={title} className="overflow-hidden rounded-xl border border-[#d8dadd] bg-white">
-              <div className="border-b border-[#d8dadd] px-6 py-4 admin-card-title">{title}</div>
-              <div className="flex min-h-[250px] items-center justify-center px-6 text-center text-[20px] text-slate-500">
-                {t.noDataTimePeriod}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-    </div>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <AnalyticsSection
+              title="Recent order activity"
+              summary={`Near real-time snapshot refreshed from live records at ${formatAnalyticsDateTime(getNearRealtimeTimestamp())}.`}
+            >
+              {recentActivity.recentOrders.length > 0 ? (
+                <AnalyticsTable
+                  columns={["Order", "Customer", "Status", "Total"]}
+                  rows={recentActivity.recentOrders.map((order) => [
+                    order.orderNumber,
+                    order.customerName || order.customerEmail,
+                    order.status,
+                    formatAnalyticsCurrency(order.total, order.details.currency),
+                  ])}
+                />
+              ) : (
+                <AnalyticsEmptyState
+                  title="No recent orders"
+                  description="Recent order activity will appear here when the store receives live order records."
+                />
+              )}
+            </AnalyticsSection>
+            <AnalyticsSection
+              title="Recent catalog activity"
+              summary={`Includes ${formatAnalyticsNumber(itemsSold)} units sold and ${formatAnalyticsNumber(previousItemsSold)} in the previous comparison window.`}
+            >
+              {recentActivity.recentProducts.length > 0 ? (
+                <AnalyticsTable
+                  columns={["Product", "SKU", "Published", "Created"]}
+                  rows={recentActivity.recentProducts.map((product) => [
+                    product.title,
+                    product.sku || "No SKU",
+                    product.isPublished ? "Published" : "Draft",
+                    formatAnalyticsDateTime(product.createdAt),
+                  ])}
+                />
+              ) : (
+                <AnalyticsEmptyState
+                  title="No recent products"
+                  description="Product activity will appear here when admins add or update real catalog records."
+                />
+              )}
+            </AnalyticsSection>
+          </div>
+        </>
+      )}
+    </AnalyticsPage>
   )
 }
