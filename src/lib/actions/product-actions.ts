@@ -744,7 +744,7 @@ export async function createProduct(data: ProductFormValues) {
             }
         }
         try {
-            await syncProductToInventory({
+            const syncResult = await syncProductToInventory({
                 event: "created",
                 product: {
                     id: created.id,
@@ -767,6 +767,9 @@ export async function createProduct(data: ProductFormValues) {
                     categories: categoryRows.map((c) => ({ id: c.id, slug: c.slug, title: c.title })),
                 },
             })
+            if (!syncResult.skipped && syncResult.success === false) {
+                console.warn("Inventory sync (create) skipped safely:", syncResult.error)
+            }
         } catch (syncError) {
             console.error("Inventory sync (create) failed:", syncError)
         }
@@ -876,7 +879,7 @@ export async function updateProduct(id: string, data: ProductFormValues) {
             })
         }
         try {
-            await syncProductToInventory({
+            const syncResult = await syncProductToInventory({
                 event: "updated",
                 product: {
                     id,
@@ -899,6 +902,9 @@ export async function updateProduct(id: string, data: ProductFormValues) {
                     categories: categoryRows.map((c) => ({ id: c.id, slug: c.slug, title: c.title })),
                 },
             })
+            if (!syncResult.skipped && syncResult.success === false) {
+                console.warn("Inventory sync (update) skipped safely:", syncResult.error)
+            }
         } catch (syncError) {
             console.error("Inventory sync (update) failed:", syncError)
         }

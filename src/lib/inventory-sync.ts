@@ -121,20 +121,39 @@ export async function syncProductToInventory(input: InventorySyncInput) {
       headers["x-api-key"] = apiKey
     }
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-      cache: "no-store",
-    })
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+        cache: "no-store",
+      })
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => "")
-      throw new Error(`Inventory sync failed (${response.status}): ${body.slice(0, 500)}`)
+      if (!response.ok) {
+        const body = await response.text().catch(() => "")
+        return {
+          skipped: false as const,
+          success: false as const,
+          error: `Inventory sync failed (${response.status}): ${body.slice(0, 500)}`,
+        }
+      }
+
+      return { skipped: false as const, success: true as const }
+    } catch (error) {
+      const reason =
+        error instanceof Error
+          ? error.name === "AbortError"
+            ? `Inventory sync timed out after ${timeoutMs}ms`
+            : error.message
+          : "Unknown inventory sync error"
+
+      return {
+        skipped: false as const,
+        success: false as const,
+        error: reason,
+      }
     }
-
-    return { skipped: false as const }
   } finally {
     clearTimeout(timeout)
   }
