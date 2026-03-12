@@ -160,7 +160,8 @@ export function ProductDetailView({
     ? Math.round((((product.compareAtPrice as number) - product.price) / (product.compareAtPrice as number)) * 100)
     : 0
   const primaryCategory = product.categories[0]
-  const shortDescriptionHtml = product.shortDescription?.trim() || ""
+  const shortDescriptionHtml =
+    product.shortDescription?.trim() || sanitizeRichContent(product.description)
   const longDescriptionHtml = sanitizeRichContent(product.description)
   const bottomDescriptionHtml = longDescriptionHtml || "<p>Detailed product information is not available yet.</p>"
   const bottomDescriptionTextLength = bottomDescriptionHtml.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().length
