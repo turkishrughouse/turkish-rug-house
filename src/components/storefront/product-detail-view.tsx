@@ -7,7 +7,6 @@ import { toast } from "sonner"
 import { ChevronLeft, ChevronRight, Grid2x2, Facebook, Linkedin, Send, Heart, Shuffle, X, Instagram, MessageCircle } from "lucide-react"
 import { addToCart } from "@/lib/storefront/cart"
 import { addEngagementItem } from "@/lib/storefront/engagement"
-import { ProductRatingBadge } from "@/components/storefront/product-rating-badge"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { CategoryHoverProductCard } from "@/components/storefront/category-hover-product-card"
 
@@ -59,11 +58,6 @@ function parseImages(images: string): string[] {
   return parseProductImageRecords(images).map((image) => getProductImageUrl(image, "large"))
 }
 
-function stripHtml(input: string | null | undefined): string {
-  if (!input) return ""
-  return input.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
-}
-
 function sanitizeRichContent(input: string | null | undefined): string {
   if (!input || input.trim().length === 0) return ""
   return input
@@ -71,23 +65,6 @@ function sanitizeRichContent(input: string | null | undefined): string {
     .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
     .replace(/\son[a-z]+\s*=\s*(['"]).*?\1/gi, "")
     .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, "")
-}
-
-function looksBrokenHtml(input: string): boolean {
-  if (!input) return false
-  const tableOpen = (input.match(/<table\b/gi) || []).length
-  const tableClose = (input.match(/<\/table>/gi) || []).length
-  if (tableOpen !== tableClose) return true
-
-  const trOpen = (input.match(/<tr\b/gi) || []).length
-  const trClose = (input.match(/<\/tr>/gi) || []).length
-  if (trOpen !== trClose) return true
-
-  const tdOpen = (input.match(/<td\b/gi) || []).length
-  const tdClose = (input.match(/<\/td>/gi) || []).length
-  if (tdOpen !== tdClose) return true
-
-  return false
 }
 
 const richContentClassName = [
@@ -158,7 +135,6 @@ export function ProductDetailView({
   const [imageLightboxOpen, setImageLightboxOpen] = useState(false)
   const [hoverZoomEnabled, setHoverZoomEnabled] = useState(false)
   const [zoomOrigin, setZoomOrigin] = useState("50% 50%")
-  const [expandedDesc, setExpandedDesc] = useState(false)
   const [expandedBottomDesc, setExpandedBottomDesc] = useState(false)
   const [expandedShipping, setExpandedShipping] = useState(false)
   const [activeInfoTab, setActiveInfoTab] = useState<"description" | "shipping" | "attributes">("description")
@@ -184,17 +160,13 @@ export function ProductDetailView({
     ? Math.round((((product.compareAtPrice as number) - product.price) / (product.compareAtPrice as number)) * 100)
     : 0
   const primaryCategory = product.categories[0]
-  const shortDescriptionHtml = sanitizeRichContent(product.shortDescription)
+  const shortDescriptionHtml = product.shortDescription?.trim() || ""
   const longDescriptionHtml = sanitizeRichContent(product.description)
-  const safeShortDescriptionHtml =
-    shortDescriptionHtml && !looksBrokenHtml(shortDescriptionHtml) ? shortDescriptionHtml : ""
-  const shortDescriptionTextLength = stripHtml(safeShortDescriptionHtml).length
-  const canExpandDescription = shortDescriptionTextLength > 320
   const bottomDescriptionHtml = longDescriptionHtml || "<p>Detailed product information is not available yet.</p>"
-  const bottomDescriptionTextLength = stripHtml(bottomDescriptionHtml).length
+  const bottomDescriptionTextLength = bottomDescriptionHtml.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().length
   const canExpandBottomDescription = bottomDescriptionTextLength > 380
   const shippingText = shippingContent && shippingContent.trim().length > 0
-    ? stripHtml(shippingContent)
+    ? shippingContent.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
     : "Delivery estimates and shipping details are shown at checkout."
   const canExpandShipping = shippingText.length > 520
   const visibleCategories = product.categories.slice(0, 2)
@@ -513,21 +485,12 @@ export function ProductDetailView({
               ) : null}
             </div>
 
-            {safeShortDescriptionHtml ? (
+            {shortDescriptionHtml ? (
               <div className="mt-6">
                 <div
-                  className={`${richContentClassName} ${!expandedDesc && canExpandDescription ? "line-clamp-5" : ""}`}
-                  dangerouslySetInnerHTML={{ __html: safeShortDescriptionHtml }}
+                  className={`product-short-description ${richContentClassName}`}
+                  dangerouslySetInnerHTML={{ __html: shortDescriptionHtml }}
                 />
-                {canExpandDescription ? (
-                  <button
-                    type="button"
-                    onClick={() => setExpandedDesc((prev) => !prev)}
-                    className="mt-2 text-sm font-medium text-emerald-700 hover:underline"
-                  >
-                    {expandedDesc ? "Show less" : "See more"}
-                  </button>
-                ) : null}
               </div>
             ) : null}
 
