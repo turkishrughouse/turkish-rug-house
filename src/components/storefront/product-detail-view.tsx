@@ -24,8 +24,8 @@ type ProductDetail = {
   sku: string | null
   customAttributes?: Array<{ name: string; values: string[]; visible: boolean }>
   title: string
+  shortDescription: string | null
   description: string | null
-  seoDescription: string | null
   price: number
   compareAtPrice: number | null
   isStock: boolean
@@ -184,14 +184,12 @@ export function ProductDetailView({
     ? Math.round((((product.compareAtPrice as number) - product.price) / (product.compareAtPrice as number)) * 100)
     : 0
   const primaryCategory = product.categories[0]
-  const shortDescriptionHtml = sanitizeRichContent(product.seoDescription)
+  const shortDescriptionHtml = sanitizeRichContent(product.shortDescription)
   const longDescriptionHtml = sanitizeRichContent(product.description)
-  const descriptionHtml =
-    (shortDescriptionHtml && !looksBrokenHtml(shortDescriptionHtml) ? shortDescriptionHtml : "") ||
-    longDescriptionHtml ||
-    "<p>Premium hand-crafted product detail text will appear here.</p>"
-  const descriptionTextLength = stripHtml(descriptionHtml).length
-  const canExpandDescription = descriptionTextLength > 320
+  const safeShortDescriptionHtml =
+    shortDescriptionHtml && !looksBrokenHtml(shortDescriptionHtml) ? shortDescriptionHtml : ""
+  const shortDescriptionTextLength = stripHtml(safeShortDescriptionHtml).length
+  const canExpandDescription = shortDescriptionTextLength > 320
   const bottomDescriptionHtml = longDescriptionHtml || "<p>Detailed product information is not available yet.</p>"
   const bottomDescriptionTextLength = stripHtml(bottomDescriptionHtml).length
   const canExpandBottomDescription = bottomDescriptionTextLength > 380
@@ -515,21 +513,23 @@ export function ProductDetailView({
               ) : null}
             </div>
 
-            <div className="mt-6">
-              <div
-                className={`${richContentClassName} ${!expandedDesc && canExpandDescription ? "line-clamp-5" : ""}`}
-                dangerouslySetInnerHTML={{ __html: descriptionHtml }}
-              />
-              {canExpandDescription ? (
-                <button
-                  type="button"
-                  onClick={() => setExpandedDesc((prev) => !prev)}
-                  className="mt-2 text-sm font-medium text-emerald-700 hover:underline"
-                >
-                  {expandedDesc ? "Show less" : "See more"}
-                </button>
-              ) : null}
-            </div>
+            {safeShortDescriptionHtml ? (
+              <div className="mt-6">
+                <div
+                  className={`${richContentClassName} ${!expandedDesc && canExpandDescription ? "line-clamp-5" : ""}`}
+                  dangerouslySetInnerHTML={{ __html: safeShortDescriptionHtml }}
+                />
+                {canExpandDescription ? (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedDesc((prev) => !prev)}
+                    className="mt-2 text-sm font-medium text-emerald-700 hover:underline"
+                  >
+                    {expandedDesc ? "Show less" : "See more"}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="mt-7 border-y border-[#e6edf5]">
               <div className="grid grid-cols-2 md:flex md:items-center md:gap-8">

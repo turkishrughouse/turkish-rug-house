@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
 import type { Metadata } from "next"
+import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import { ProductDetailView } from "@/components/storefront/product-detail-view"
 import { fetchCategoryPathRows, getCategoryPathById, type CategoryPathRow } from "@/lib/category-paths"
@@ -27,6 +28,28 @@ type RelatedProductCard = {
   isStock: boolean
   categories: Array<{ id: string; title: string; slug: string }>
 }
+
+type ProductRecord = Prisma.ProductGetPayload<{
+  include: {
+    categories: {
+      select: {
+        id: true
+        title: true
+        slug: true
+      }
+    }
+    colors: {
+      select: {
+        id: true
+      }
+    }
+    sizes: {
+      select: {
+        id: true
+      }
+    }
+  }
+}>
 
 function stripHtml(input: string | null | undefined) {
   if (!input) return ""
@@ -265,7 +288,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ProductPage({ params }: Props) {
   const { slug } = await params
 
-  const product = await prisma.product.findUnique({
+  const product = (await prisma.product.findUnique({
     where: { slug, isPublished: true },
     include: {
       categories: {
@@ -286,7 +309,7 @@ export default async function ProductPage({ params }: Props) {
         },
       },
     },
-  })
+  })) as ProductRecord
 
   if (!product) notFound()
   const categoryRows = await fetchCategoryPathRows()
@@ -304,6 +327,7 @@ export default async function ProductPage({ params }: Props) {
 
   const serializedProduct = {
     ...product,
+    shortDescription: product.seoDescription,
     categories: product.categories.map((category) => ({
       ...category,
       path: getCategoryPathById(categoryRows, category.id),

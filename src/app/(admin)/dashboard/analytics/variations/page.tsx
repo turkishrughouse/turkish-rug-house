@@ -1,15 +1,12 @@
 import { prisma } from "@/lib/db"
 import { resolveAnalyticsRangeKey } from "@/lib/admin-analytics"
 import { AnalyticsEmptyState, AnalyticsPage, AnalyticsSection, AnalyticsStatCard, AnalyticsStatGrid } from "@/components/admin/analytics/analytics-ui"
+import type { AnalyticsPageProps } from "@/app/(admin)/dashboard/analytics/_lib/page-props"
 
 export const dynamic = "force-dynamic"
 
-export default async function AnalyticsVariationsPage({
-  searchParams,
-}: {
-  searchParams?: Promise<{ range?: string }> | { range?: string }
-}) {
-  const params = searchParams ? await searchParams : {}
+export default async function AnalyticsVariationsPage({ searchParams }: AnalyticsPageProps) {
+  const params = (await searchParams) ?? {}
   const rangeKey = resolveAnalyticsRangeKey(params?.range)
   const [colorCount, sizeCount, styleCount, typeCount] = await Promise.all([
     prisma.color.count(),

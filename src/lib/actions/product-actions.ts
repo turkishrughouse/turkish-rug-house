@@ -771,6 +771,7 @@ export async function createProduct(data: ProductFormValues) {
             console.error("Inventory sync (create) failed:", syncError)
         }
         revalidatePath("/dashboard/products")
+        revalidatePath(`/product/${uniqueSlug}`)
         return { success: true }
     } catch (error) {
         console.error("Create Product Error:", error)
@@ -787,6 +788,10 @@ export async function updateProduct(id: string, data: ProductFormValues) {
     const connect = (ids: string[]) => ids.map(id => ({ id }))
 
     try {
+        const existingProduct = await db.product.findUnique({
+            where: { id },
+            select: { slug: true },
+        })
         const skuConflict = await findConflictingProductSku(validated.sku, id)
         if (skuConflict) {
             return { success: false, error: "SKU already exists. Duplicate product cannot be saved without changing SKU." }
@@ -899,6 +904,10 @@ export async function updateProduct(id: string, data: ProductFormValues) {
         }
         revalidatePath("/dashboard/products")
         revalidatePath(`/dashboard/products/${id}`)
+        revalidatePath(`/product/${uniqueSlug}`)
+        if (existingProduct?.slug && existingProduct.slug !== uniqueSlug) {
+            revalidatePath(`/product/${existingProduct.slug}`)
+        }
         return { success: true }
     } catch (error) {
         console.error("Update Product Error:", error)
@@ -1065,16 +1074,11 @@ export async function getProductOptions() {
                     colors: { select: { id: true } },
                     sizes: { select: { id: true } },
                     ages: { select: { id: true } },
+                    materials: { select: { id: true } },
                 }
             }
         }
-    }).then((rows) => rows.map((category) => ({
-        ...category,
-        products: category.products.map((product) => ({
-            ...product,
-            materials: [],
-        })),
-    })))
+    })
 
     const [categories, types, styles, colors, sizes, ages, materials, categoriesWithProducts] = await Promise.all([
         db.category.findMany(),

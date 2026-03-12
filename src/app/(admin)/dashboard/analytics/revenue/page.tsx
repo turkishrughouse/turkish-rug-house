@@ -18,15 +18,12 @@ import {
   AnalyticsStatGrid,
   AnalyticsTable,
 } from "@/components/admin/analytics/analytics-ui"
+import type { AnalyticsPageProps } from "@/app/(admin)/dashboard/analytics/_lib/page-props"
 
 export const dynamic = "force-dynamic"
 
-export default async function AnalyticsRevenuePage({
-  searchParams,
-}: {
-  searchParams?: Promise<{ range?: string }> | { range?: string }
-}) {
-  const params = searchParams ? await searchParams : {}
+export default async function AnalyticsRevenuePage({ searchParams }: AnalyticsPageProps) {
+  const params = (await searchParams) ?? {}
   const rangeKey = resolveAnalyticsRangeKey(params?.range)
   const snapshot = await getAnalyticsSnapshot(rangeKey)
   const currency = snapshot.orders[0]?.details.currency || "USD"

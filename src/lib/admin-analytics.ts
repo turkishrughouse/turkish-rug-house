@@ -186,10 +186,10 @@ export function isPaidOrder(order: AnalyticsOrderRow) {
   return PAID_ORDER_STATUSES.has(order.status.toUpperCase())
 }
 
-export function buildTrendSeries(
+export function buildTrendSeries<T extends { createdAt: Date }>(
   range: AnalyticsRange,
-  rows: Array<{ createdAt: Date }>,
-  getValue: (row: { createdAt: Date }) => number
+  rows: T[],
+  getValue: (row: T) => number
 ): AnalyticsTrendPoint[] {
   if (range.key === "365d") {
     const monthly = new Map<string, number>()

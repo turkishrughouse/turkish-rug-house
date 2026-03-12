@@ -6,15 +6,12 @@ import {
   resolveAnalyticsRangeKey,
 } from "@/lib/admin-analytics"
 import { AnalyticsBarList, AnalyticsEmptyState, AnalyticsPage, AnalyticsSection, AnalyticsStatCard, AnalyticsStatGrid, AnalyticsTable } from "@/components/admin/analytics/analytics-ui"
+import type { AnalyticsPageProps } from "@/app/(admin)/dashboard/analytics/_lib/page-props"
 
 export const dynamic = "force-dynamic"
 
-export default async function AnalyticsStockPage({
-  searchParams,
-}: {
-  searchParams?: Promise<{ range?: string }> | { range?: string }
-}) {
-  const params = searchParams ? await searchParams : {}
+export default async function AnalyticsStockPage({ searchParams }: AnalyticsPageProps) {
+  const params = (await searchParams) ?? {}
   const rangeKey = resolveAnalyticsRangeKey(params?.range)
   const snapshot = await getAnalyticsSnapshot(rangeKey)
   const stock = getStockHealth(snapshot.products)
