@@ -292,6 +292,24 @@ model Page {
   updatedAt   DateTime @updatedAt
 }
 
+model BlogPost {
+  id              String   @id @default(cuid())
+  title           String
+  slug            String   @unique
+  excerpt         String?
+  content         String?
+  featuredImage   String?
+  status          String   @default("DRAFT") // DRAFT, PUBLISHED
+  publishedAt     DateTime?
+  metaTitle       String?
+  metaDescription String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([slug])
+}
+
 model Menu {
   id        String     @id @default(cuid())
   title     String

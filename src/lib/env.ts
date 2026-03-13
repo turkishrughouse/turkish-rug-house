@@ -6,6 +6,7 @@ const envSchema = z.object({
   AUTH_SECRET: z.string().min(1).optional(),
   NEXTAUTH_SECRET: z.string().min(1).optional(),
   STORAGE_PROVIDER: z.enum(["local"]).default("local"),
+  UPLOAD_ROOT_DIR: z.string().optional(),
   UPLOAD_PUBLIC_BASE_URL: z.string().url().optional(),
   UPLOAD_MAX_FILE_SIZE_MB: z.coerce.number().int().positive().default(15),
   UPLOAD_MIN_WIDTH: z.coerce.number().int().positive().default(600),
@@ -32,4 +33,3 @@ export function getEnv() {
   cachedEnv = env
   return env
 }
-

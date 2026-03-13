@@ -1,10 +1,12 @@
 import { DailyCategoryShowcase } from "@/components/storefront/daily-category-showcase"
 import { FeaturedProducts } from "@/components/storefront/featured-products"
 import { HomeFeaturesStrip } from "@/components/storefront/home-features-strip"
+import { HomeBlogSection } from "@/components/storefront/home-blog-section"
 import { RecentlyViewedSection } from "@/components/storefront/recently-viewed-section"
 import { ShopByStyleSection } from "@/components/storefront/shop-by-style-section"
 import { getCategories } from "@/lib/actions/category-actions"
 import { getProducts } from "@/lib/actions/product-actions"
+import { getPublishedBlogPosts } from "@/lib/blog"
 import { getSiteSettings } from "@/lib/site-settings"
 import { parseProductImages } from "@/lib/product-images"
 
@@ -64,7 +66,11 @@ function resolveHomepageCategoryAlias<T extends { slug: string; title: string }>
 }
 
 export default async function HomePage() {
-  const [categories, siteSettings] = await Promise.all([getCategories(), getSiteSettings()])
+  const [categories, siteSettings, latestBlogPosts] = await Promise.all([
+    getCategories(),
+    getSiteSettings(),
+    getPublishedBlogPosts(4),
+  ])
 
   const rawCategories = categories as Array<{
     id: string
@@ -308,6 +314,8 @@ export default async function HomePage() {
       ))}
 
       <RecentlyViewedSection />
+
+      <HomeBlogSection posts={latestBlogPosts} />
     </div>
   )
 }

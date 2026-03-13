@@ -6,6 +6,7 @@ import {
     BarChart3,
     ShoppingBag,
     FileText,
+    Newspaper,
     Image as ImageIcon,
     Settings,
     Users,
@@ -119,6 +120,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
             ],
         },
         { name: t.sidebar.pages, href: "/dashboard/pages", section: "pages", icon: FileText },
+        { name: t.sidebar.blog, href: "/dashboard/blog", section: "blog", icon: Newspaper },
         {
             name: t.sidebar.media,
             href: "/dashboard/media",

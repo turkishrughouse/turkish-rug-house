@@ -2,21 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { buildCategoryPathMap } from "@/lib/category-paths"
 import { getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
-
-function getSiteUrl() {
-  const configured =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.SITE_URL ||
-    process.env.APP_URL ||
-    "https://turkishrughouse.com"
-
-  const normalized = configured.replace(/\/+$/, "")
-  if (/^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/i.test(normalized)) {
-    return "https://turkishrughouse.com"
-  }
-
-  return normalized
-}
+import { getSiteUrl } from "@/lib/site-url"
 
 function toAbsoluteUrl(path: string) {
   if (!path) return getSiteUrl()
@@ -68,7 +54,7 @@ function shouldIncludeCategoryPath(input: {
 export async function GET() {
   const baseUrl = getSiteUrl()
 
-  const [products, pages, categories, colors, sizes, styles, ages, materials] = await Promise.all([
+  const [products, pages, categories, colors, sizes, styles, ages, materials, blogPosts] = await Promise.all([
     prisma.product.findMany({
       where: { isPublished: true },
       select: {
@@ -95,6 +81,10 @@ export async function GET() {
     prisma.style.findMany({ select: { slug: true, name: true } }),
     prisma.age.findMany({ select: { slug: true, name: true } }),
     prisma.material.findMany({ select: { slug: true, name: true } }),
+    prisma.blogPost.findMany({
+      where: { status: "PUBLISHED", publishedAt: { not: null, lte: new Date() } },
+      select: { slug: true, updatedAt: true },
+    }),
   ])
 
   const { pathById } = buildCategoryPathMap(categories)
@@ -138,9 +128,17 @@ export async function GET() {
       loc: `${baseUrl}/`,
       lastModified: new Date().toISOString(),
     },
+    {
+      loc: `${baseUrl}/blog`,
+      lastModified: new Date().toISOString(),
+    },
     ...pages.map((page) => ({
       loc: `${baseUrl}/${page.slug}`,
       lastModified: page.updatedAt.toISOString(),
+    })),
+    ...blogPosts.map((post) => ({
+      loc: `${baseUrl}/blog/${post.slug}`,
+      lastModified: post.updatedAt.toISOString(),
     })),
     ...categories.map((category) => ({
       category,
