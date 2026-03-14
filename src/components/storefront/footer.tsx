@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
 
 type FooterLink = {
     label: string
@@ -123,6 +124,7 @@ const mapFooterLinks = (items?: FooterMenuNode[]): FooterLink[] => {
 }
 
 export function Footer() {
+    const { formatUsd } = useStorefrontCurrency()
     const [siteName, setSiteName] = React.useState("Turkish Rug House")
     const [tagline, setTagline] = React.useState("Authentic, hand-knotted rugs from the heart of Anatolia. Timeless heritage for your modern home.")
     const [supportEmail, setSupportEmail] = React.useState("info@turkishrughouse.com")
@@ -313,7 +315,7 @@ export function Footer() {
                                         <img src={item.image || "/placeholder.jpg"} alt={item.title} className="h-8 w-8 rounded object-cover border border-slate-200" />
                                         <div className="min-w-0 text-left">
                                             <p className="line-clamp-1 text-[11px] font-medium text-slate-800 hover:text-red-600">{item.title}</p>
-                                            <p className="text-[10px] text-emerald-700">${item.price.toFixed(2)}</p>
+                                            <p className="text-[10px] text-emerald-700">{formatUsd(item.price)}</p>
                                         </div>
                                     </Link>
                                 ))}

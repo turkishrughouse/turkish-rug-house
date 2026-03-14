@@ -5,7 +5,7 @@ import { getEnv } from "@/lib/env"
 import { logger } from "@/lib/logger"
 import { getStorageProvider } from "@/lib/storage/provider"
 import { processUploadImage } from "@/lib/storage/image-pipeline"
-import { ensureMediaRegistryTable, upsertMediaAsset } from "@/lib/media-registry"
+import { ensureMediaRegistryTable, findMediaByChecksum, upsertMediaAsset } from "@/lib/media-registry"
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/avif"])
 
@@ -31,6 +31,18 @@ export async function uploadImage(formData: FormData) {
     const base = uuidv4()
     const folder = "general"
 
+    await ensureMediaRegistryTable()
+    const existing = await findMediaByChecksum(processed.checksum)
+    if (existing.length > 0) {
+      const primary = existing.find((item) => item.is_primary === 1) || existing[0]
+      return {
+        success: false,
+        duplicate: true,
+        error: "This image has already been uploaded.",
+        url: primary.image_url,
+      }
+    }
+
     const variants: Array<{ variant: string; url: string; width?: number; height?: number; size: number; contentType: string; path: string }> = []
     for (const variant of processed.variants) {
       const object = await storage.putObject({
@@ -52,7 +64,6 @@ export async function uploadImage(formData: FormData) {
     }
 
     const master = variants.find((item) => item.variant === "master") || variants[0]
-    await ensureMediaRegistryTable()
     for (const variant of variants) {
       await upsertMediaAsset({
         id: `${base}-${variant.variant}`,
@@ -88,4 +99,3 @@ export async function uploadImage(formData: FormData) {
     return { success: false, error: "Failed to upload file" }
   }
 }
-

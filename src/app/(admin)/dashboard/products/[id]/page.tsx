@@ -79,7 +79,7 @@ export default async function EditProductPage({ params }: PageProps) {
     if (!product) notFound()
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col px-6 pt-6 pb-6">
+        <div className="w-full px-6 pt-6 pb-6">
             <ProductForm lang={lang} initialData={product} options={options} />
         </div>
     )

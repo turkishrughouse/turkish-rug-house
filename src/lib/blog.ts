@@ -1,32 +1,10 @@
+import { unstable_cache } from "next/cache"
 import { Prisma, type BlogPost } from "@prisma/client"
 import { prisma } from "@/lib/db"
+import type { BlogCardItem, BlogListItem, BlogStatus } from "@/lib/blog-shared"
+import { normalizeBlogExcerpt, stripBlogHtml } from "@/lib/blog-shared"
 
 export const BLOG_STATUSES = ["DRAFT", "PUBLISHED"] as const
-export type BlogStatus = (typeof BLOG_STATUSES)[number]
-
-export type BlogCardItem = {
-  id: string
-  title: string
-  slug: string
-  excerpt: string
-  featuredImage: string | null
-  publishedAt: string
-}
-
-export type BlogListItem = {
-  id: string
-  title: string
-  slug: string
-  excerpt: string
-  content: string
-  featuredImage: string | null
-  status: BlogStatus
-  publishedAt: Date | null
-  createdAt: Date
-  updatedAt: Date
-  metaTitle: string | null
-  metaDescription: string | null
-}
 
 export type BlogPostDetail = BlogListItem
 
@@ -52,26 +30,24 @@ export type BlogInput = {
   metaDescription?: string | null
 }
 
-function normalizeExcerpt(value: string | null | undefined) {
-  const clean = (value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
-  if (!clean) return "Discover editorial stories and insights from the world of handmade Turkish rugs."
-  return clean
+async function readPublishedBlogPosts(limit: number): Promise<BlogCardItem[]> {
+  const posts = await prisma.blogPost.findMany({
+    where: publishedWhere(),
+    orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+    take: limit,
+  })
+
+  return posts.map((post) => ({
+    id: post.id,
+    title: post.title,
+    slug: post.slug,
+    excerpt: normalizeBlogExcerpt(post.excerpt),
+    featuredImage: post.featuredImage || null,
+    publishedAt: post.publishedAt?.toISOString() || post.createdAt.toISOString(),
+  }))
 }
 
-export function stripHtml(input: string | null | undefined) {
-  return (input || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
-}
-
-export function formatBlogDate(value: string | Date | null | undefined) {
-  if (!value) return ""
-  const date = typeof value === "string" ? new Date(value) : value
-  if (Number.isNaN(date.getTime())) return ""
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(date)
-}
+export const stripHtml = stripBlogHtml
 
 export function slugifyBlogTitle(input: string) {
   return input
@@ -103,7 +79,7 @@ function toListItem(post: BlogPost): BlogListItem {
     id: post.id,
     title: post.title,
     slug: post.slug,
-    excerpt: normalizeExcerpt(post.excerpt),
+    excerpt: normalizeBlogExcerpt(post.excerpt),
     content: post.content || "",
     featuredImage: post.featuredImage || null,
     status: post.status as BlogStatus,
@@ -123,50 +99,60 @@ function publishedWhere(): Prisma.BlogPostWhereInput {
 }
 
 export async function getPublishedBlogPosts(limit = 4): Promise<BlogCardItem[]> {
-  const posts = await prisma.blogPost.findMany({
-    where: publishedWhere(),
-    orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
-    take: limit,
+  const getCachedPosts = unstable_cache(() => readPublishedBlogPosts(limit), [`blog-published-${limit}`], {
+    revalidate: 300,
+    tags: ["blog-posts"],
   })
-
-  return posts.map((post) => ({
-    id: post.id,
-    title: post.title,
-    slug: post.slug,
-    excerpt: normalizeExcerpt(post.excerpt),
-    featuredImage: post.featuredImage || null,
-    publishedAt: post.publishedAt?.toISOString() || post.createdAt.toISOString(),
-  }))
+  return getCachedPosts()
 }
 
 export async function getAllPublishedBlogPosts() {
-  const posts = await prisma.blogPost.findMany({
-    where: publishedWhere(),
-    orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+  const getCachedPosts = unstable_cache(async () => {
+    const posts = await prisma.blogPost.findMany({
+      where: publishedWhere(),
+      orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+    })
+    return posts.map(toListItem)
+  }, ["blog-all-published"], {
+    revalidate: 300,
+    tags: ["blog-posts"],
   })
-  return posts.map(toListItem)
+  return getCachedPosts()
 }
 
 export async function getPublishedBlogPostBySlug(slug: string) {
-  const post = await prisma.blogPost.findFirst({
-    where: {
-      slug,
-      ...publishedWhere(),
-    },
+  const getCachedPost = unstable_cache(async () => {
+    const post = await prisma.blogPost.findFirst({
+      where: {
+        slug,
+        ...publishedWhere(),
+      },
+    })
+    return post ? toListItem(post) : null
+  }, [`blog-post-${slug}`], {
+    revalidate: 300,
+    tags: ["blog-posts", `blog-post-${slug}`],
   })
-  return post ? toListItem(post) : null
+  return getCachedPost()
 }
 
 export async function getLatestPublishedBlogPosts(excludeSlug?: string, limit = 3) {
-  const posts = await prisma.blogPost.findMany({
-    where: {
-      ...publishedWhere(),
-      ...(excludeSlug ? { slug: { not: excludeSlug } } : {}),
-    },
-    orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
-    take: limit,
+  const cacheKey = excludeSlug ? `blog-latest-${excludeSlug}-${limit}` : `blog-latest-${limit}`
+  const getCachedPosts = unstable_cache(async () => {
+    const posts = await prisma.blogPost.findMany({
+      where: {
+        ...publishedWhere(),
+        ...(excludeSlug ? { slug: { not: excludeSlug } } : {}),
+      },
+      orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+      take: limit,
+    })
+    return posts.map(toListItem)
+  }, [cacheKey], {
+    revalidate: 300,
+    tags: ["blog-posts"],
   })
-  return posts.map(toListItem)
+  return getCachedPosts()
 }
 
 export async function getAdminBlogPosts(input: {

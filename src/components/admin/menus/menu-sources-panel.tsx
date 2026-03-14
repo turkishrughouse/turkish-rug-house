@@ -94,9 +94,6 @@ function PageList({ onAdd, disabled }: { onAdd: SourceItemFunc, disabled: boolea
         }
     }
 
-    // DEBUG: Log render state
-    console.log(`[PageList] Render. Disabled prop: ${disabled}, Selected count: ${selected.size}`)
-
     useEffect(() => {
         loadPages()
     }, [])
@@ -109,7 +106,6 @@ function PageList({ onAdd, disabled }: { onAdd: SourceItemFunc, disabled: boolea
     }
 
     const handleAdd = () => {
-        console.log("[PageList] handleAdd clicked")
         const itemsToAdd = pages
             .filter(p => selected.has(p.id))
             .map(p => ({
@@ -125,7 +121,6 @@ function PageList({ onAdd, disabled }: { onAdd: SourceItemFunc, disabled: boolea
     }
 
     const toggle = (id: string, checked: boolean) => {
-        console.log(`[PageList] Toggle ${id} -> ${checked}`)
         const next = new Set(selected)
         if (checked) next.add(id)
         else next.delete(id)
@@ -188,9 +183,6 @@ function CategoryList({ onAdd, disabled }: { onAdd: SourceItemFunc, disabled: bo
     const [selected, setSelected] = useState<Set<string>>(new Set())
     const [loading, setLoading] = useState(false)
 
-    // DEBUG: Log render state
-    console.log(`[CategoryList] Render. Disabled prop: ${disabled}, Selected count: ${selected.size}`)
-
     useEffect(() => {
         const load = async () => {
             setLoading(true)
@@ -204,7 +196,6 @@ function CategoryList({ onAdd, disabled }: { onAdd: SourceItemFunc, disabled: bo
     }, [])
 
     const toggle = (id: string, checked: boolean) => {
-        console.log(`[CategoryList] Toggle ${id} -> ${checked}`)
         const next = new Set(selected)
         if (checked) next.add(id)
         else next.delete(id)
@@ -224,7 +215,6 @@ function CategoryList({ onAdd, disabled }: { onAdd: SourceItemFunc, disabled: bo
     }
 
     const handleAdd = () => {
-        console.log("[CategoryList] handleAdd clicked")
         const itemsToAdd: any[] = []
         selected.forEach(id => {
             const cat = findCat(categories, id)
@@ -283,9 +273,6 @@ function CategoryList({ onAdd, disabled }: { onAdd: SourceItemFunc, disabled: bo
 function CustomLinkInput({ onAdd, disabled }: { onAdd: SourceItemFunc, disabled: boolean }) {
     const [url, setUrl] = useState("https://")
     const [label, setLabel] = useState("")
-
-    // DEBUG: Log render state
-    console.log(`[CustomLink] Render. Disabled prop: ${disabled}, Label: '${label}', URL: '${url}'`)
 
     const handleAdd = () => {
         onAdd([{ type: "CUSTOM", label, url }])

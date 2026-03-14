@@ -121,8 +121,9 @@ export async function POST(req: NextRequest) {
             if (existingInFolderWithFiles.length > 0) {
                 const primary = existingInFolderWithFiles.find((item) => item.is_primary === 1) || existingInFolderWithFiles[0]
                 return NextResponse.json({
-                    success: true,
+                    success: false,
                     duplicate: true,
+                    error: "This image has already been uploaded to this folder.",
                     url: primary.image_url,
                     variants: existingInFolderWithFiles.map((item) => ({
                         variant: item.variant,
@@ -130,7 +131,7 @@ export async function POST(req: NextRequest) {
                         width: item.width,
                         height: item.height,
                     })),
-                })
+                }, { status: 409 })
             }
         } catch (error) {
             registryAvailable = false

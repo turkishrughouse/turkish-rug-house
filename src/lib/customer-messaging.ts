@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db"
+import { formatOrderCurrency, getOrderDisplaySummary, getSingleOrderDetails } from "@/lib/order-details"
 import { getSiteSettings } from "@/lib/site-settings"
 import { sendSiteEmail } from "@/lib/mailer"
 
@@ -109,6 +110,9 @@ export async function notifyOrderUpdate(
 
   if (!order) return
   if (!shouldSendForEvent(eventType, siteSettings)) return
+  const orderDetails = await getSingleOrderDetails(orderId)
+  const display = getOrderDisplaySummary(orderDetails)
+  const orderTotal = formatOrderCurrency(display.total || Number(order.total || 0), display.displayCurrency)
 
   const sendCustomerPanelMessage = options?.sendCustomerPanelMessage !== false
 
@@ -129,14 +133,13 @@ export async function notifyOrderUpdate(
     await sendSiteEmail({
       to: recipient.email,
       subject: `${title} • ${recipient.orderNumber}`,
-      text: `${content}\n\nView details: ${accountUrl}`,
-      html: `<p>${linkifyText(content)}</p><p><a href="${accountUrl}">View order details</a></p>`,
+      text: `${content}\n\nOrder total: ${orderTotal}\n\nView details: ${accountUrl}`,
+      html: `<p>${linkifyText(content)}</p><p><strong>Order total:</strong> ${escapeHtml(orderTotal)}</p><p><a href="${accountUrl}">View order details</a></p>`,
     })
   }
 
   const adminRecipients = ["senoltr@gmail.com"]
   if (adminRecipients.length > 0) {
-    const orderTotal = Number(order.total || 0).toFixed(2)
     await Promise.all(
       adminRecipients.map((email) =>
         sendSiteEmail({

@@ -73,11 +73,14 @@ export function ShopByCollectionSection({
             >
               <div className="aspect-[3/3.15] w-full overflow-hidden">
                 {category.image ? (
-                  <img
-                    src={category.image}
-                    alt={category.title}
-                    className="h-full w-full object-cover transition-transform duration-500 hover:scale-[1.03]"
-                  />
+                  <>
+                    <img
+                      src={category.image}
+                      alt={category.title}
+                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                    />
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/55 via-black/15 to-transparent" />
+                  </>
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-sm font-semibold uppercase tracking-[0.08em] text-slate-600">
                     {category.title}
@@ -85,9 +88,9 @@ export function ShopByCollectionSection({
                 )}
               </div>
 
-              <div className="pointer-events-none absolute inset-x-0 bottom-8 flex justify-center px-6">
-                <div className="w-full max-w-[360px] bg-black/45 px-5 py-3 text-center shadow-sm">
-                  <p className="text-base font-semibold uppercase tracking-wide text-white">
+              <div className="pointer-events-none absolute bottom-0 left-0 z-10 w-full p-5">
+                <div className="max-w-[80%]">
+                  <p className="text-left text-base font-semibold uppercase tracking-wide text-white">
                     {category.title}
                   </p>
                 </div>

@@ -6,6 +6,17 @@ Required in production:
 - `AUTH_SECRET` (or `NEXTAUTH_SECRET`)
 - `NEXT_PUBLIC_APP_URL`
 
+Payment runtime env:
+- `NEXT_PUBLIC_APP_URL`
+- `DATABASE_URL`
+- `AUTH_SECRET` (or `NEXTAUTH_SECRET`)
+
+Stripe secret material is configured from admin settings, not `.env`:
+- `stripePublishableKey`
+- `stripeSecretKey`
+- `stripeWebhookSecret`
+- optional `stripeAllowedIps`
+
 Image/storage related:
 - `STORAGE_PROVIDER=local` (current)
 - `UPLOAD_PUBLIC_BASE_URL` (optional CDN/domain)
@@ -15,6 +26,25 @@ Image/storage related:
 - `UPLOAD_ENABLE_AVIF`
 
 The app validates environment on startup in [`src/lib/env.ts`](/Users/senolsevim/Documents/Siteler/RugHouse/src/lib/env.ts). Missing required values fail fast.
+
+## 1.1) Stripe Webhook Setup
+Production Stripe webhook URL:
+
+```text
+https://your-domain.com/api/public/payments/stripe/webhook
+```
+
+Subscribe these Stripe events:
+- `checkout.session.completed`
+- `payment_intent.succeeded`
+- `payment_intent.payment_failed`
+- `charge.refunded`
+- `charge.dispute.created`
+
+Operational notes:
+- `checkout.session.completed` and `payment_intent.succeeded` can both arrive; duplicate delivery is safe.
+- Order finalization is webhook-first. Success redirect is only a verified fallback sync.
+- Raw card data is never stored; only provider references such as session ID and payment intent ID are retained.
 
 ## 2) Backup Before Deploy
 Run from repo root:
@@ -49,4 +79,3 @@ Artifacts:
 - Media registry table (`MediaAsset`) stores normalized fields:
   - `image_url`, `width`, `height`, `alt`, `sort_order`, `is_primary`
 - Storage provider abstraction is under `src/lib/storage/*` for future S3/R2/Bunny adapters.
-

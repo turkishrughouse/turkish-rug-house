@@ -29,6 +29,50 @@ function getPeriodStart(period: string) {
   return startWeek
 }
 
+function normalizeUserName(value: string | null | undefined) {
+  return (value || "")
+    .trim()
+    .toLocaleLowerCase("tr-TR")
+    .replace(/\s+/g, " ")
+}
+
+function normalizeCreatedAt(value: unknown) {
+  if (value instanceof Date) return value
+  if (typeof value === "number" && Number.isFinite(value)) return new Date(value)
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    if (/^\d+$/.test(trimmed)) {
+      const asNumber = Number(trimmed)
+      return Number.isFinite(asNumber) ? new Date(asNumber) : null
+    }
+    const parsed = new Date(trimmed)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+  return null
+}
+
+function matchesUser(
+  row: { createdById: string | null; createdByName: string | null },
+  user: { id: string; name: string | null; email: string }
+) {
+  if (row.createdById && row.createdById === user.id) return true
+
+  const rowName = normalizeUserName(row.createdByName)
+  if (!rowName) return false
+
+  const aliases = new Set<string>()
+  const name = normalizeUserName(user.name)
+  const email = normalizeUserName(user.email)
+  const emailLocalPart = normalizeUserName(user.email.split("@")[0] || "")
+
+  if (name) aliases.add(name)
+  if (email) aliases.add(email)
+  if (emailLocalPart) aliases.add(emailLocalPart)
+
+  return aliases.has(rowName)
+}
+
 export async function GET(req: NextRequest) {
   try {
     const user = await getSessionUser("admin")
@@ -56,57 +100,38 @@ export async function GET(req: NextRequest) {
       }),
     ])
 
-    const countByIds = async (userIds: string[], period: string) => {
-      if (userIds.length === 0) return new Map<string, number>()
+    const productRows = await prisma.$queryRawUnsafe<Array<{
+      id: string
+      title: string
+      slug: string
+      sku: string | null
+      createdAt: Date | string | number
+      createdById: string | null
+      createdByName: string | null
+    }>>(
+      `SELECT "id", "title", "slug", "sku", "createdAt", "createdById", "createdByName"
+       FROM "Product"
+       WHERE "deletedAt" IS NULL
+       ORDER BY "createdAt" DESC`
+    )
+
+    const rowsByPeriod = (period: string) => {
       const startAt = getPeriodStart(period)
-      const rows = await prisma.$queryRawUnsafe<Array<{ createdById: string | null; total: number | string }>>(
-        `SELECT "createdById", COUNT(*) as "total"
-         FROM "Product"
-         WHERE "deletedAt" IS NULL
-           AND "createdAt" >= ?
-           AND "createdById" IN (${userIds.map(() => "?").join(",")})
-         GROUP BY "createdById"`,
-        startAt.toISOString(),
-        ...userIds
-      )
-      return new Map(rows.map((row) => [row.createdById || "", Number(row.total || 0)]))
+      return productRows.filter((row) => {
+        const createdAt = normalizeCreatedAt(row.createdAt)
+        return createdAt ? createdAt >= startAt : false
+      })
     }
 
-    const queryProducts = async (userId: string, period: string) => {
-      if (!userId) return [] as Array<{
-        id: string
-        title: string
-        slug: string
-        sku: string | null
-        createdAt: Date | string
-        createdById: string | null
-      }>
-      const startAt = getPeriodStart(period)
-      return prisma.$queryRawUnsafe<Array<{
-        id: string
-        title: string
-        slug: string
-        sku: string | null
-        createdAt: Date | string
-        createdById: string | null
-      }>>(
-        `SELECT "id", "title", "slug", "sku", "createdAt", "createdById"
-         FROM "Product"
-         WHERE "deletedAt" IS NULL
-           AND "createdAt" >= ?
-           AND "createdById" = ?
-         ORDER BY "createdAt" DESC`,
-        startAt.toISOString(),
-        userId
-      )
+    const countForUsers = (users: Array<{ id: string; name: string | null; email: string }>, period: string) => {
+      const rows = rowsByPeriod(period)
+      const map = new Map<string, number>()
+      users.forEach((user) => {
+        const count = rows.reduce((total, row) => (matchesUser(row, user) ? total + 1 : total), 0)
+        map.set(user.id, count)
+      })
+      return map
     }
-
-    const [superProducts, adminProducts, superCounts, adminCounts] = await Promise.all([
-      queryProducts(superUserId, superPeriod),
-      queryProducts(adminUserId, adminPeriod),
-      countByIds(superUsers.map((entry) => entry.id), superPeriod),
-      countByIds(adminUsers.map((entry) => entry.id), adminPeriod),
-    ])
 
     const toUserOption = (account: { id: string; name: string | null; email: string }, counts: Map<string, number>) => {
       const count = Number(counts.get(account.id) || 0)
@@ -121,17 +146,23 @@ export async function GET(req: NextRequest) {
     const buildSection = (
       selectedUserId: string,
       users: Array<{ id: string; name: string | null; email: string }>,
-      products: Array<{ id: string; title: string; slug: string; sku: string | null; createdAt: Date | string; createdById: string | null }>
+      period: string
     ) => {
-      const selected = users.find((entry) => entry.id === selectedUserId) || null
+      const selected = users.find((entry) => entry.id === selectedUserId) || users[0] || null
+      const rows = rowsByPeriod(period)
       const sectionProducts = selected
-        ? products.map((row) => ({
+        ? rows
+            .filter((row) => matchesUser(row, selected))
+            .map((row) => {
+              const createdAt = normalizeCreatedAt(row.createdAt)
+              return {
             id: row.id,
             title: row.title,
             slug: row.slug,
             sku: row.sku,
-            createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : new Date(row.createdAt).toISOString(),
-          }))
+                createdAt: createdAt ? createdAt.toISOString() : new Date(0).toISOString(),
+              }
+            })
         : []
       return {
         selectedUserId: selected?.id || "",
@@ -140,12 +171,15 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const superCounts = countForUsers(superUsers, superPeriod)
+    const adminCounts = countForUsers(adminUsers, adminPeriod)
+
     return NextResponse.json({
       period: "week",
       superUsers: superUsers.map((entry) => toUserOption(entry, superCounts)),
       adminUsers: adminUsers.map((entry) => toUserOption(entry, adminCounts)),
-      superUserSection: buildSection(superUserId, superUsers, superProducts),
-      adminSection: buildSection(adminUserId, adminUsers, adminProducts),
+      superUserSection: buildSection(superUserId, superUsers, superPeriod),
+      adminSection: buildSection(adminUserId, adminUsers, adminPeriod),
     })
   } catch (error) {
     console.error("Dashboard product creators error:", error)

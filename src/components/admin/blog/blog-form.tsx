@@ -30,7 +30,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast } from "sonner"
 import { slugify } from "@/lib/utils"
 import { MediaPickerDialog } from "@/components/admin/media/media-picker-dialog"
-import type { BlogListItem } from "@/lib/blog"
+import type { BlogListItem } from "@/lib/blog-shared"
 
 const blogSchema = z.object({
   title: z.string().min(1, "Title is required"),

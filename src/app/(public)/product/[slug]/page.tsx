@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation"
 import type { Metadata } from "next"
 import type { Prisma } from "@prisma/client"
+import { cache } from "react"
 import { prisma } from "@/lib/db"
 import { ProductDetailView } from "@/components/storefront/product-detail-view"
 import { fetchCategoryPathRows, getCategoryPathById, type CategoryPathRow } from "@/lib/category-paths"
@@ -9,6 +10,8 @@ import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } fr
 type Props = {
   params: Promise<{ slug: string }>
 }
+
+export const revalidate = 300
 
 type CustomAttribute = {
   name: string
@@ -50,6 +53,31 @@ type ProductRecord = Prisma.ProductGetPayload<{
     }
   }
 }>
+
+const getPublishedProductBySlug = cache(async (slug: string) => {
+  return prisma.product.findUnique({
+    where: { slug, isPublished: true },
+    include: {
+      categories: {
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+        },
+      },
+      colors: {
+        select: {
+          id: true,
+        },
+      },
+      sizes: {
+        select: {
+          id: true,
+        },
+      },
+    },
+  }) as Promise<ProductRecord | null>
+})
 
 function stripHtml(input: string | null | undefined) {
   if (!input) return ""
@@ -229,20 +257,7 @@ function parseCustomAttributes(raw: string | null | undefined): CustomAttribute[
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
-  const product = await prisma.product.findUnique({
-    where: { slug, isPublished: true },
-    select: {
-      title: true,
-      description: true,
-      seoTitle: true,
-      images: true,
-      categories: {
-        select: {
-          title: true,
-        },
-      },
-    },
-  })
+  const product = await getPublishedProductBySlug(slug)
 
   if (!product) return { title: "Product Not Found" }
 
@@ -288,28 +303,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ProductPage({ params }: Props) {
   const { slug } = await params
 
-  const product = (await prisma.product.findUnique({
-    where: { slug, isPublished: true },
-    include: {
-      categories: {
-        select: {
-          id: true,
-          title: true,
-          slug: true,
-        },
-      },
-      colors: {
-        select: {
-          id: true,
-        },
-      },
-      sizes: {
-        select: {
-          id: true,
-        },
-      },
-    },
-  })) as ProductRecord
+  const product = await getPublishedProductBySlug(slug)
 
   if (!product) notFound()
   const categoryRows = await fetchCategoryPathRows()

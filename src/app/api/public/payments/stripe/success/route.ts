@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/db"
+import { getSingleOrderDetails } from "@/lib/order-details"
 import { getSiteSettings } from "@/lib/site-settings"
-import { notifyOrderUpdate } from "@/lib/customer-messaging"
-import { grantReviewRightForOrder } from "@/lib/review-access"
-import { saveOrderDetails } from "@/lib/order-details"
+import { finalizePaidOrder } from "@/lib/payment-orders"
 
 export async function GET(req: NextRequest) {
   try {
@@ -21,36 +19,32 @@ export async function GET(req: NextRequest) {
     const res = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {
       headers: { Authorization: `Bearer ${settings.stripeSecretKey}` },
     })
-    const json = await res.json().catch(() => null as null | { payment_status?: string })
+    const json = await res.json().catch(() => null as null | {
+      id?: string
+      payment_status?: string
+      payment_intent?: string
+      metadata?: { orderId?: string }
+    })
     if (!res.ok || json?.payment_status !== "paid") {
       return NextResponse.redirect(new URL(`/basket?payment=failed&order=${encodeURIComponent(orderId)}`, req.nextUrl.origin))
     }
 
-    const updated = await prisma.order.update({
-      where: { id: orderId },
-      data: { status: "PAID" },
-      select: { orderNumber: true },
-    })
-    await prisma.orderEvent.create({
-      data: {
-        orderId,
-        type: "PAYMENT",
-        title: "Payment received",
-        description: "Stripe checkout completed",
-        actorType: "SYSTEM",
-        isAdmin: false,
-      },
-    })
-    await saveOrderDetails(orderId, {
-      paymentStatus: "PAID",
-      paymentMethod: "STRIPE",
-      paymentReference: sessionId,
-      invoiceIssuedAt: new Date().toISOString(),
-    })
+    const details = await getSingleOrderDetails(orderId)
+    if ((details.paymentStatus || "").toUpperCase() !== "PAID") {
+      if ((json?.metadata?.orderId || "") !== orderId) {
+        return NextResponse.redirect(new URL(`/basket?payment=failed&order=${encodeURIComponent(orderId)}`, req.nextUrl.origin))
+      }
 
-    await notifyOrderUpdate(orderId, "Order received", `Your payment for ${updated.orderNumber} was completed.`, "/account", "CREATE")
-    await grantReviewRightForOrder(orderId)
-    return NextResponse.redirect(new URL("/account?payment=success", req.nextUrl.origin))
+      await finalizePaidOrder({
+        orderId,
+        paymentMethod: "STRIPE",
+        paymentReference: json?.id || sessionId,
+        paymentSessionId: json?.id || sessionId,
+        paymentIntentId: typeof json?.payment_intent === "string" ? json.payment_intent : null,
+        eventDescription: "Stripe checkout success redirect verified payment as a fallback sync",
+      })
+    }
+    return NextResponse.redirect(new URL(`/checkout/success?order=${encodeURIComponent(orderId)}`, req.nextUrl.origin))
   } catch {
     return NextResponse.redirect(new URL("/basket?payment=failed", req.nextUrl.origin))
   }

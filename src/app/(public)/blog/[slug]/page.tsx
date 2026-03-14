@@ -3,7 +3,8 @@ import Image from "next/image"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { BlogCard } from "@/components/storefront/blog-card"
-import { getLatestPublishedBlogPosts, getPublishedBlogPostBySlug, formatBlogDate, stripHtml } from "@/lib/blog"
+import { getLatestPublishedBlogPosts, getPublishedBlogPostBySlug } from "@/lib/blog"
+import { formatBlogDate, stripBlogHtml } from "@/lib/blog-shared"
 import { normalizeRichTextHtml } from "@/lib/rich-text"
 import { getSiteUrl, toAbsoluteSiteUrl } from "@/lib/site-url"
 
@@ -13,7 +14,7 @@ type Props = {
 
 function buildBlogMetaDescription(post: Awaited<ReturnType<typeof getPublishedBlogPostBySlug>>) {
   if (!post) return "Article not found."
-  const clean = post.metaDescription?.trim() || stripHtml(post.excerpt || post.content || "")
+  const clean = post.metaDescription?.trim() || stripBlogHtml(post.excerpt || post.content || "")
   return clean.slice(0, 160) || "Editorial insights from Turkish Rug House."
 }
 

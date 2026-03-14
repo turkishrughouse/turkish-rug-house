@@ -2,12 +2,15 @@
 
 import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { ChevronDown, ChevronUp, House, X } from "lucide-react"
+import { ChevronDown, ChevronUp, House } from "lucide-react"
 import { toast } from "sonner"
+import { ResponsiveImage } from "@/components/ui/responsive-image"
 
 import { getCartSummary, getCartUpdateEventName, readCart, type CartItem } from "@/lib/storefront/cart"
-import { formatCurrency, type CurrencySettings } from "@/lib/storefront/currency"
+import { getAddressCountryConfig } from "@/lib/location/catalog"
 import { pickPrimaryImage } from "@/lib/product-images"
+import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
+import { ForgotPasswordModal } from "@/components/storefront/forgot-password-modal"
 
 type Provider = "stripe" | "paypal" | "gpay" | "applepay" | "paytr"
 type PaymentTab = "gpay" | "applepay" | "paypal" | "stripe"
@@ -30,6 +33,8 @@ type PublicSettings = {
   flatShippingRate?: number
   localPickupRate?: number
   enableTaxes?: boolean
+  requirePhoneAtCheckout?: boolean
+  requireAddressAtCheckout?: boolean
 }
 
 type LocationCountry = {
@@ -37,12 +42,31 @@ type LocationCountry = {
   name: string
 }
 
+type RegisterFieldKey =
+  | "firstName"
+  | "lastName"
+  | "email"
+  | "telephone"
+  | "password"
+  | "confirmPassword"
+  | "privacyPolicy"
+
+type BillingFieldKey =
+  | "firstName"
+  | "lastName"
+  | "email"
+  | "telephone"
+  | "addressLine1"
+  | "city"
+  | "postcode"
+  | "country"
+  | "regionState"
+
 const REQUEST_TIMEOUT_MS = 15000
 
 export default function CheckoutPage() {
   const countriesInitializedRef = useRef(false)
   const statesFetchKeyRef = useRef("")
-  const citiesFetchKeyRef = useRef("")
 
   const [items, setItems] = useState<CartItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -63,19 +87,17 @@ export default function CheckoutPage() {
   const [addressLine2, setAddressLine2] = useState("")
   const [city, setCity] = useState("")
   const [postcode, setPostcode] = useState("")
-  const [country, setCountry] = useState("United Kingdom")
-  const [regionState, setRegionState] = useState("Anglesey")
-  const [countryCode, setCountryCode] = useState("GB")
+  const [country, setCountry] = useState("")
+  const [regionState, setRegionState] = useState("")
+  const [countryCode, setCountryCode] = useState("")
   const [countryOptions, setCountryOptions] = useState<LocationCountry[]>([])
   const [stateOptions, setStateOptions] = useState<string[]>([])
-  const [cityOptions, setCityOptions] = useState<string[]>([])
   const [loginEmail, setLoginEmail] = useState("")
   const [loginPassword, setLoginPassword] = useState("")
   const [checkoutOption, setCheckoutOption] = useState<"register" | "guest">("guest")
   const [fallbackBannerImage, setFallbackBannerImage] = useState("")
-  const [authModalMode, setAuthModalMode] = useState<null | "register" | "forgot">(null)
+  const [authModalMode, setAuthModalMode] = useState<null | "forgot">(null)
   const [authLoading, setAuthLoading] = useState(false)
-  const [forgotEmail, setForgotEmail] = useState("")
   const [registerFirstName, setRegisterFirstName] = useState("")
   const [registerLastName, setRegisterLastName] = useState("")
   const [registerEmail, setRegisterEmail] = useState("")
@@ -85,13 +107,67 @@ export default function CheckoutPage() {
   const [registerOptIn, setRegisterOptIn] = useState(true)
   const [registerPolicyAgree, setRegisterPolicyAgree] = useState(false)
   const [showRegisterSuccess, setShowRegisterSuccess] = useState(false)
+  const [registerErrors, setRegisterErrors] = useState<Partial<Record<RegisterFieldKey, string>>>({})
+  const [billingErrors, setBillingErrors] = useState<Partial<Record<BillingFieldKey, string>>>({})
+  const { selectedCurrency, formatUsd } = useStorefrontCurrency()
+  const countryConfig = useMemo(() => getAddressCountryConfig(countryCode), [countryCode])
+  const showRegionField = countryConfig.regionMode !== "none"
+  const regionAsSelect = countryConfig.regionMode === "select" && stateOptions.length > 0
 
-  const currencySettings: CurrencySettings = {
-    defaultCurrency: settings.defaultCurrency || "USD",
-    currencyPosition: settings.currencyPosition || "left",
-    thousandSeparator: settings.thousandSeparator || ".",
-    decimalSeparator: settings.decimalSeparator || ",",
-    numberOfDecimals: typeof settings.numberOfDecimals === "number" ? settings.numberOfDecimals : 2,
+  const inputClassName = "h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm outline-none transition-colors focus:border-teal-700"
+  const invalidInputClassName = "border-red-400 bg-red-50/40 focus:border-red-500"
+
+  const setRegisterErrorValue = (field: RegisterFieldKey, _value?: string) => {
+    void _value
+    setRegisterErrors((current) => {
+      if (!current[field]) return current
+      const next = { ...current }
+      delete next[field]
+      return next
+    })
+  }
+
+  const setBillingErrorValue = (field: BillingFieldKey, _value?: string) => {
+    void _value
+    setBillingErrors((current) => {
+      if (!current[field]) return current
+      const next = { ...current }
+      delete next[field]
+      return next
+    })
+  }
+
+  const validateRegisterFields = () => {
+    const nextErrors: Partial<Record<RegisterFieldKey, string>> = {}
+    if (!registerFirstName.trim()) nextErrors.firstName = "First name is required."
+    if (!registerLastName.trim()) nextErrors.lastName = "Last name is required."
+    if (!registerEmail.trim()) nextErrors.email = "Email is required."
+    else if (!registerEmail.includes("@")) nextErrors.email = "Enter a valid email address."
+    if (!registerPhone.trim()) nextErrors.telephone = "Telephone is required."
+    if (!registerPassword) nextErrors.password = "Password is required."
+    if (!registerPasswordConfirm) nextErrors.confirmPassword = "Please confirm your password."
+    else if (registerPassword !== registerPasswordConfirm) nextErrors.confirmPassword = "Passwords do not match."
+    if (!registerPolicyAgree) nextErrors.privacyPolicy = "You must accept the Privacy Policy."
+
+    setRegisterErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
+  }
+
+  const validateBillingFields = () => {
+    const nextErrors: Partial<Record<BillingFieldKey, string>> = {}
+    if (!firstName.trim()) nextErrors.firstName = "First name is required."
+    if (!lastName.trim()) nextErrors.lastName = "Last name is required."
+    if (!customerEmail.trim()) nextErrors.email = "Email is required."
+    else if (!customerEmail.includes("@")) nextErrors.email = "Enter a valid email address."
+    if (!customerPhone.trim()) nextErrors.telephone = "Telephone is required."
+    if (!addressLine1.trim()) nextErrors.addressLine1 = "Address line 1 is required."
+    if (!city.trim()) nextErrors.city = `${countryConfig.cityLabel} is required.`
+    if (!postcode.trim()) nextErrors.postcode = `${countryConfig.postalCodeLabel} is required.`
+    if (!countryCode || !country.trim()) nextErrors.country = "Country is required."
+    if (countryConfig.regionRequired && !regionState.trim()) nextErrors.regionState = `${countryConfig.regionLabel} is required.`
+
+    setBillingErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
   }
 
   useEffect(() => {
@@ -112,7 +188,7 @@ export default function CheckoutPage() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const res = await fetch("/api/public/settings", { cache: "no-store" })
+        const res = await fetch("/api/public/settings", { cache: "force-cache" })
         if (!res.ok) return
         const data = (await res.json()) as PublicSettings
         setSettings(data)
@@ -191,10 +267,11 @@ export default function CheckoutPage() {
         setCountryOptions(countries)
 
         const byName = countries.find((item) => item.name.toLowerCase() === country.toLowerCase())
-        const current = byName || countries.find((item) => item.code === countryCode) || countries[0]
-        if (!current) return
-        setCountryCode(current.code)
-        setCountry(current.name)
+        const current = byName || countries.find((item) => item.code === countryCode)
+        if (current) {
+          setCountryCode(current.code)
+          setCountry(current.name)
+        }
       } catch {
         // keep defaults
       }
@@ -204,6 +281,10 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (!countryCode) return
+    if (countryConfig.regionMode !== "select") {
+      setStateOptions([])
+      return
+    }
     const fetchKey = `${countryCode}|${country}`
     if (statesFetchKeyRef.current === fetchKey) return
     statesFetchKeyRef.current = fetchKey
@@ -219,47 +300,15 @@ export default function CheckoutPage() {
         const json = (await res.json().catch(() => ({}))) as { states?: string[] }
         const states = Array.isArray(json.states) ? json.states : []
         setStateOptions(states)
-        if (states.length > 0 && !states.includes(regionState)) {
-          setRegionState(states[0])
+        if (countryConfig.regionMode === "select" && regionState.trim() && !states.includes(regionState)) {
+          setRegionState("")
         }
       } catch {
         setStateOptions([])
       }
     }
     void loadStates()
-  }, [countryCode, country, regionState])
-
-  useEffect(() => {
-    if (!countryCode) return
-    const fetchKey = `${countryCode}|${country}|${regionState}`
-    if (citiesFetchKeyRef.current === fetchKey) return
-    citiesFetchKeyRef.current = fetchKey
-    const loadCities = async () => {
-      const params = new URLSearchParams({
-        countryCode,
-        countryName: country,
-      })
-      if (regionState.trim()) {
-        params.set("state", regionState.trim())
-      }
-      try {
-        const res = await fetch(`/api/public/location/cities?${params.toString()}`, { cache: "no-store" })
-        if (!res.ok) {
-          setCityOptions([])
-          return
-        }
-        const json = (await res.json().catch(() => ({}))) as { cities?: string[] }
-        const cities = Array.isArray(json.cities) ? json.cities : []
-        setCityOptions(cities)
-        if (cities.length > 0 && !cities.includes(city)) {
-          setCity(cities[0])
-        }
-      } catch {
-        setCityOptions([])
-      }
-    }
-    void loadCities()
-  }, [countryCode, country, regionState, city])
+  }, [countryCode, country, regionState, countryConfig.regionMode])
 
   const summary = useMemo(() => getCartSummary(items), [items])
   const bannerImage = items[0]?.image || fallbackBannerImage || "/placeholder.jpg"
@@ -274,7 +323,6 @@ export default function CheckoutPage() {
   const shippingLabel = selectedShipping.label
   const ecoTaxAmount = 0
   const vatAmount = settings.enableTaxes ? (summary.total + shippingCost) * 0.1 : 0
-  const taxAmount = vatAmount
   const total = summary.total + shippingCost + ecoTaxAmount + vatAmount
 
   const enabledPaymentTabs = useMemo(() => {
@@ -324,6 +372,26 @@ export default function CheckoutPage() {
       return
     }
 
+    if (settings.requirePhoneAtCheckout && !customerPhone.trim()) {
+      toast.error("Please enter your phone number")
+      return
+    }
+
+    if (!countryCode || !country.trim()) {
+      toast.error("Please select your country")
+      return
+    }
+
+    if (!addressLine1.trim() || !city.trim() || !postcode.trim()) {
+      toast.error("Please complete your address, city, and postal code")
+      return
+    }
+
+    if (countryConfig.regionRequired && !regionState.trim()) {
+      toast.error(`Please enter your ${countryConfig.regionLabel.toLowerCase()}`)
+      return
+    }
+
     if (!enabledPaymentTabs.some((tab) => tab.enabled)) {
       toast.error("No payment provider is enabled")
       return
@@ -350,17 +418,14 @@ export default function CheckoutPage() {
           city: city.trim(),
           postcode: postcode.trim(),
           country: country.trim(),
+          countryCode: countryCode.trim(),
           regionState: regionState.trim(),
+          orderComment: orderComment.trim(),
           shippingMethod,
-          shippingCost,
-          subtotal: summary.total,
-          taxAmount,
-          total,
+          displayCurrency: selectedCurrency,
           items: items.map((item) => ({
             productId: item.productId,
-            title: item.title,
             quantity: item.quantity,
-            price: item.price,
           })),
         }),
       })
@@ -402,53 +467,9 @@ export default function CheckoutPage() {
     }
   }
 
-  const submitForgotPasswordRequest = async () => {
-    const email = forgotEmail.trim()
-    if (!email || !email.includes("@")) {
-      toast.error("Please enter a valid email")
-      return
-    }
-    setAuthLoading(true)
-    let timeoutId: number | undefined
-    try {
-      const controller = new AbortController()
-      timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-      const response = await fetch("/api/messages/contact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          name: "Checkout Customer",
-          email,
-          subject: "Password reset request",
-          message: `Customer requested password reset from checkout page. Email: ${email}`,
-        }),
-      })
-      window.clearTimeout(timeoutId)
-      const data = (await response.json().catch(() => ({}))) as { error?: string }
-      if (!response.ok) throw new Error(data.error || "Could not send reset request")
-      toast.success("Reset request sent. We will contact you shortly.")
-      setForgotEmail("")
-      setAuthModalMode(null)
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        toast.error("Request timed out. Please try again.")
-      } else {
-        toast.error(error instanceof Error ? error.message : "Could not send reset request")
-      }
-    } finally {
-      if (timeoutId) window.clearTimeout(timeoutId)
-      setAuthLoading(false)
-    }
-  }
-
   const submitRegisterFromCheckout = async () => {
-    if (!registerPolicyAgree) {
-      toast.error("Please accept privacy policy")
-      return
-    }
-    if (registerPassword !== registerPasswordConfirm) {
-      toast.error("Passwords do not match")
+    if (!validateRegisterFields()) {
+      toast.error("Please complete the required registration fields")
       return
     }
     setAuthLoading(true)
@@ -475,7 +496,11 @@ export default function CheckoutPage() {
       if (!res.ok) {
         throw new Error(data.error || "Registration failed")
       }
-      setAuthModalMode(null)
+      setCustomerEmail(registerEmail.trim())
+      setCustomerPhone(registerPhone.trim())
+      setFirstName(registerFirstName.trim())
+      setLastName(registerLastName.trim())
+      setLoginEmail(registerEmail.trim())
       setShowRegisterSuccess(true)
       setRegisterFirstName("")
       setRegisterLastName("")
@@ -484,7 +509,9 @@ export default function CheckoutPage() {
       setRegisterPassword("")
       setRegisterPasswordConfirm("")
       setRegisterPolicyAgree(false)
-      setCheckoutOption("guest")
+      setRegisterErrors({})
+      setOpenStep(2)
+      toast.success("Account created")
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         toast.error("Request timed out. Please try again.")
@@ -501,7 +528,14 @@ export default function CheckoutPage() {
     return (
       <div className="min-h-screen bg-[#f5f5f5]">
         <section className="relative overflow-hidden border-b border-slate-200">
-          <img src={bannerImage} alt="Checkout banner" className="absolute inset-0 h-full w-full object-cover object-center" />
+          <ResponsiveImage
+            src={bannerImage}
+            alt="Checkout banner"
+            fill
+            priority
+            sizes="100vw"
+            className="absolute inset-0 object-cover object-center"
+          />
           <div className="absolute inset-0 bg-black/35" />
           <div className="relative mx-auto w-full max-w-[1200px] px-6 py-12 text-center">
             <h1 className="text-4xl font-semibold text-white">Checkout</h1>
@@ -532,7 +566,14 @@ export default function CheckoutPage() {
   return (
     <div className="min-h-screen bg-[#f5f5f5]">
       <section className="relative overflow-hidden border-b border-slate-200">
-        <img src={bannerImage} alt="Checkout banner" className="absolute inset-0 h-full w-full object-cover object-center" />
+        <ResponsiveImage
+          src={bannerImage}
+          alt="Checkout banner"
+          fill
+          priority
+          sizes="100vw"
+          className="absolute inset-0 object-cover object-center"
+        />
         <div className="absolute inset-0 bg-black/35" />
         <div className="relative mx-auto w-full max-w-[1200px] px-4 py-10 text-center sm:px-6 sm:py-12">
           <h1 className="text-3xl font-semibold text-white sm:text-4xl">Checkout</h1>
@@ -604,7 +645,7 @@ export default function CheckoutPage() {
                           checked={checkoutOption === "register"}
                           onChange={() => {
                             setCheckoutOption("register")
-                            setAuthModalMode("register")
+                            setShowRegisterSuccess(false)
                           }}
                         />
                         Register Account
@@ -621,18 +662,82 @@ export default function CheckoutPage() {
                     <p className="mt-6 text-base leading-relaxed text-slate-600">
                       By creating an account you will be able to shop faster, be up to date on an order’s status, and keep track of the orders you have previously made.
                     </p>
+                    <div
+                      className={`grid transition-all duration-200 ease-out ${
+                        checkoutOption === "register" ? "mt-6 grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                      }`}
+                    >
+                      <div className="overflow-hidden">
+                        <div className="rounded-2xl border border-[#dce3ed] bg-[#f8fafc] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-1.5">
+                              <label className="text-sm font-medium text-slate-700">First Name</label>
+                              <input value={registerFirstName} onChange={(event) => { setRegisterFirstName(event.target.value); setRegisterErrorValue("firstName", event.target.value) }} className={`${inputClassName} ${registerErrors.firstName ? invalidInputClassName : ""}`} placeholder="First Name" />
+                              {registerErrors.firstName ? <p className="text-xs text-red-600">{registerErrors.firstName}</p> : null}
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-sm font-medium text-slate-700">Last Name</label>
+                              <input value={registerLastName} onChange={(event) => { setRegisterLastName(event.target.value); setRegisterErrorValue("lastName", event.target.value) }} className={`${inputClassName} ${registerErrors.lastName ? invalidInputClassName : ""}`} placeholder="Last Name" />
+                              {registerErrors.lastName ? <p className="text-xs text-red-600">{registerErrors.lastName}</p> : null}
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-sm font-medium text-slate-700">Email</label>
+                              <input type="email" value={registerEmail} onChange={(event) => { setRegisterEmail(event.target.value); setRegisterErrorValue("email", event.target.value) }} className={`${inputClassName} ${registerErrors.email ? invalidInputClassName : ""}`} placeholder="Email" />
+                              {registerErrors.email ? <p className="text-xs text-red-600">{registerErrors.email}</p> : null}
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-sm font-medium text-slate-700">Telephone</label>
+                              <input value={registerPhone} onChange={(event) => { setRegisterPhone(event.target.value); setRegisterErrorValue("telephone", event.target.value) }} className={`${inputClassName} ${registerErrors.telephone ? invalidInputClassName : ""}`} placeholder="Telephone" />
+                              {registerErrors.telephone ? <p className="text-xs text-red-600">{registerErrors.telephone}</p> : null}
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-sm font-medium text-slate-700">Password</label>
+                              <input type="password" value={registerPassword} onChange={(event) => { setRegisterPassword(event.target.value); setRegisterErrorValue("password", event.target.value) }} className={`${inputClassName} ${registerErrors.password ? invalidInputClassName : ""}`} placeholder="Password" />
+                              {registerErrors.password ? <p className="text-xs text-red-600">{registerErrors.password}</p> : null}
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-sm font-medium text-slate-700">Confirm Password</label>
+                              <input type="password" value={registerPasswordConfirm} onChange={(event) => { setRegisterPasswordConfirm(event.target.value); setRegisterErrorValue("confirmPassword", event.target.value) }} className={`${inputClassName} ${registerErrors.confirmPassword ? invalidInputClassName : ""}`} placeholder="Confirm Password" />
+                              {registerErrors.confirmPassword ? <p className="text-xs text-red-600">{registerErrors.confirmPassword}</p> : null}
+                            </div>
+                          </div>
+                          <div className="mt-4 flex flex-col gap-3">
+                            <label className="flex w-full items-start gap-3 text-sm leading-6 text-slate-700">
+                              <input className="mt-1 h-4 w-4 shrink-0" type="checkbox" checked={registerPolicyAgree} onChange={(event) => { setRegisterPolicyAgree(event.target.checked); if (event.target.checked) setRegisterErrors((current) => { const next = { ...current }; delete next.privacyPolicy; return next }) }} />
+                              <span>
+                                I have read and agree to the{" "}
+                                <Link href="/info/privacy-policy" className="text-teal-700 underline underline-offset-4">
+                                  Privacy Policy
+                                </Link>
+                              </span>
+                            </label>
+                            <label className="flex w-full items-start gap-3 text-sm leading-6 text-slate-700">
+                              <input className="mt-1 h-4 w-4 shrink-0" type="checkbox" checked={registerOptIn} onChange={(event) => setRegisterOptIn(event.target.checked)} />
+                              <span>Subscribe to the newsletter</span>
+                            </label>
+                            {registerErrors.privacyPolicy ? <p className="text-xs text-red-600">{registerErrors.privacyPolicy}</p> : null}
+                          </div>
+                          {showRegisterSuccess ? (
+                            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                              Account created successfully. Continue with billing details below.
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
                     <button
                       type="button"
                       onClick={() => {
                         if (checkoutOption === "register") {
-                          setAuthModalMode("register")
+                          void submitRegisterFromCheckout()
                           return
                         }
                         setOpenStep(2)
                       }}
-                      className="mt-10 inline-flex h-12 w-full items-center justify-center rounded-full bg-teal-700 text-base font-semibold text-white hover:bg-teal-800"
+                      disabled={authLoading}
+                      className="mt-10 inline-flex h-12 w-full items-center justify-center rounded-full bg-teal-700 text-base font-semibold text-white hover:bg-teal-800 disabled:opacity-60"
                     >
-                      Continue
+                      {checkoutOption === "register" ? (authLoading ? "Please wait..." : "Create Account & Continue") : "Continue"}
                     </button>
                   </div>
                 </div>
@@ -653,19 +758,31 @@ export default function CheckoutPage() {
                     <div className="mt-10 space-y-4">
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">First Name *</label>
-                        <input value={firstName} onChange={(e) => setFirstName(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="First Name" />
+                        <div>
+                          <input value={firstName} onChange={(e) => { setFirstName(e.target.value); setBillingErrorValue("firstName", e.target.value) }} className={`h-11 w-full rounded border px-4 text-base ${billingErrors.firstName ? "border-red-400 bg-red-50/40" : "border-slate-300"}`} placeholder="First Name" />
+                          {billingErrors.firstName ? <p className="mt-1 text-xs text-red-600">{billingErrors.firstName}</p> : null}
+                        </div>
                       </div>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">Last Name *</label>
-                        <input value={lastName} onChange={(e) => setLastName(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="Last Name" />
+                        <div>
+                          <input value={lastName} onChange={(e) => { setLastName(e.target.value); setBillingErrorValue("lastName", e.target.value) }} className={`h-11 w-full rounded border px-4 text-base ${billingErrors.lastName ? "border-red-400 bg-red-50/40" : "border-slate-300"}`} placeholder="Last Name" />
+                          {billingErrors.lastName ? <p className="mt-1 text-xs text-red-600">{billingErrors.lastName}</p> : null}
+                        </div>
                       </div>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">E-Mail *</label>
-                        <input value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} type="email" className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="E-Mail" />
+                        <div>
+                          <input value={customerEmail} onChange={(e) => { setCustomerEmail(e.target.value); setBillingErrorValue("email", e.target.value) }} type="email" className={`h-11 w-full rounded border px-4 text-base ${billingErrors.email ? "border-red-400 bg-red-50/40" : "border-slate-300"}`} placeholder="E-Mail" />
+                          {billingErrors.email ? <p className="mt-1 text-xs text-red-600">{billingErrors.email}</p> : null}
+                        </div>
                       </div>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">Telephone *</label>
-                        <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="Telephone" />
+                        <div>
+                          <input value={customerPhone} onChange={(e) => { setCustomerPhone(e.target.value); setBillingErrorValue("telephone", e.target.value) }} className={`h-11 w-full rounded border px-4 text-base ${billingErrors.telephone ? "border-red-400 bg-red-50/40" : "border-slate-300"}`} placeholder="Telephone" />
+                          {billingErrors.telephone ? <p className="mt-1 text-xs text-red-600">{billingErrors.telephone}</p> : null}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -679,7 +796,10 @@ export default function CheckoutPage() {
                       </div>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">Address 1 *</label>
-                        <input value={addressLine1} onChange={(e) => setAddressLine1(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="Address 1" />
+                        <div>
+                          <input value={addressLine1} onChange={(e) => { setAddressLine1(e.target.value); setBillingErrorValue("addressLine1", e.target.value) }} className={`h-11 w-full rounded border px-4 text-base ${billingErrors.addressLine1 ? "border-red-400 bg-red-50/40" : "border-slate-300"}`} placeholder="Address 1" />
+                          {billingErrors.addressLine1 ? <p className="mt-1 text-xs text-red-600">{billingErrors.addressLine1}</p> : null}
+                        </div>
                       </div>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">Address 2</label>
@@ -687,51 +807,95 @@ export default function CheckoutPage() {
                       </div>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">City *</label>
-                        {cityOptions.length > 0 ? (
-                          <select value={city} onChange={(e) => setCity(e.target.value)} className="h-11 rounded border border-slate-300 bg-white px-4 text-base">
-                            {cityOptions.map((cityName) => (
-                              <option key={cityName} value={cityName}>{cityName}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input value={city} onChange={(e) => setCity(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="City" />
-                        )}
+                        <div>
+                          <input
+                            value={city}
+                            onChange={(e) => { setCity(e.target.value); setBillingErrorValue("city", e.target.value) }}
+                            className={`h-11 w-full rounded border px-4 text-base ${billingErrors.city ? "border-red-400 bg-red-50/40" : "border-slate-300"}`}
+                            placeholder={countryConfig.cityLabel}
+                            autoComplete="address-level2"
+                          />
+                          {billingErrors.city ? <p className="mt-1 text-xs text-red-600">{billingErrors.city}</p> : null}
+                        </div>
                       </div>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
-                        <label className="text-base text-slate-600">Post Code *</label>
-                        <input value={postcode} onChange={(e) => setPostcode(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="Post Code" />
+                        <label className="text-base text-slate-600">{countryConfig.postalCodeLabel} *</label>
+                        <div>
+                          <input
+                            value={postcode}
+                            onChange={(e) => { setPostcode(e.target.value); setBillingErrorValue("postcode", e.target.value) }}
+                            className={`h-11 w-full rounded border px-4 text-base ${billingErrors.postcode ? "border-red-400 bg-red-50/40" : "border-slate-300"}`}
+                            placeholder={countryConfig.postalCodeLabel}
+                            autoComplete="postal-code"
+                          />
+                          {billingErrors.postcode ? <p className="mt-1 text-xs text-red-600">{billingErrors.postcode}</p> : null}
+                        </div>
                       </div>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">Country *</label>
-                        <select
-                          value={countryCode}
-                          onChange={(e) => {
-                            const code = e.target.value
-                            setCountryCode(code)
-                            const selected = countryOptions.find((item) => item.code === code)
-                            if (selected) setCountry(selected.name)
-                            setRegionState("")
-                            setCity("")
-                          }}
-                          className="h-11 rounded border border-slate-300 bg-white px-4 text-base"
-                        >
-                          {countryOptions.length > 0 ? countryOptions.map((item) => (
-                            <option key={item.code} value={item.code}>{item.name}</option>
-                          )) : <option value={countryCode}>{country}</option>}
-                        </select>
-                      </div>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
-                        <label className="text-base text-slate-600">Region / State *</label>
-                        {stateOptions.length > 0 ? (
-                          <select value={regionState} onChange={(e) => setRegionState(e.target.value)} className="h-11 rounded border border-slate-300 bg-white px-4 text-base">
-                            {stateOptions.map((stateName) => (
-                              <option key={stateName} value={stateName}>{stateName}</option>
-                            ))}
+                        <div>
+                          <select
+                            value={countryCode}
+                            onChange={(e) => {
+                              const code = e.target.value
+                              setCountryCode(code)
+                              const selected = countryOptions.find((item) => item.code === code)
+                              setCountry(selected?.name || "")
+                              setRegionState("")
+                              setBillingErrorValue("country", code)
+                              setBillingErrors((current) => {
+                                if (!current.regionState) return current
+                                const next = { ...current }
+                                delete next.regionState
+                                return next
+                              })
+                            }}
+                            className={`h-11 w-full rounded border bg-white px-4 text-base ${billingErrors.country ? "border-red-400 bg-red-50/40" : "border-slate-300"}`}
+                            autoComplete="country"
+                          >
+                            <option value="">Select country</option>
+                            {countryOptions.length > 0 ? countryOptions.map((item) => (
+                              <option key={item.code} value={item.code}>{item.name}</option>
+                            )) : countryCode ? <option value={countryCode}>{country}</option> : null}
                           </select>
-                        ) : (
-                          <input value={regionState} onChange={(e) => setRegionState(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="Region / State" />
-                        )}
+                          {billingErrors.country ? <p className="mt-1 text-xs text-red-600">{billingErrors.country}</p> : null}
+                        </div>
                       </div>
+                      {showRegionField ? (
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
+                          <label className="text-base text-slate-600">
+                            {countryConfig.regionLabel}
+                            {countryConfig.regionRequired ? " *" : ""}
+                          </label>
+                          {regionAsSelect ? (
+                            <div>
+                              <select
+                                value={regionState}
+                                onChange={(e) => { setRegionState(e.target.value); setBillingErrorValue("regionState", e.target.value) }}
+                                className={`h-11 w-full rounded border bg-white px-4 text-base ${billingErrors.regionState ? "border-red-400 bg-red-50/40" : "border-slate-300"}`}
+                                autoComplete="address-level1"
+                              >
+                                <option value="">{`Select ${countryConfig.regionLabel}`}</option>
+                                {stateOptions.map((stateName) => (
+                                  <option key={stateName} value={stateName}>{stateName}</option>
+                                ))}
+                              </select>
+                              {billingErrors.regionState ? <p className="mt-1 text-xs text-red-600">{billingErrors.regionState}</p> : null}
+                            </div>
+                          ) : (
+                            <div>
+                              <input
+                                value={regionState}
+                                onChange={(e) => { setRegionState(e.target.value); setBillingErrorValue("regionState", e.target.value) }}
+                                className={`h-11 w-full rounded border px-4 text-base ${billingErrors.regionState ? "border-red-400 bg-red-50/40" : "border-slate-300"}`}
+                                placeholder={countryConfig.regionLabel}
+                                autoComplete="address-level1"
+                              />
+                              {billingErrors.regionState ? <p className="mt-1 text-xs text-red-600">{billingErrors.regionState}</p> : null}
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -739,7 +903,13 @@ export default function CheckoutPage() {
                   <input type="checkbox" checked={deliverySameAsBilling} onChange={(e) => setDeliverySameAsBilling(e.target.checked)} />
                   My delivery and billing addresses are the same.
                 </label>
-                <button type="button" onClick={() => setOpenStep(3)} className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-full bg-teal-700 text-base font-semibold text-white hover:bg-teal-800">
+                <button type="button" onClick={() => {
+                  if (!validateBillingFields()) {
+                    toast.error("Please complete the required billing details")
+                    return
+                  }
+                  setOpenStep(3)
+                }} className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-full bg-teal-700 text-base font-semibold text-white hover:bg-teal-800">
                   Continue
                 </button>
               </div>
@@ -805,7 +975,7 @@ export default function CheckoutPage() {
                         </span>
                       </div>
                       <p className="mt-3 text-base text-slate-700">
-                        {option.label} - {formatCurrency(option.price, currencySettings)}
+                        {option.label} - {formatUsd(option.price)}
                       </p>
                     </button>
                   ))}
@@ -852,10 +1022,9 @@ export default function CheckoutPage() {
                   <h5 className="text-base font-semibold text-slate-900">{paymentPanel.title}</h5>
                   <p className="mt-2 text-base text-slate-600">{paymentPanel.description}</p>
                   {paymentTab === "stripe" ? (
-                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                      <input className="h-11 rounded border border-slate-300 px-3 text-sm" placeholder="Card Number" />
-                      <input className="h-11 rounded border border-slate-300 px-3 text-sm" placeholder="MM / YY" />
-                      <input className="h-11 rounded border border-slate-300 px-3 text-sm" placeholder="CVC" />
+                    <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-4 text-sm leading-6 text-slate-700">
+                      Card details are entered securely on Stripe after you confirm the order.
+                      We do not store your card number, expiry date, or CVC in our database.
                     </div>
                   ) : null}
                   {paymentTab === "paypal" ? (
@@ -864,9 +1033,11 @@ export default function CheckoutPage() {
                     </p>
                   ) : null}
                   {paymentTab === "gpay" || paymentTab === "applepay" ? (
-                    <button type="button" className="mt-4 inline-flex h-11 items-center rounded-md border border-slate-900 px-4 text-sm font-semibold text-slate-900">
-                      {paymentTab === "gpay" ? "Pay with GPay" : "Pay with Apple Pay"}
-                    </button>
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-700">
+                      {paymentTab === "gpay"
+                        ? "You will continue to Google Pay on Stripe's secure payment page."
+                        : "You will continue to Apple Pay on Stripe's secure payment page."}
+                    </div>
                   ) : null}
                 </div>
                 <h4 className="mt-6 text-xl font-semibold text-slate-700">Add Comments About Your Order</h4>
@@ -912,29 +1083,29 @@ export default function CheckoutPage() {
                       </div>
                       <div className="border-r border-slate-300 p-3">model-{item.productId.slice(-4)}</div>
                       <div className="border-r border-slate-300 p-3 text-right">{item.quantity}</div>
-                      <div className="border-r border-slate-300 p-3 text-right">{formatCurrency(item.price, currencySettings)}</div>
-                      <div className="p-3 text-right">{formatCurrency(item.price * item.quantity, currencySettings)}</div>
+                      <div className="border-r border-slate-300 p-3 text-right">{formatUsd(item.price)}</div>
+                      <div className="p-3 text-right">{formatUsd(item.price * item.quantity)}</div>
                     </div>
                   ))}
                   <div className="grid grid-cols-[4.1fr_0.9fr] border-t border-slate-300 text-[15px]">
                     <div className="border-r border-slate-300 p-3 text-right font-semibold text-slate-700">Sub-Total:</div>
-                    <div className="p-3 text-right">{formatCurrency(summary.total, currencySettings)}</div>
+                    <div className="p-3 text-right">{formatUsd(summary.total)}</div>
                   </div>
                   <div className="grid grid-cols-[4.1fr_0.9fr] border-t border-slate-300 text-[15px]">
                     <div className="border-r border-slate-300 p-3 text-right font-semibold text-slate-700">{shippingLabel} Shipping:</div>
-                    <div className="p-3 text-right">{formatCurrency(shippingCost, currencySettings)}</div>
+                    <div className="p-3 text-right">{formatUsd(shippingCost)}</div>
                   </div>
                   <div className="grid grid-cols-[4.1fr_0.9fr] border-t border-slate-300 text-[15px]">
                     <div className="border-r border-slate-300 p-3 text-right font-semibold text-slate-700">Eco Tax (-2.00):</div>
-                    <div className="p-3 text-right">{formatCurrency(ecoTaxAmount, currencySettings)}</div>
+                    <div className="p-3 text-right">{formatUsd(ecoTaxAmount)}</div>
                   </div>
                   <div className="grid grid-cols-[4.1fr_0.9fr] border-t border-slate-300 text-[15px]">
                     <div className="border-r border-slate-300 p-3 text-right font-semibold text-slate-700">VAT (20%):</div>
-                    <div className="p-3 text-right">{formatCurrency(vatAmount, currencySettings)}</div>
+                    <div className="p-3 text-right">{formatUsd(vatAmount)}</div>
                   </div>
                   <div className="grid grid-cols-[4.1fr_0.9fr] border-t border-slate-300 text-[18px] font-semibold">
                     <div className="border-r border-slate-300 p-3 text-right text-slate-700">Total:</div>
-                    <div className="p-3 text-right">{formatCurrency(total, currencySettings)}</div>
+                    <div className="p-3 text-right">{formatUsd(total)}</div>
                   </div>
                   </div>
                   </div>
@@ -953,130 +1124,12 @@ export default function CheckoutPage() {
         </div>
       </div>
 
-      {authModalMode === "forgot" ? (
-        <div className="fixed inset-0 z-[260] flex items-center justify-center bg-black/55 p-4">
-          <div className="relative w-full max-w-[480px] rounded-md bg-white px-6 py-6 shadow-2xl">
-            <button
-              type="button"
-              className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
-              onClick={() => setAuthModalMode(null)}
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <h3 className="text-2xl font-semibold text-slate-900">Forgotten Password</h3>
-            <p className="mt-2 text-sm text-slate-600">Enter your account e-mail, we will help you reset your password.</p>
-            <div className="mt-5 space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">E-Mail Address</label>
-              <input
-                type="email"
-                value={forgotEmail}
-                onChange={(event) => setForgotEmail(event.target.value)}
-                className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-500"
-                placeholder="E-Mail Address"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={submitForgotPasswordRequest}
-              disabled={authLoading}
-              className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-md bg-teal-700 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-70"
-            >
-              {authLoading ? "Please wait..." : "Send Request"}
-            </button>
-          </div>
-        </div>
-      ) : null}
+      <ForgotPasswordModal
+        open={authModalMode === "forgot"}
+        onClose={() => setAuthModalMode(null)}
+        initialEmail={loginEmail}
+      />
 
-      {authModalMode === "register" ? (
-        <div className="fixed inset-0 z-[260] flex items-center justify-center bg-black/55 p-4">
-          <div className="relative w-full max-w-[640px] max-h-[88vh] overflow-y-auto rounded-md bg-white px-6 py-6 shadow-2xl">
-            <button
-              type="button"
-              className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
-              onClick={() => setAuthModalMode(null)}
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <h3 className="text-2xl font-semibold text-slate-900">Your Personal Details</h3>
-            <div className="mt-5 space-y-3.5">
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700">First Name</label>
-                <input value={registerFirstName} onChange={(event) => setRegisterFirstName(event.target.value)} className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-500" placeholder="First Name" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700">Last Name</label>
-                <input value={registerLastName} onChange={(event) => setRegisterLastName(event.target.value)} className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-500" placeholder="Last Name" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700">E-Mail *</label>
-                <input type="email" value={registerEmail} onChange={(event) => setRegisterEmail(event.target.value)} className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-500" placeholder="E-Mail" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700">Telephone</label>
-                <input value={registerPhone} onChange={(event) => setRegisterPhone(event.target.value)} className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-500" placeholder="Telephone" />
-              </div>
-              <h4 className="pt-1 text-xl font-semibold text-slate-900">Your Password</h4>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700">Password *</label>
-                <input type="password" value={registerPassword} onChange={(event) => setRegisterPassword(event.target.value)} className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-500" placeholder="Password" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700">Password Confirm *</label>
-                <input type="password" value={registerPasswordConfirm} onChange={(event) => setRegisterPasswordConfirm(event.target.value)} className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-500" placeholder="Password Confirm" />
-              </div>
-              <h4 className="pt-1 text-xl font-semibold text-slate-900">Newsletter</h4>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700">Subscribe</label>
-                <div className="flex items-center gap-6 text-sm text-slate-700">
-                  <label className="inline-flex items-center gap-2">
-                    <input type="radio" name="checkout-register-subscribe" checked={registerOptIn} onChange={() => setRegisterOptIn(true)} />
-                    <span>Yes</span>
-                  </label>
-                  <label className="inline-flex items-center gap-2">
-                    <input type="radio" name="checkout-register-subscribe" checked={!registerOptIn} onChange={() => setRegisterOptIn(false)} />
-                    <span>No</span>
-                  </label>
-                </div>
-              </div>
-              <label className="inline-flex items-center gap-2 pt-1 text-sm text-slate-700">
-                <input type="checkbox" checked={registerPolicyAgree} onChange={(event) => setRegisterPolicyAgree(event.target.checked)} />
-                <span>
-                  I have read and agree to the{" "}
-                  <Link href="/info/privacy-policy" className="text-teal-700 underline underline-offset-4">
-                    Privacy Policy
-                  </Link>
-                </span>
-              </label>
-              <button
-                type="button"
-                onClick={submitRegisterFromCheckout}
-                disabled={authLoading}
-                className="inline-flex h-10 w-full items-center justify-center rounded-md bg-teal-700 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-70"
-              >
-                {authLoading ? "Please wait..." : "Register"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {showRegisterSuccess ? (
-        <div className="fixed inset-0 z-[261] flex items-center justify-center bg-black/45 p-4">
-          <div className="w-full max-w-[420px] rounded-md bg-white p-5 shadow-2xl">
-            <h4 className="text-base font-semibold text-slate-900">Registration completed</h4>
-            <p className="mt-2 text-sm text-slate-600">
-              Your account has been created successfully. You can log in immediately.
-            </p>
-            <button
-              type="button"
-              className="mt-4 inline-flex h-9 w-full items-center justify-center rounded-md bg-teal-700 text-sm font-semibold text-white hover:bg-teal-800"
-              onClick={() => setShowRegisterSuccess(false)}
-            >
-              OK
-            </button>
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }

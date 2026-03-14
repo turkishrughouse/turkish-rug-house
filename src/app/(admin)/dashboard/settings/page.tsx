@@ -3,10 +3,14 @@ import { getSiteSettings } from "@/lib/site-settings"
 import { getSessionUser } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { adminText, resolveAdminLanguage } from "@/lib/admin/i18n"
+import { getCurrencyRateDiagnostics } from "@/lib/storefront/currency-server"
 
 export default async function SettingsPage() {
   const user = await getSessionUser("admin")
-  const settings = await getSiteSettings()
+  const [settings, currencyDiagnostics] = await Promise.all([
+    getSiteSettings(),
+    getCurrencyRateDiagnostics(),
+  ])
   const profile = user
     ? await prisma.customerProfile.findUnique({
         where: { userId: user.id },
@@ -25,7 +29,11 @@ export default async function SettingsPage() {
 
       <div className="h-px bg-border-subtle" />
 
-      <SettingsForm initialSettings={settings} initialAdminLocale={profile?.locale || "en_US"} />
+      <SettingsForm
+        initialSettings={settings}
+        initialAdminLocale={profile?.locale || "en_US"}
+        currencyDiagnostics={currencyDiagnostics}
+      />
     </div>
   )
 }

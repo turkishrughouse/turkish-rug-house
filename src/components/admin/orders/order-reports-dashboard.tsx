@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useMemo, useState } from "react"
+import { useMemo, useState, useSyncExternalStore } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from "recharts"
 
@@ -27,6 +27,10 @@ type ReportView = "sales_by_date" | "sales_by_product" | "sales_by_category" | "
 
 const SALES_STATUSES = new Set(["PAID", "FULFILLED", "COMPLETED"])
 const REFUNDED_STATUSES = new Set(["CANCELLED", "REFUNDED"])
+
+function subscribeToHydration() {
+  return () => {}
+}
 
 function startOfDay(value: Date) {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate())
@@ -93,6 +97,7 @@ export function OrderReportsDashboard({
   const [customTo, setCustomTo] = useState("")
   const [appliedCustomFrom, setAppliedCustomFrom] = useState("")
   const [appliedCustomTo, setAppliedCustomTo] = useState("")
+  const chartsReady = useSyncExternalStore(subscribeToHydration, () => true, () => false)
 
   const { from, to } = useMemo(
     () => getRangeDates(range, appliedCustomFrom, appliedCustomTo),
@@ -262,22 +267,26 @@ export function OrderReportsDashboard({
             </div>
             <div className="p-3">
               <div className="h-[360px] rounded-sm border border-[#dcdcde] bg-white p-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={salesByDate} margin={{ top: 20, right: 20, left: 0, bottom: 20 }}>
-                    <CartesianGrid vertical={false} stroke="#edf0f4" />
-                    <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#8b95a7", fontSize: 11 }} />
-                    <YAxis tickLine={false} axisLine={false} tick={{ fill: "#8b95a7", fontSize: 11 }} />
-                    <Tooltip formatter={(value) => [formatMoney(Number(value ?? 0)), "Sales"]} />
-                    <Line
-                      type="monotone"
-                      dataKey="sales"
-                      stroke="#2b8fce"
-                      strokeWidth={2.5}
-                      dot={{ r: 4, stroke: "#e55a54", strokeWidth: 2, fill: "#ffffff" }}
-                      activeDot={{ r: 5, stroke: "#e55a54", strokeWidth: 2, fill: "#ffffff" }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                {chartsReady ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={salesByDate} margin={{ top: 20, right: 20, left: 0, bottom: 20 }}>
+                      <CartesianGrid vertical={false} stroke="#edf0f4" />
+                      <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#8b95a7", fontSize: 11 }} />
+                      <YAxis tickLine={false} axisLine={false} tick={{ fill: "#8b95a7", fontSize: 11 }} />
+                      <Tooltip formatter={(value) => [formatMoney(Number(value ?? 0)), "Sales"]} />
+                      <Line
+                        type="monotone"
+                        dataKey="sales"
+                        stroke="#2b8fce"
+                        strokeWidth={2.5}
+                        dot={{ r: 4, stroke: "#e55a54", strokeWidth: 2, fill: "#ffffff" }}
+                        activeDot={{ r: 5, stroke: "#e55a54", strokeWidth: 2, fill: "#ffffff" }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full w-full animate-pulse rounded-sm bg-slate-100" />
+                )}
               </div>
             </div>
           </div>
@@ -309,15 +318,19 @@ export function OrderReportsDashboard({
             </div>
             <div className="rounded-sm border border-[#dcdcde] p-2">
               <div className="h-[320px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={productRows.slice(0, 8)}>
-                    <CartesianGrid vertical={false} stroke="#edf0f4" />
-                    <XAxis dataKey="title" tick={{ fontSize: 10 }} tickFormatter={(v) => String(v).slice(0, 10)} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip formatter={(value) => [formatMoney(Number(value ?? 0)), "Revenue"]} />
-                    <Bar dataKey="revenue" fill="#2b8fce" radius={[3, 3, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                {chartsReady ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={productRows.slice(0, 8)}>
+                      <CartesianGrid vertical={false} stroke="#edf0f4" />
+                      <XAxis dataKey="title" tick={{ fontSize: 10 }} tickFormatter={(v) => String(v).slice(0, 10)} />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <Tooltip formatter={(value) => [formatMoney(Number(value ?? 0)), "Revenue"]} />
+                      <Bar dataKey="revenue" fill="#2b8fce" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full w-full animate-pulse rounded-sm bg-slate-100" />
+                )}
               </div>
             </div>
           </div>

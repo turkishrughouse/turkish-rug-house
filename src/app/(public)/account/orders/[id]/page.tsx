@@ -2,6 +2,7 @@ import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { getSessionUser } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { formatOrderCurrency, getOrderDisplaySummary, getSingleOrderDetails } from "@/lib/order-details"
 
 export default async function AccountOrderDetailPage({
   params,
@@ -31,7 +32,8 @@ export default async function AccountOrderDetailPage({
     notFound()
   }
 
-  const orderTotal = order.total.toNumber()
+  const details = await getSingleOrderDetails(order.id)
+  const display = getOrderDisplaySummary(details)
 
   return (
     <section className="border-t border-slate-200 bg-[#f5f7fb]">
@@ -65,17 +67,30 @@ export default async function AccountOrderDetailPage({
               <p className="mt-1 text-sm font-semibold text-slate-900">{order.status}</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Shipment status</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">{order.shipmentStatus}</p>
+              <p className="text-xs uppercase tracking-wide text-slate-500">Payment status</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">{details.paymentStatus || "PENDING"}</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-xs uppercase tracking-wide text-slate-500">Total</p>
-              <p className="mt-1 text-sm font-semibold text-emerald-700">${orderTotal.toFixed(2)}</p>
+              <p className="mt-1 text-sm font-semibold text-emerald-700">{formatOrderCurrency(display.total, display.displayCurrency)}</p>
             </div>
           </div>
 
           <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Payment details</p>
+            <p className="mt-1 text-sm text-slate-700">
+              Method: <span className="font-semibold text-slate-900">{details.paymentMethod || "-"}</span>
+            </p>
+            <p className="text-sm text-slate-700">
+              Provider: <span className="font-semibold text-slate-900">{details.paymentProvider || "-"}</span>
+            </p>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-xs uppercase tracking-wide text-slate-500">Tracking</p>
+            <p className="mt-1 text-sm text-slate-700">
+              Shipment: <span className="font-semibold text-slate-900">{order.shipmentStatus}</span>
+            </p>
             <p className="mt-1 text-sm text-slate-700">
               Carrier: <span className="font-semibold text-slate-900">{order.trackingCarrier || "-"}</span>
             </p>
@@ -95,7 +110,12 @@ export default async function AccountOrderDetailPage({
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm font-semibold text-slate-900">{item.title}</p>
                       <p className="text-sm text-slate-700">
-                        {item.quantity} x ${item.price.toNumber().toFixed(2)}
+                        {item.quantity} x {formatOrderCurrency(
+                          display.displayCurrency === "USD"
+                            ? item.price.toNumber()
+                            : Math.round(item.price.toNumber() * display.exchangeRateUsed * 100) / 100,
+                          display.displayCurrency
+                        )}
                       </p>
                     </div>
                   </div>
@@ -125,4 +145,3 @@ export default async function AccountOrderDetailPage({
     </section>
   )
 }
-

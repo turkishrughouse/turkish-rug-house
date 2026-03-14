@@ -1,8 +1,8 @@
 import Image from "next/image"
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
-import type { BlogCardItem } from "@/lib/blog"
-import { formatBlogDate } from "@/lib/blog"
+import type { BlogCardItem } from "@/lib/blog-shared"
+import { formatBlogDate } from "@/lib/blog-shared"
 
 export function BlogCard({ post }: { post: BlogCardItem }) {
   return (

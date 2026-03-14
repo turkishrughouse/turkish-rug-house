@@ -5,6 +5,8 @@ import { LayoutGrid, Grid2x2, Rows3, List } from "lucide-react"
 import { prisma } from "@/lib/db"
 import { getProducts, getProductOptions } from "@/lib/actions/product-actions"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
+import { formatCurrency } from "@/lib/storefront/currency"
+import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
 import { CategoryHoverProductCard } from "@/components/storefront/category-hover-product-card"
 import { fetchCategoryPathRows, getCategoryPathById, resolveCategoryByPath } from "@/lib/category-paths"
 
@@ -108,6 +110,12 @@ export async function renderCategoryPage({
   searchParams,
   redirectIfCanonicalMismatch = false,
 }: RenderCategoryPageInput) {
+  const currencySnapshot = await getStorefrontCurrencySnapshot()
+  const currencySettings = {
+    selectedCurrency: currencySnapshot.selectedCurrency,
+    usdToEurRate: currencySnapshot.usdToEurRate,
+    locale: currencySnapshot.locale,
+  }
   const resolved = await resolveCategoryByPath(slugPath)
   if (!resolved) notFound()
 
@@ -598,14 +606,6 @@ export async function renderCategoryPage({
           <aside className="lg:col-span-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-6">
               <div>
-                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Product Status</h3>
-                <div className="mt-4 space-y-2">
-                  <Link href={`${categoryPath}${buildQuery((p) => (inStockOnly ? p.delete("inStock") : p.set("inStock", "true")))}`} className="flex items-center justify-between rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50"><span>In stock only</span><span className={`h-2.5 w-2.5 rounded-full ${inStockOnly ? "bg-teal-600" : "bg-slate-300"}`} /></Link>
-                  <Link href={`${categoryPath}${buildQuery((p) => (topRatedOnly ? p.delete("topRated") : p.set("topRated", "true")))}`} className="flex items-center justify-between rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50"><span>Top rated only</span><span className={`h-2.5 w-2.5 rounded-full ${topRatedOnly ? "bg-teal-600" : "bg-slate-300"}`} /></Link>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-200 pt-5">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Color</h3>
                 <div className="mt-4 space-y-1.5">
                   {options.colors.map((color) => {
@@ -769,7 +769,7 @@ export async function renderCategoryPage({
                         <img src={image} alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt, categories: product.categories })} loading="lazy" decoding="async" className="h-12 w-12 rounded-md border border-slate-200 object-cover" />
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-slate-900">{product.title}</p>
-                          <p className="text-sm font-semibold text-emerald-700">${product.price.toFixed(2)}</p>
+                          <p className="text-sm font-semibold text-emerald-700">{formatCurrency(product.price, currencySettings)}</p>
                         </div>
                       </Link>
                     )
@@ -879,7 +879,7 @@ export async function renderCategoryPage({
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-2xl font-serif font-bold text-slate-900">{product.title}</p>
                             <p className="mt-1 text-sm text-slate-500">{product.categories?.map((c) => c.title).slice(0, 2).join(", ") || "Rug House Collection"}</p>
-                            <div className="mt-3 flex items-center gap-2"><span className="text-2xl font-bold text-slate-900">${product.price.toFixed(2)}</span>{product.compareAtPrice && product.compareAtPrice > product.price ? <span className="text-base text-slate-400 line-through">${product.compareAtPrice.toFixed(2)}</span> : null}</div>
+                            <div className="mt-3 flex items-center gap-2"><span className="text-2xl font-bold text-slate-900">{formatCurrency(product.price, currencySettings)}</span>{product.compareAtPrice && product.compareAtPrice > product.price ? <span className="text-base text-slate-400 line-through">{formatCurrency(product.compareAtPrice, currencySettings)}</span> : null}</div>
                             <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">{product.description || "Premium hand-crafted rug with authentic weaving details and durable natural fibers."}</p>
                           </div>
                         </Link>

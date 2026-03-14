@@ -23,7 +23,14 @@ type SessionUser = {
 }
 
 function getAuthSecret() {
-  return process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || "rughouse-dev-auth-secret"
+  const secret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET
+  if (typeof secret === "string" && secret.trim().length > 0) {
+    return secret.trim()
+  }
+  if (process.env.NODE_ENV !== "production") {
+    return "rughouse-dev-auth-secret"
+  }
+  throw new Error("AUTH_SECRET or NEXTAUTH_SECRET is required in production")
 }
 
 export function shouldUseSecureCookies(hostname?: string | null) {

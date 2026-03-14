@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { buildCategoryPathMap } from "@/lib/category-paths"
 
-export const dynamic = 'force-dynamic'
+export const revalidate = 300
 
 interface Params {
     params: Promise<{ slug: string }>
@@ -35,7 +35,11 @@ export async function GET(req: Request, { params }: Params) {
 
         if (!menu) {
             // Return null/empty instead of 404 to avoid triggering frontend errors
-            return NextResponse.json(null)
+            return NextResponse.json(null, {
+                headers: {
+                    "Cache-Control": "public, s-maxage=300, stale-while-revalidate=86400",
+                },
+            })
         }
 
         // Enrich items with real URLs
@@ -100,6 +104,10 @@ export async function GET(req: Request, { params }: Params) {
             name: menu.title,
             location: menu.location,
             items: roots
+        }, {
+            headers: {
+                "Cache-Control": "public, s-maxage=300, stale-while-revalidate=86400",
+            },
         })
     } catch (error) {
         console.error("GET /api/public/menus/[slug] error:", error)

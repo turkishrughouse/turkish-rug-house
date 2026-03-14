@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
-import type { BlogCardItem } from "@/lib/blog"
+import type { BlogCardItem } from "@/lib/blog-shared"
 import { BlogCard } from "@/components/storefront/blog-card"
 
 export function HomeBlogSection({ posts }: { posts: BlogCardItem[] }) {

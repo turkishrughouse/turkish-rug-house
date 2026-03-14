@@ -37,27 +37,29 @@ export function ShopByStyleSection({
           >
             <div className="relative aspect-[3/4] overflow-hidden">
               {category.image ? (
-                <img
-                  src={category.image}
-                  alt={category.title}
-                  className="absolute inset-0 block h-full w-full object-contain object-center transition-transform duration-300 group-hover:scale-[1.02]"
-                />
+                <>
+                  <img
+                    src={category.image}
+                    alt={category.title}
+                    className="absolute inset-0 block h-full w-full object-contain object-center transition-transform duration-300 group-hover:scale-[1.02]"
+                  />
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/50 via-black/15 to-transparent" />
+                </>
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                  {category.title}
-                </div>
+                <div className="absolute inset-0 bg-slate-100" />
               )}
             </div>
-            <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-              <div className="absolute inset-0 flex items-center justify-center px-4 text-center">
-                <div className="relative z-10 rounded-md bg-black/35 px-5 py-2">
-                  <h3
-                    className="line-clamp-2 text-[24px] font-bold text-white sm:text-[28px]"
-                    style={{ textShadow: "0 2px 10px rgba(0, 0, 0, 0.65)" }}
-                  >
-                    {category.title}
-                  </h3>
-                </div>
+            <div className="pointer-events-none absolute bottom-0 left-0 z-10 w-full p-4">
+              <div className="max-w-[82%] rounded-md bg-black/40 px-4 py-3">
+                <h3
+                  className={`line-clamp-2 text-left font-semibold uppercase tracking-[0.08em] ${
+                    category.image ? "text-base text-white sm:text-lg" : "text-xs text-slate-600 sm:text-sm"
+                  }`}
+                  style={category.image ? { textShadow: "0 2px 10px rgba(0, 0, 0, 0.65)" } : undefined}
+                >
+                  {category.title}
+                </h3>
+                {!category.image ? <div className="mt-2 h-px w-12 bg-slate-300" /> : null}
               </div>
             </div>
           </Link>

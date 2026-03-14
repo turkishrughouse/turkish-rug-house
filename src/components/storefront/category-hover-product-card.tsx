@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { addToCart } from "@/lib/storefront/cart"
 import { addEngagementItem } from "@/lib/storefront/engagement"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
+import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
 
 type ProductCardData = {
   id: string
@@ -35,6 +36,7 @@ function stripHtml(input: string | null | undefined) {
 
 export function CategoryHoverProductCard({ product }: { product: ProductCardData }) {
   const router = useRouter()
+  const { formatUsd } = useStorefrontCurrency()
   const [quickViewOpen, setQuickViewOpen] = useState(false)
   const [activeImageIndex, setActiveImageIndex] = useState(0)
   const [qty, setQty] = useState(1)
@@ -175,9 +177,9 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
           <p className="truncate text-lg font-serif font-bold text-slate-900">{product.title}</p>
           <p className="mt-1 text-sm text-slate-500">{categoryText}</p>
           <div className="mt-2 flex items-center justify-center gap-2">
-            <span className="text-xl font-bold text-emerald-700">${product.price.toFixed(2)}</span>
+            <span className="text-xl font-bold text-emerald-700">{formatUsd(product.price)}</span>
             {product.compareAtPrice && product.compareAtPrice > product.price ? (
-              <span className="text-sm text-slate-400 line-through">${product.compareAtPrice.toFixed(2)}</span>
+              <span className="text-sm text-slate-400 line-through">{formatUsd(product.compareAtPrice)}</span>
             ) : null}
           </div>
           <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-600">{shortDescription}</p>
@@ -237,7 +239,7 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
 
             <div className="max-h-[88vh] overflow-y-auto p-4 sm:p-6">
               <h3 className="text-3xl leading-[1.1] font-bold text-slate-900 sm:text-[42px]">{product.title}</h3>
-              <p className="mt-3 text-3xl font-bold text-emerald-700 sm:text-4xl">${product.price.toFixed(2)}</p>
+              <p className="mt-3 text-3xl font-bold text-emerald-700 sm:text-4xl">{formatUsd(product.price)}</p>
 
               <p className="mt-4 line-clamp-5 text-slate-600 leading-7">
                 {fullDescription}

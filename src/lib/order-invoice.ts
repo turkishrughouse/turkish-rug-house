@@ -1,4 +1,5 @@
-import { formatOrderCurrency } from "@/lib/order-details"
+import { formatOrderCurrency, getOrderDisplaySummary, normalizeOrderDetails } from "@/lib/order-details"
+import { convertCurrencyAmount } from "@/lib/storefront/currency"
 
 type InvoiceItem = {
   title: string
@@ -29,6 +30,19 @@ type InvoiceOrder = {
     discountAmount?: number
     refundedAmount?: number
     currency?: string
+    baseCurrency?: string
+    baseSubtotalAmount?: number
+    baseShippingAmount?: number
+    baseTaxAmount?: number
+    baseDiscountAmount?: number
+    baseTotalAmount?: number
+    displayCurrency?: string
+    exchangeRateUsed?: number
+    displaySubtotalAmount?: number
+    displayShippingAmount?: number
+    displayTaxAmount?: number
+    displayDiscountAmount?: number
+    displayTotalAmount?: number
     invoiceNumber?: string | null
     invoiceIssuedAt?: string | null
   }
@@ -37,17 +51,20 @@ type InvoiceOrder = {
 }
 
 function invoiceLines(order: InvoiceOrder) {
-  const currency = order.details.currency || "USD"
+  const details = normalizeOrderDetails(order.details)
+  const display = getOrderDisplaySummary(details)
+  const currency = display.displayCurrency
   const address = [
     order.details.addressLine1,
     order.details.addressLine2,
     [order.details.city, order.details.state].filter(Boolean).join(", "),
     [order.details.postcode, order.details.country].filter(Boolean).join(" "),
   ].filter(Boolean)
-  const subtotal = Number(order.details.subtotalAmount || order.items.reduce((sum, item) => sum + item.price * item.quantity, 0))
-  const shipping = Number(order.details.shippingCost || 0)
-  const tax = Number(order.details.taxAmount || 0)
-  const discount = Number(order.details.discountAmount || 0)
+  const subtotal = display.subtotal
+  const shipping = display.shipping
+  const tax = display.tax
+  const discount = display.discount
+  const total = display.total
 
   return [
     "RugHouse Invoice",
@@ -64,13 +81,17 @@ function invoiceLines(order: InvoiceOrder) {
     `Shipping: ${order.details.shippingMethod || "-"}`,
     "",
     "Items",
-    ...order.items.map((item) => `${item.title} | Qty ${item.quantity} | ${formatOrderCurrency(item.price, currency)} | ${formatOrderCurrency(item.price * item.quantity, currency)}`),
+    ...order.items.map((item) => {
+      const convertedUnit = convertCurrencyAmount(item.price, "USD", currency === "EUR" ? "EUR" : "USD", details.exchangeRateUsed)
+      const convertedSubtotal = convertedUnit * item.quantity
+      return `${item.title} | Qty ${item.quantity} | ${formatOrderCurrency(convertedUnit, currency)} | ${formatOrderCurrency(convertedSubtotal, currency)}`
+    }),
     "",
     `Subtotal: ${formatOrderCurrency(subtotal, currency)}`,
     `Shipping: ${formatOrderCurrency(shipping, currency)}`,
     `Tax: ${formatOrderCurrency(tax, currency)}`,
     `Discount: ${formatOrderCurrency(discount, currency)}`,
-    `Total: ${formatOrderCurrency(order.total, currency)}`,
+    `Total: ${formatOrderCurrency(total, currency)}`,
   ]
 }
 
@@ -116,11 +137,13 @@ export function buildInvoicePdf(order: InvoiceOrder) {
 }
 
 export function buildInvoiceHtml(order: InvoiceOrder) {
-  const currency = order.details.currency || "USD"
-  const subtotal = Number(order.details.subtotalAmount || order.items.reduce((sum, item) => sum + item.price * item.quantity, 0))
-  const shipping = Number(order.details.shippingCost || 0)
-  const tax = Number(order.details.taxAmount || 0)
-  const discount = Number(order.details.discountAmount || 0)
+  const details = normalizeOrderDetails(order.details)
+  const display = getOrderDisplaySummary(details)
+  const currency = display.displayCurrency
+  const subtotal = display.subtotal
+  const shipping = display.shipping
+  const tax = display.tax
+  const discount = display.discount
   const address = [
     order.details.addressLine1,
     order.details.addressLine2,
@@ -162,7 +185,13 @@ export function buildInvoiceHtml(order: InvoiceOrder) {
       <tr><th>Item</th><th>Qty</th><th>Price</th><th>Subtotal</th></tr>
     </thead>
     <tbody>
-      ${order.items.map((item) => `<tr><td>${item.title}</td><td>${item.quantity}</td><td>${formatOrderCurrency(item.price, currency)}</td><td>${formatOrderCurrency(item.price * item.quantity, currency)}</td></tr>`).join("")}
+      ${order.items
+        .map((item) => {
+          const convertedUnit = convertCurrencyAmount(item.price, "USD", currency === "EUR" ? "EUR" : "USD", details.exchangeRateUsed)
+          const convertedSubtotal = convertedUnit * item.quantity
+          return `<tr><td>${item.title}</td><td>${item.quantity}</td><td>${formatOrderCurrency(convertedUnit, currency)}</td><td>${formatOrderCurrency(convertedSubtotal, currency)}</td></tr>`
+        })
+        .join("")}
     </tbody>
   </table>
   <div class="totals">
@@ -170,9 +199,8 @@ export function buildInvoiceHtml(order: InvoiceOrder) {
     <div><span>Shipping</span><span>${formatOrderCurrency(shipping, currency)}</span></div>
     <div><span>Tax</span><span>${formatOrderCurrency(tax, currency)}</span></div>
     <div><span>Discount</span><span>${formatOrderCurrency(discount, currency)}</span></div>
-    <div><strong>Total</strong><strong>${formatOrderCurrency(order.total, currency)}</strong></div>
+    <div><strong>Total</strong><strong>${formatOrderCurrency(display.total, currency)}</strong></div>
   </div>
 </body>
 </html>`
 }
-

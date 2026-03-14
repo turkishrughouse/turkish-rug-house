@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { Heart, Search, ShoppingCart, Shuffle } from "lucide-react"
 import { toast } from "sonner"
+import { ResponsiveImage } from "@/components/ui/responsive-image"
 import { addToCart } from "@/lib/storefront/cart"
 import { addEngagementItem } from "@/lib/storefront/engagement"
 import { ProductRatingBadge } from "@/components/storefront/product-rating-badge"
@@ -58,12 +59,12 @@ export function ShopProductCard({
             {discountPercent}% OFF
           </span>
         ) : null}
-        <img
+        <ResponsiveImage
           src={mainImage}
           alt={mainImageAlt}
-          loading="lazy"
-          decoding="async"
-          className="h-full w-full object-cover object-center transition-transform duration-300 group-hover:scale-105"
+          fill
+          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+          className="object-cover object-center transition-transform duration-300 group-hover:scale-105"
         />
         <div className="absolute left-1/2 bottom-4 -translate-x-1/2 translate-y-3 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
           <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-white/95 px-2 py-1.5 shadow-lg backdrop-blur">

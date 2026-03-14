@@ -8,7 +8,11 @@ import { ChevronLeft, ChevronRight, Grid2x2, Facebook, Linkedin, Send, Heart, Sh
 import { addToCart } from "@/lib/storefront/cart"
 import { addEngagementItem } from "@/lib/storefront/engagement"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
+import { normalizeRichTextHtml } from "@/lib/rich-text"
+import { toAbsoluteSiteUrl } from "@/lib/site-url"
 import { CategoryHoverProductCard } from "@/components/storefront/category-hover-product-card"
+import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
+import { ResponsiveImage } from "@/components/ui/responsive-image"
 
 type ProductCategory = {
   id: string
@@ -58,17 +62,15 @@ function parseImages(images: string): string[] {
   return parseProductImageRecords(images).map((image) => getProductImageUrl(image, "large"))
 }
 
-function sanitizeRichContent(input: string | null | undefined): string {
-  if (!input || input.trim().length === 0) return ""
-  return input
-    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
-    .replace(/\son[a-z]+\s*=\s*(['"]).*?\1/gi, "")
-    .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, "")
-}
-
 const richContentClassName = [
-  "text-sm leading-6 text-slate-700",
+  "max-w-full break-words text-sm leading-6 text-slate-700 [overflow-wrap:anywhere]",
+  "[&_strong]:font-semibold [&_em]:italic",
+  "[&_h1]:mb-4 [&_h1]:text-[clamp(1.75rem,4vw,2.25rem)] [&_h1]:font-semibold [&_h1]:leading-tight",
+  "[&_h2]:mb-4 [&_h2]:text-[clamp(1.45rem,3vw,1.9rem)] [&_h2]:font-semibold [&_h2]:leading-tight",
+  "[&_h3]:mb-3 [&_h3]:text-[clamp(1.2rem,2.5vw,1.5rem)] [&_h3]:font-semibold [&_h3]:leading-snug",
+  "[&_h4]:mb-3 [&_h4]:text-[clamp(1.05rem,2vw,1.25rem)] [&_h4]:font-semibold [&_h4]:leading-snug",
+  "[&_h5]:mb-2 [&_h5]:text-base [&_h5]:font-semibold [&_h5]:leading-snug",
+  "[&_h6]:mb-2 [&_h6]:text-sm [&_h6]:font-semibold [&_h6]:leading-snug",
   "[&_p]:mb-3 [&_p:last-child]:mb-0",
   "[&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-6",
   "[&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-6",
@@ -76,9 +78,12 @@ const richContentClassName = [
   "[&_blockquote]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-slate-300 [&_blockquote]:pl-4 [&_blockquote]:italic",
   "[&_a]:text-emerald-700 [&_a]:underline",
   "[&_hr]:my-4 [&_hr]:border-slate-200",
-  "[&_table]:my-3 [&_table]:w-full [&_table]:border-collapse",
+  "[&_table]:my-3 [&_table]:w-full [&_table]:table-fixed [&_table]:border-collapse",
   "[&_th]:border [&_th]:border-[#d6dde7] [&_th]:bg-slate-100 [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:font-semibold",
-  "[&_td]:border [&_td]:border-[#d6dde7] [&_td]:px-3 [&_td]:py-2",
+  "[&_td]:border [&_td]:border-[#d6dde7] [&_td]:px-3 [&_td]:py-2 [&_td]:align-top [&_td]:break-words",
+  "[&_th]:break-words [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-md",
+  "[&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-slate-950 [&_pre]:p-4 [&_pre]:text-xs [&_pre]:text-slate-100",
+  "[&_code]:break-words",
 ].join(" ")
 
 export function ProductDetailView({
@@ -95,6 +100,7 @@ export function ProductDetailView({
   shippingContent?: string | null
 }) {
   const router = useRouter()
+  const { formatUsd } = useStorefrontCurrency()
   const gallery = useMemo(() => {
     const records = parseProductImageRecords(product.images)
     if (records.length === 0) {
@@ -134,7 +140,10 @@ export function ProductDetailView({
   const [qty, setQty] = useState(1)
   const [imageLightboxOpen, setImageLightboxOpen] = useState(false)
   const [hoverZoomEnabled, setHoverZoomEnabled] = useState(false)
-  const [zoomOrigin, setZoomOrigin] = useState("50% 50%")
+  const [zoomBackgroundPosition, setZoomBackgroundPosition] = useState("50% 50%")
+  const [mainImageZoomActive, setMainImageZoomActive] = useState(false)
+  const [lightboxZoom, setLightboxZoom] = useState(1)
+  const [lightboxZoomOrigin, setLightboxZoomOrigin] = useState("50% 50%")
   const [expandedBottomDesc, setExpandedBottomDesc] = useState(false)
   const [expandedShipping, setExpandedShipping] = useState(false)
   const [activeInfoTab, setActiveInfoTab] = useState<"description" | "shipping" | "attributes">("description")
@@ -147,8 +156,7 @@ export function ProductDetailView({
     message: "",
   })
 
-  const verticalThumbs = gallery.slice(0, 5)
-  const bottomThumbs = gallery.slice(5)
+  const thumbnailImages = gallery
   const selectedGalleryImage = gallery[selectedImage] || gallery[0]
 
   const discountActive = product.compareAtPrice && product.compareAtPrice > product.price
@@ -161,8 +169,8 @@ export function ProductDetailView({
     : 0
   const primaryCategory = product.categories[0]
   const shortDescriptionHtml =
-    product.shortDescription?.trim() || sanitizeRichContent(product.description)
-  const longDescriptionHtml = sanitizeRichContent(product.description)
+    normalizeRichTextHtml(product.shortDescription?.trim()) || normalizeRichTextHtml(product.description)
+  const longDescriptionHtml = normalizeRichTextHtml(product.description)
   const bottomDescriptionHtml = longDescriptionHtml || "<p>Detailed product information is not available yet.</p>"
   const bottomDescriptionTextLength = bottomDescriptionHtml.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().length
   const canExpandBottomDescription = bottomDescriptionTextLength > 380
@@ -215,6 +223,20 @@ export function ProductDetailView({
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [imageLightboxOpen, gallery.length])
+
+  useEffect(() => {
+    setMainImageZoomActive(false)
+    setZoomBackgroundPosition("50% 50%")
+    setLightboxZoom(1)
+    setLightboxZoomOrigin("50% 50%")
+  }, [selectedImage])
+
+  useEffect(() => {
+    if (!imageLightboxOpen) {
+      setLightboxZoom(1)
+      setLightboxZoomOrigin("50% 50%")
+    }
+  }, [imageLightboxOpen])
 
   const openShare = (url: string) => {
     if (typeof window === "undefined") return
@@ -291,7 +313,7 @@ export function ProductDetailView({
       return
     }
 
-    const productUrl = typeof window !== "undefined" ? window.location.href : `/product/${product.slug}`
+    const productUrl = toAbsoluteSiteUrl(`/product/${product.slug}`)
     const composedMessage = [
       `Product: ${product.title}`,
       `Product URL: ${productUrl}`,
@@ -356,10 +378,17 @@ export function ProductDetailView({
               {previousProduct ? (
                 <div className="pointer-events-none absolute right-0 top-11 z-50 hidden w-64 rounded-md border border-[#dce3ed] bg-white p-3 shadow-[0_14px_34px_rgba(15,23,42,0.14)] group-hover:block">
                   <div className="flex items-center gap-3">
-                    <img src={parseImages(previousProduct.images)[0] || "/placeholder.jpg"} alt={previousProduct.title} loading="lazy" decoding="async" className="h-16 w-16 rounded-md border border-[#dce3ed] object-cover" />
+                    <ResponsiveImage
+                      src={parseImages(previousProduct.images)[0] || "/placeholder.jpg"}
+                      alt={previousProduct.title}
+                      width={64}
+                      height={64}
+                      sizes="64px"
+                      className="h-16 w-16 rounded-md border border-[#dce3ed] object-cover"
+                    />
                     <div className="min-w-0">
                       <p className="truncate text-lg font-semibold text-slate-900">{previousProduct.title}</p>
-                      <p className="text-xl font-bold text-emerald-700">${previousProduct.price.toFixed(2)}</p>
+                      <p className="text-xl font-bold text-emerald-700">{formatUsd(previousProduct.price)}</p>
                     </div>
                   </div>
                 </div>
@@ -383,10 +412,17 @@ export function ProductDetailView({
               {nextProduct ? (
                 <div className="pointer-events-none absolute right-0 top-11 z-50 hidden w-64 rounded-md border border-[#dce3ed] bg-white p-3 shadow-[0_14px_34px_rgba(15,23,42,0.14)] group-hover:block">
                   <div className="flex items-center gap-3">
-                    <img src={parseImages(nextProduct.images)[0] || "/placeholder.jpg"} alt={nextProduct.title} loading="lazy" decoding="async" className="h-16 w-16 rounded-md border border-[#dce3ed] object-cover" />
+                    <ResponsiveImage
+                      src={parseImages(nextProduct.images)[0] || "/placeholder.jpg"}
+                      alt={nextProduct.title}
+                      width={64}
+                      height={64}
+                      sizes="64px"
+                      className="h-16 w-16 rounded-md border border-[#dce3ed] object-cover"
+                    />
                     <div className="min-w-0">
                       <p className="truncate text-lg font-semibold text-slate-900">{nextProduct.title}</p>
-                      <p className="text-xl font-bold text-emerald-700">${nextProduct.price.toFixed(2)}</p>
+                      <p className="text-xl font-bold text-emerald-700">{formatUsd(nextProduct.price)}</p>
                     </div>
                   </div>
                 </div>
@@ -399,14 +435,21 @@ export function ProductDetailView({
           <section>
             <div className="grid grid-cols-[72px_minmax(0,1fr)] sm:grid-cols-[92px_minmax(0,1fr)] gap-3 sm:gap-4 items-start">
               <div className="space-y-3">
-                {verticalThumbs.map((img, i) => (
+                {thumbnailImages.map((img, i) => (
                   <button
                     key={`${img.src}-${i}`}
                     type="button"
                     onClick={() => setSelectedImage(i)}
                     className={`block h-14 w-14 sm:h-20 sm:w-20 rounded-md overflow-hidden border ${selectedImage === i ? "border-slate-900" : "border-[#dce3ed]"}`}
                   >
-                    <img src={img.thumbSrc} alt={img.alt} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                    <ResponsiveImage
+                      src={img.thumbSrc}
+                      alt={img.alt}
+                      width={80}
+                      height={80}
+                      sizes="80px"
+                      className="h-full w-full object-cover"
+                    />
                   </button>
                 ))}
               </div>
@@ -420,9 +463,17 @@ export function ProductDetailView({
                     const bounds = event.currentTarget.getBoundingClientRect()
                     const x = ((event.clientX - bounds.left) / bounds.width) * 100
                     const y = ((event.clientY - bounds.top) / bounds.height) * 100
-                    setZoomOrigin(`${x}% ${y}%`)
+                    setZoomBackgroundPosition(`${x}% ${y}%`)
+                    setMainImageZoomActive(true)
                   }}
-                  onMouseLeave={() => setZoomOrigin("50% 50%")}
+                  onMouseEnter={() => {
+                    if (!hoverZoomEnabled) return
+                    setMainImageZoomActive(true)
+                  }}
+                  onMouseLeave={() => {
+                    setZoomBackgroundPosition("50% 50%")
+                    setMainImageZoomActive(false)
+                  }}
                   onClick={() => setImageLightboxOpen(true)}
                 >
                   {isMarkedOutOfStock ? (
@@ -438,51 +489,38 @@ export function ProductDetailView({
                       {discountPercent}% OFF
                     </span>
                   ) : null}
-                  <img
+                  <ResponsiveImage
                     src={selectedGalleryImage.src}
                     alt={selectedGalleryImage.alt}
                     width={selectedGalleryImage.width}
                     height={selectedGalleryImage.height}
-                    loading="eager"
-                    fetchPriority="high"
-                    decoding="sync"
-                    className={`h-full w-full object-cover transition-transform duration-300 ${hoverZoomEnabled ? "group-hover:scale-[1.85] cursor-zoom-in" : "group-hover:scale-105"}`}
-                    style={{ transformOrigin: zoomOrigin }}
+                    priority
+                    sizes="(max-width: 1280px) 100vw, 50vw"
+                    className={`h-full w-full object-cover transition-transform duration-300 ${hoverZoomEnabled ? "cursor-zoom-in" : "group-hover:scale-105"}`}
                   />
+                  {hoverZoomEnabled ? (
+                    <div
+                      className={`pointer-events-none absolute inset-0 rounded-lg bg-white/5 transition-opacity duration-150 ${mainImageZoomActive ? "opacity-100" : "opacity-0"}`}
+                      style={{
+                        backgroundImage: `url(${selectedGalleryImage.zoomSrc})`,
+                        backgroundPosition: zoomBackgroundPosition,
+                        backgroundRepeat: "no-repeat",
+                        backgroundSize: "240%",
+                      }}
+                    />
+                  ) : null}
                 </button>
               </div>
             </div>
 
-            {bottomThumbs.length > 0 ? (
-              <div className="grid grid-cols-[72px_minmax(0,1fr)] sm:grid-cols-[92px_minmax(0,1fr)] gap-3 sm:gap-4 mt-4">
-                <div />
-                <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
-                  {bottomThumbs.map((img, i) => {
-                    const idx = i + 5
-                    return (
-                      <button
-                        key={`${img.src}-${idx}`}
-                        type="button"
-                        onClick={() => setSelectedImage(idx)}
-                        className={`block rounded-md overflow-hidden border ${selectedImage === idx ? "border-slate-900" : "border-[#dce3ed]"}`}
-                      >
-                        <div className="aspect-square">
-                          <img src={img.thumbSrc} alt={img.alt} loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            ) : null}
           </section>
 
           <section>
             <h1 className="font-serif text-3xl leading-tight text-slate-900">{product.title}</h1>
             <div className="mt-4 flex items-center gap-3">
-              <span className="text-2xl font-bold text-emerald-700">${product.price.toFixed(2)}</span>
+              <span className="text-2xl font-bold text-emerald-700">{formatUsd(product.price)}</span>
               {discountActive ? (
-                <span className="text-base text-slate-400 line-through">${product.compareAtPrice?.toFixed(2)}</span>
+                <span className="text-base text-slate-400 line-through">{formatUsd(product.compareAtPrice || 0)}</span>
               ) : null}
             </div>
 
@@ -968,14 +1006,37 @@ export function ProductDetailView({
           </button>
 
           <div className="flex h-full w-full items-center justify-center" onClick={(e) => e.stopPropagation()}>
-            <img
-              src={selectedGalleryImage.zoomSrc}
-              alt={selectedGalleryImage.alt}
-              width={selectedGalleryImage.width}
-              height={selectedGalleryImage.height}
-              decoding="async"
-              className="max-h-[88vh] max-w-[92vw] rounded-lg object-contain"
-            />
+            <div className="relative flex max-h-[88vh] max-w-[92vw] items-center justify-center overflow-hidden rounded-lg">
+              <button
+                type="button"
+                className={`block ${lightboxZoom > 1 ? "cursor-zoom-out" : "cursor-zoom-in"}`}
+                onClick={() => setLightboxZoom((prev) => (prev > 1 ? 1 : 2.6))}
+                onMouseMove={(event) => {
+                  const bounds = event.currentTarget.getBoundingClientRect()
+                  const x = ((event.clientX - bounds.left) / bounds.width) * 100
+                  const y = ((event.clientY - bounds.top) / bounds.height) * 100
+                  setLightboxZoomOrigin(`${x}% ${y}%`)
+                }}
+                style={{
+                  transform: `scale(${lightboxZoom})`,
+                  transformOrigin: lightboxZoomOrigin,
+                  transitionDuration: "200ms",
+                }}
+              >
+                <ResponsiveImage
+                  src={selectedGalleryImage.zoomSrc}
+                  alt={selectedGalleryImage.alt}
+                  width={selectedGalleryImage.width}
+                  height={selectedGalleryImage.height}
+                  sizes="92vw"
+                  className="max-h-[88vh] max-w-[92vw] rounded-lg object-contain"
+                />
+              </button>
+
+              <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-white/15 bg-black/45 px-3 py-1.5 text-[11px] font-medium tracking-[0.18em] text-white/85 backdrop-blur">
+                {lightboxZoom > 1 ? "TAP TO RESET" : "TAP TO ZOOM"}
+              </div>
+            </div>
           </div>
         </div>
       ) : null}

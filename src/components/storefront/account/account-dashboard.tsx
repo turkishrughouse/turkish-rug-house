@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { SupportRequestPage } from "@/components/storefront/support/support-request-page"
 import { AccountMessageThread } from "@/components/storefront/account/account-message-thread"
 import { parseProductImages } from "@/lib/product-images"
+import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
 
 type SessionUser = {
   id: string
@@ -39,6 +40,13 @@ type Order = {
   trackingNumber: string | null
   trackingUrl: string | null
   createdAt: string
+  details?: {
+    paymentStatus?: string | null
+    paymentMethod?: string | null
+    displayCurrency?: string | null
+    displayTotalAmount?: number | null
+    exchangeRateUsed?: number | null
+  } | null
   items: OrderItem[]
   events: OrderEvent[]
 }
@@ -108,6 +116,7 @@ function isTrackingMessage(message: CustomerMessage) {
 }
 
 export function AccountDashboard({ user }: { user: SessionUser }) {
+  const { formatUsd, formatAmount } = useStorefrontCurrency()
   const profileCacheKey = `account-profile:${user.id}`
   const searchParams = useSearchParams()
   const requestedTab = searchParams.get("tab")
@@ -166,6 +175,24 @@ export function AccountDashboard({ user }: { user: SessionUser }) {
   }, [profile.locale])
 
   const totalSpent = useMemo(() => orders.reduce((sum, o) => sum + o.total, 0), [orders])
+  const getDisplayedOrderTotal = useCallback(
+    (order: Order) =>
+      typeof order.details?.displayTotalAmount === "number" && order.details.displayCurrency
+        ? formatAmount(order.details.displayTotalAmount, order.details.displayCurrency as "USD" | "EUR")
+        : formatUsd(order.total),
+    [formatAmount, formatUsd]
+  )
+  const getDisplayedItemPrice = useCallback(
+    (order: Order, item: OrderItem) => {
+      const displayCurrency = order.details?.displayCurrency as "USD" | "EUR" | undefined
+      const exchangeRateUsed = Number(order.details?.exchangeRateUsed || 1)
+      if (displayCurrency && displayCurrency !== "USD") {
+        return formatAmount(Math.round(item.price * exchangeRateUsed * 100) / 100, displayCurrency)
+      }
+      return formatUsd(item.price)
+    },
+    [formatAmount, formatUsd]
+  )
   const hasPurchasedOrder = orders.length > 0
   const visibleTabs = useMemo(
     () =>
@@ -500,7 +527,7 @@ export function AccountDashboard({ user }: { user: SessionUser }) {
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Total spent</p>
-                <p className="mt-2 text-2xl font-semibold text-emerald-700">${totalSpent.toFixed(2)}</p>
+                <p className="mt-2 text-2xl font-semibold text-emerald-700">{formatUsd(totalSpent)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Messages</p>
@@ -550,7 +577,10 @@ export function AccountDashboard({ user }: { user: SessionUser }) {
                     </p>
                   </div>
                   <p className="mt-1 text-sm text-slate-600">
-                    {new Date(order.createdAt).toLocaleString()} • ${order.total.toFixed(2)}
+                    {new Date(order.createdAt).toLocaleString()} • {getDisplayedOrderTotal(order)}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Payment: {order.details?.paymentStatus || "PENDING"} {order.details?.paymentMethod ? `• ${order.details.paymentMethod}` : ""}
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
                     Tracking: {order.trackingCarrier || "-"} {order.trackingNumber ? `(${order.trackingNumber})` : ""}
@@ -581,8 +611,12 @@ export function AccountDashboard({ user }: { user: SessionUser }) {
                           <p className="mt-1 text-sm font-semibold text-slate-900">{order.shipmentStatus}</p>
                         </div>
                         <div>
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Payment status</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{order.details?.paymentStatus || "PENDING"}</p>
+                        </div>
+                        <div>
                           <p className="text-xs uppercase tracking-wide text-slate-500">Total</p>
-                          <p className="mt-1 text-sm font-semibold text-emerald-700">${order.total.toFixed(2)}</p>
+                          <p className="mt-1 text-sm font-semibold text-emerald-700">{getDisplayedOrderTotal(order)}</p>
                         </div>
                       </div>
 
@@ -596,7 +630,7 @@ export function AccountDashboard({ user }: { user: SessionUser }) {
                               <div key={item.id} className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                                 <span className="font-medium text-slate-900">{item.title}</span>{" "}
                                 <span className="text-slate-500">x {item.quantity}</span>{" "}
-                                <span className="font-medium">${item.price.toFixed(2)}</span>
+                                <span className="font-medium">{getDisplayedItemPrice(order, item)}</span>
                               </div>
                             ))
                           )}

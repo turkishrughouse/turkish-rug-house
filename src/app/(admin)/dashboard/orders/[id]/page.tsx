@@ -14,6 +14,7 @@ import { OrderStatusActions } from "@/components/admin/orders/order-status-actio
 import { OrderDocumentActions } from "@/components/admin/orders/order-document-actions"
 import { formatOrderCurrency } from "@/lib/order-details"
 import { OrderAutoRefresh } from "@/components/admin/orders/order-auto-refresh"
+import { listRecentPaymentWebhookEvents } from "@/lib/payment-webhook-events"
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -29,6 +30,7 @@ export default async function OrderDetailPage({ params }: PageProps) {
   const { id } = await params
   const order = await getOrder(id)
   if (!order) notFound()
+  const recentWebhookEvents = await listRecentPaymentWebhookEvents(order.id, 8)
 
   const currency = order.details.currency || "USD"
   const subtotal = Number(order.details.subtotalAmount || order.items.reduce((sum, item) => sum + item.price * item.quantity, 0))
@@ -119,7 +121,12 @@ export default async function OrderDetailPage({ params }: PageProps) {
                 <div><span className="font-medium text-slate-900">Order number:</span> {order.orderNumber}</div>
                 <div><span className="font-medium text-slate-900">Order date:</span> {new Date(order.createdAt).toLocaleString()}</div>
                 <div><span className="font-medium text-slate-900">Payment method:</span> {order.details.paymentMethod || "-"}</div>
+                <div><span className="font-medium text-slate-900">Payment provider:</span> {order.details.paymentProvider || "-"}</div>
                 <div><span className="font-medium text-slate-900">Payment status:</span> {order.details.paymentStatus || "PENDING"}</div>
+                <div><span className="font-medium text-slate-900">Payment session ID:</span> {order.details.paymentSessionId || "-"}</div>
+                <div><span className="font-medium text-slate-900">Payment intent ID:</span> {order.details.paymentIntentId || "-"}</div>
+                <div><span className="font-medium text-slate-900">Last webhook event:</span> {order.details.paymentLastEventId || "-"}</div>
+                <div><span className="font-medium text-slate-900">Tracked webhook events:</span> {recentWebhookEvents.length}</div>
                 <div><span className="font-medium text-slate-900">Order status:</span> {order.status}</div>
               </CardContent>
             </Card>
@@ -156,6 +163,32 @@ export default async function OrderDetailPage({ params }: PageProps) {
               <div><span className="font-medium text-slate-900">Issued at:</span> {order.details.invoiceIssuedAt ? new Date(order.details.invoiceIssuedAt).toLocaleString() : "-"}</div>
               <div><span className="font-medium text-slate-900">Currency:</span> {currency}</div>
               <div><span className="font-medium text-slate-900">Refunded amount:</span> {formatOrderCurrency(order.details.refundedAmount || 0, currency)}</div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Webhook processing</CardTitle></CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              {recentWebhookEvents.length === 0 ? (
+                <p className="text-slate-500">No Stripe webhook events recorded for this order yet.</p>
+              ) : (
+                recentWebhookEvents.map((event) => (
+                  <div key={event.eventId} className="rounded-xl border border-[#e6ecf4] p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-medium text-slate-900">{event.eventType}</div>
+                      <Badge variant={event.status === "FAILED" ? "destructive" : event.status === "PROCESSED" ? "success" : "secondary"}>
+                        {event.status}
+                      </Badge>
+                    </div>
+                    <div className="mt-1 break-all text-xs text-slate-500">{event.eventId}</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Received: {new Date(event.createdAt).toLocaleString()}
+                      {event.processedAt ? ` • Processed: ${new Date(event.processedAt).toLocaleString()}` : ""}
+                    </div>
+                    {event.error ? <div className="mt-2 text-xs text-red-600">{event.error}</div> : null}
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
         </div>

@@ -4,6 +4,7 @@ import { ChangeEvent, useEffect, useState } from "react"
 import { CreditCard, Save, ShieldCheck, Upload, Wallet } from "lucide-react"
 import { toast } from "sonner"
 import { SiteSettings } from "@/lib/site-settings"
+import type { CurrencyRateDiagnostics } from "@/lib/storefront/currency-rate-policy"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -11,10 +12,12 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { adminText, resolveAdminLanguage } from "@/lib/admin/i18n"
+import type { MailDeliverabilityReport } from "@/lib/email-deliverability"
 
 type SettingsFormProps = {
   initialSettings: SiteSettings
   initialAdminLocale: string
+  currencyDiagnostics: CurrencyRateDiagnostics
 }
 
 type SupplierSummary = {
@@ -29,6 +32,16 @@ type SupplierSummary = {
 
 type SocialPlatform = "facebook" | "x" | "instagram" | "youtube" | "tiktok" | "linkedin" | "pinterest"
 
+function isMailDeliverabilityReport(value: unknown): value is MailDeliverabilityReport {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      typeof (value as MailDeliverabilityReport).canonicalDomain === "string" &&
+      Array.isArray((value as MailDeliverabilityReport).warnings) &&
+      Array.isArray((value as MailDeliverabilityReport).dnsRecords)
+  )
+}
+
 const maintenancePlatforms: Array<{ platform: SocialPlatform; label: string; placeholder: string }> = [
   { platform: "instagram", label: "Instagram", placeholder: "https://instagram.com/your-page" },
   { platform: "facebook", label: "Facebook", placeholder: "https://facebook.com/your-page" },
@@ -39,7 +52,7 @@ const maintenancePlatforms: Array<{ platform: SocialPlatform; label: string; pla
   { platform: "pinterest", label: "Pinterest", placeholder: "https://pinterest.com/your-page" },
 ]
 
-export function SettingsForm({ initialSettings, initialAdminLocale }: SettingsFormProps) {
+export function SettingsForm({ initialSettings, initialAdminLocale, currencyDiagnostics }: SettingsFormProps) {
   const [settings, setSettings] = useState<SiteSettings>(initialSettings)
   const [adminLocale, setAdminLocale] = useState<string>(initialAdminLocale)
   const [saving, setSaving] = useState(false)
@@ -49,12 +62,22 @@ export function SettingsForm({ initialSettings, initialAdminLocale }: SettingsFo
   const [editingSupplier, setEditingSupplier] = useState<SupplierSummary | null>(null)
   const [supplierDraft, setSupplierDraft] = useState<SupplierSummary | null>(null)
   const [savingSupplier, setSavingSupplier] = useState(false)
+  const [mailReport, setMailReport] = useState<MailDeliverabilityReport | null>(null)
+  const [loadingMailReport, setLoadingMailReport] = useState(true)
   const lang = resolveAdminLanguage(adminLocale)
   const t = adminText[lang]
 
   const cardSurface = "rounded-xl border border-[#dce3ed] bg-white"
   const inputSurface = "bg-white border-[#dce3ed] text-slate-900 placeholder:text-slate-400"
   const paymentCard = "rounded-2xl border border-[#dce3ed] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.06)]"
+  const diagnosticsTone =
+    currencyDiagnostics.rateSource === "fallback"
+      ? "border-amber-200 bg-amber-50"
+      : currencyDiagnostics.freshness === "expired"
+        ? "border-rose-200 bg-rose-50"
+        : currencyDiagnostics.freshness === "stale"
+          ? "border-orange-200 bg-orange-50"
+          : "border-emerald-200 bg-emerald-50"
 
   const update = <K extends keyof SiteSettings>(key: K, value: SiteSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }))
@@ -96,6 +119,30 @@ export function SettingsForm({ initialSettings, initialAdminLocale }: SettingsFo
     }
   }
 
+  const loadMailReport = async () => {
+    setLoadingMailReport(true)
+    try {
+      const res = await fetch("/api/admin/settings/mail-deliverability", { cache: "no-store" })
+      const json = (await res.json().catch(() => null)) as unknown
+      if (!res.ok || !json || (typeof json === "object" && json !== null && "error" in json)) {
+        const errorMessage =
+          typeof json === "object" && json !== null && "error" in json && typeof json.error === "string"
+            ? json.error
+            : "Failed to load mail diagnostics"
+        throw new Error(errorMessage)
+      }
+      if (!isMailDeliverabilityReport(json)) {
+        throw new Error("Mail diagnostics response is invalid")
+      }
+      setMailReport(json)
+    } catch (error) {
+      setMailReport(null)
+      toast.error(error instanceof Error ? error.message : "Failed to load mail diagnostics")
+    } finally {
+      setLoadingMailReport(false)
+    }
+  }
+
   const openSupplierEditor = (supplier: SupplierSummary) => {
     setEditingSupplier(supplier)
     setSupplierDraft({ ...supplier })
@@ -129,6 +176,7 @@ export function SettingsForm({ initialSettings, initialAdminLocale }: SettingsFo
 
   useEffect(() => {
     void loadSuppliers().catch(() => null)
+    void loadMailReport().catch(() => null)
   }, [])
 
   const save = async () => {
@@ -206,13 +254,43 @@ export function SettingsForm({ initialSettings, initialAdminLocale }: SettingsFo
             </div>
             <div className="grid grid-cols-1 gap-4 border-t border-[#edf1f7] p-5 md:grid-cols-2">
               <Input value={settings.siteName} onChange={(e) => update("siteName", e.target.value)} placeholder="Site name" className={inputSurface} />
-              <Input value={settings.siteTagline} onChange={(e) => update("siteTagline", e.target.value)} placeholder="Tagline" className={inputSurface} />
-              <Input value={settings.brandPrimary} onChange={(e) => update("brandPrimary", e.target.value)} placeholder="Brand line 1" className={inputSurface} />
-              <Input value={settings.brandSecondary} onChange={(e) => update("brandSecondary", e.target.value)} placeholder="Brand line 2" className={inputSurface} />
+              <Input value={settings.defaultMetaTitle} onChange={(e) => update("defaultMetaTitle", e.target.value)} placeholder="Default meta title" className={inputSurface} />
+              <Input value={settings.defaultMetaDescription} onChange={(e) => update("defaultMetaDescription", e.target.value)} placeholder="Default meta description" className={inputSurface} />
               <Input value={settings.defaultLanguage} onChange={(e) => update("defaultLanguage", e.target.value)} placeholder="Default language" className={inputSurface} />
               <Input value={settings.defaultCurrency} onChange={(e) => update("defaultCurrency", e.target.value)} placeholder="Default currency" className={inputSurface} />
               <Input value={settings.supportEmail} onChange={(e) => update("supportEmail", e.target.value)} placeholder="Support email" className={inputSurface} />
               <Input value={settings.supportPhone} onChange={(e) => update("supportPhone", e.target.value)} placeholder="Support phone" className={inputSurface} />
+            </div>
+          </div>
+
+          <div className={cardSurface}>
+            <div className="p-5">
+              <h3 className="text-lg font-semibold text-slate-900">Currency Rate Status</h3>
+              <p className="mt-1 text-sm text-slate-500">USD to EUR conversion diagnostics for the storefront.</p>
+            </div>
+            <div className={`grid gap-4 border-t border-[#edf1f7] p-5 md:grid-cols-4 ${diagnosticsTone}`}>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current rate</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{currencyDiagnostics.usdToEurRate.toFixed(4)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Source</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  {currencyDiagnostics.rateSource.toUpperCase()} • {currencyDiagnostics.rateProvider}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Freshness</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{currencyDiagnostics.freshness.toUpperCase()}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Last successful fetch</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  {currencyDiagnostics.rateFetchedAt && currencyDiagnostics.rateFetchedAt !== new Date(0).toISOString()
+                    ? new Date(currencyDiagnostics.rateFetchedAt).toLocaleString("en-US")
+                    : "No live fetch yet"}
+                </p>
+              </div>
             </div>
           </div>
 
@@ -260,6 +338,90 @@ export function SettingsForm({ initialSettings, initialAdminLocale }: SettingsFo
               <Input value={settings.outgoingMailPassword} onChange={(e) => update("outgoingMailPassword", e.target.value)} placeholder="SMTP password" className={inputSurface} />
               <Input value={settings.outgoingMailFromName} onChange={(e) => update("outgoingMailFromName", e.target.value)} placeholder="From name" className={inputSurface} />
               <Input value={settings.outgoingMailFromEmail} onChange={(e) => update("outgoingMailFromEmail", e.target.value)} placeholder="From email" className={inputSurface} />
+            </div>
+          </div>
+
+          <div className={cardSurface}>
+            <div className="p-5">
+              <h3 className="text-lg font-semibold text-slate-900">Deliverability Checks</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Password reset emails should be sent from the same domain used in the reset link and authenticated with SPF, DKIM, and DMARC.
+              </p>
+            </div>
+            <div className="space-y-5 border-t border-[#edf1f7] p-5">
+              {loadingMailReport ? (
+                <p className="text-sm text-slate-500">Loading mail diagnostics...</p>
+              ) : mailReport ? (
+                <>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-xl border border-[#dce3ed] bg-[#f8fafc] p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Canonical reset URL</p>
+                      <p className="mt-2 break-all text-sm font-medium text-slate-900">{mailReport.canonicalResetUrl}</p>
+                    </div>
+                    <div className="rounded-xl border border-[#dce3ed] bg-[#f8fafc] p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Active provider</p>
+                      <p className="mt-2 text-sm font-medium text-slate-900">{mailReport.providerLabel}</p>
+                      <p className="mt-1 text-xs text-slate-500">{mailReport.smtpHost || "No SMTP host configured"}</p>
+                    </div>
+                    <div className="rounded-xl border border-[#dce3ed] bg-[#f8fafc] p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">From identity</p>
+                      <p className="mt-2 text-sm font-medium text-slate-900">
+                        {mailReport.fromName} &lt;{mailReport.fromEmail}&gt;
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">Reply-To: {mailReport.replyTo || "-"}</p>
+                    </div>
+                    <div className="rounded-xl border border-[#dce3ed] bg-[#f8fafc] p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">SMTP login</p>
+                      <p className="mt-2 text-sm font-medium text-slate-900">{mailReport.smtpUser || "-"}</p>
+                    </div>
+                  </div>
+
+                  {mailReport.warnings.length > 0 ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      <p className="text-sm font-semibold text-amber-900">Issues to fix</p>
+                      <div className="mt-3 space-y-2">
+                        {mailReport.warnings.map((warning) => (
+                          <p key={warning} className="text-sm text-amber-900">
+                            {warning}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                      Sender identity is aligned with the current domain configuration.
+                    </div>
+                  )}
+
+                  <div className="rounded-xl border border-[#dce3ed] bg-white p-4">
+                    <p className="text-sm font-semibold text-slate-900">Recommended DNS records</p>
+                    <div className="mt-3 space-y-3">
+                      {mailReport.dnsRecords.map((record) => (
+                        <div key={`${record.type}-${record.host}`} className="rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            {record.type} {record.host}
+                          </p>
+                          <p className="mt-2 break-all font-mono text-xs text-slate-900">{record.value}</p>
+                          <p className="mt-2 text-xs text-slate-500">{record.purpose}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-[#dce3ed] bg-white p-4">
+                    <p className="text-sm font-semibold text-slate-900">Recommended actions</p>
+                    <div className="mt-3 space-y-2">
+                      {mailReport.recommendations.map((recommendation) => (
+                        <p key={recommendation} className="text-sm text-slate-600">
+                          {recommendation}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-slate-500">Mail diagnostics are unavailable right now.</p>
+              )}
             </div>
           </div>
         </TabsContent>

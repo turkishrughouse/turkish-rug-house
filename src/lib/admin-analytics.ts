@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db"
-import { getOrderDetailsMap, type OrderDetails } from "@/lib/order-details"
+import { EMPTY_ORDER_DETAILS, getOrderDetailsMap, type OrderDetails } from "@/lib/order-details"
 
 export const ANALYTICS_RANGE_OPTIONS = ["7d", "30d", "365d"] as const
 
@@ -306,27 +306,7 @@ export async function getAnalyticsSnapshot(rangeKey: AnalyticsRangeKey = "30d"):
       quantity: normalizeNumber(item.quantity),
       price: normalizeNumber(item.price),
     })),
-    details: detailsMap.get(order.id) || {
-      customerPhone: null,
-      addressLine1: null,
-      addressLine2: null,
-      city: null,
-      state: null,
-      postcode: null,
-      country: null,
-      paymentMethod: null,
-      paymentStatus: null,
-      paymentReference: null,
-      shippingMethod: null,
-      shippingCost: 0,
-      subtotalAmount: 0,
-      taxAmount: 0,
-      discountAmount: 0,
-      refundedAmount: 0,
-      currency: "USD",
-      invoiceNumber: null,
-      invoiceIssuedAt: null,
-    },
+    details: detailsMap.get(order.id) || { ...EMPTY_ORDER_DETAILS },
   }))
 
   const products = productRows.map<AnalyticsProductRow>((product) => ({

@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
+import { ForgotPasswordModal } from "@/components/storefront/forgot-password-modal"
 
 export default function AccountAuthPage() {
   const searchParams = useSearchParams()
@@ -25,6 +26,7 @@ export default function AccountAuthPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -125,6 +127,16 @@ export default function AccountAuthPage() {
             </button>
           </form>
 
+          {mode === "login" ? (
+            <button
+              type="button"
+              className="mt-3 inline-block text-sm text-teal-700 underline underline-offset-4"
+              onClick={() => setForgotPasswordOpen(true)}
+            >
+              Forgotten Password
+            </button>
+          ) : null}
+
           <div className="mt-5 space-y-2">
             <Link href="/api/auth/social/start?provider=google&redirectTo=%2Faccount" className="inline-flex h-11 w-full items-center justify-center rounded bg-[#4285F4] text-sm font-semibold text-white">
               Continue with Google
@@ -140,6 +152,7 @@ export default function AccountAuthPage() {
           </p>
         </div>
       </div>
+      <ForgotPasswordModal open={forgotPasswordOpen} onClose={() => setForgotPasswordOpen(false)} initialEmail={email} />
     </section>
   )
 }

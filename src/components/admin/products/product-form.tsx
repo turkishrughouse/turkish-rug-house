@@ -68,6 +68,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog"
+import { normalizeRichTextHtml } from "@/lib/rich-text"
 import { cn } from "@/lib/utils"
 import { MediaPickerDialog } from "@/components/admin/media/media-picker-dialog"
 import type { AdminLanguage } from "@/lib/admin/i18n"
@@ -344,6 +345,14 @@ function buildHtmlTable(rows: number, cols: number): string {
     return `<table>\n  <thead>\n    <tr>\n${header}\n    </tr>\n  </thead>\n  <tbody>\n${bodyRows}\n  </tbody>\n</table>`
 }
 
+const TEXT_SIZE_OPTIONS = [
+    { label: "Text size", value: "" },
+    { label: "Small", value: "14px" },
+    { label: "Normal", value: "16px" },
+    { label: "Large", value: "20px" },
+    { label: "XL", value: "28px" },
+] as const
+
 function RichToolbarButton({
     label,
     icon,
@@ -516,6 +525,28 @@ function RichTextEditor({
         setTableDialogOpen(false)
     }
 
+    const applyTextSize = (fontSize: string) => {
+        if (!fontSize || mode !== "visual" || !visualRef.current) return
+        visualRef.current.focus()
+        const selection = window.getSelection()
+        if (!selection || selection.rangeCount === 0) return
+        const range = selection.getRangeAt(0)
+        if (!visualRef.current.contains(range.commonAncestorContainer) || range.collapsed) return
+
+        const fragment = range.extractContents()
+        const wrapper = document.createElement("span")
+        wrapper.style.fontSize = fontSize
+        wrapper.appendChild(fragment)
+        range.insertNode(wrapper)
+
+        const nextRange = document.createRange()
+        nextRange.selectNodeContents(wrapper)
+        selection.removeAllRanges()
+        selection.addRange(nextRange)
+        savedRangeRef.current = nextRange.cloneRange()
+        syncContent()
+    }
+
     const toolbarWrapperClass = cn(
         "border-b border-[#dcdcde] bg-[#f6f7f7] px-3 py-2",
         isFullscreen && "sticky top-0 z-20"
@@ -569,6 +600,20 @@ function RichTextEditor({
                         <option value="h5">Heading 5</option>
                         <option value="h6">Heading 6</option>
                         <option value="pre">Preformatted</option>
+                    </select>
+                    <select
+                        className="h-8 min-w-[118px] rounded-sm border border-[#c3c4c7] bg-white px-2 text-sm text-slate-700"
+                        defaultValue=""
+                        onChange={(event) => {
+                            applyTextSize(event.target.value)
+                            event.currentTarget.value = ""
+                        }}
+                    >
+                        {TEXT_SIZE_OPTIONS.map((option) => (
+                            <option key={option.label} value={option.value}>
+                                {option.label}
+                            </option>
+                        ))}
                     </select>
                     <RichToolbarButton label="Bold" icon={<Bold className="h-4 w-4" />} onClick={() => runCommand("bold")} />
                     <RichToolbarButton label="Italic" icon={<Italic className="h-4 w-4" />} onClick={() => runCommand("italic")} />
@@ -647,17 +692,19 @@ function RichTextEditor({
                         runCommand("insertText", text)
                     }}
                     className={cn(
-                        "w-full px-3 py-2 text-sm leading-6 text-slate-900 focus:outline-none",
+                        "w-full max-w-full break-words px-3 py-2 text-sm leading-6 text-slate-900 focus:outline-none [overflow-wrap:anywhere]",
                         "[&_h1]:text-4xl [&_h1]:font-bold [&_h1]:leading-tight [&_h1]:my-3",
                         "[&_h2]:text-3xl [&_h2]:font-bold [&_h2]:leading-tight [&_h2]:my-3",
                         "[&_h3]:text-2xl [&_h3]:font-semibold [&_h3]:leading-snug [&_h3]:my-2.5",
                         "[&_h4]:text-xl [&_h4]:font-semibold [&_h4]:leading-snug [&_h4]:my-2",
                         "[&_h5]:text-lg [&_h5]:font-semibold [&_h5]:leading-snug [&_h5]:my-2",
                         "[&_h6]:text-base [&_h6]:font-semibold [&_h6]:leading-snug [&_h6]:my-2",
-                        "[&_p]:my-2 [&_pre]:my-2 [&_blockquote]:my-2",
-                        "[&_table]:w-full [&_table]:border-collapse",
+                        "[&_p]:my-2 [&_blockquote]:my-2",
+                        "[&_table]:w-full [&_table]:table-fixed [&_table]:border-collapse",
                         "[&_th]:border [&_th]:border-[#d1d5db] [&_th]:bg-[#f8fafc] [&_th]:p-2 [&_th]:text-left [&_th]:text-xs [&_th]:font-semibold",
-                        "[&_td]:border [&_td]:border-[#d1d5db] [&_td]:p-2 [&_td]:text-xs"
+                        "[&_td]:border [&_td]:border-[#d1d5db] [&_td]:p-2 [&_td]:text-xs [&_td]:align-top [&_td]:break-words",
+                        "[&_th]:break-words [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-sm",
+                        "[&_pre]:my-2 [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:rounded-sm [&_pre]:bg-slate-900 [&_pre]:p-3 [&_pre]:text-xs [&_pre]:text-slate-100"
                     )}
                     style={{ minHeight: `${Math.max(minHeight, 180)}px` }}
                     data-placeholder={placeholder}
@@ -1242,7 +1289,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                 mode={descriptionMode}
                                 onModeChange={setDescriptionMode}
                                 value={descriptionValue}
-                                onChange={(nextValue) => setValue("description", nextValue, { shouldValidate: true, shouldDirty: true, shouldTouch: true })}
+                                onChange={(nextValue) => setValue("description", normalizeRichTextHtml(nextValue), { shouldValidate: true, shouldDirty: true, shouldTouch: true })}
                                 placeholder={tx("Long description shown under product gallery on the storefront.", "Ön tarafta ürün galerisi altında gösterilecek uzun açıklama.")}
                                 minHeight={320}
                             />

@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server"
 import { getSiteSettings } from "@/lib/site-settings"
 
-export const dynamic = "force-dynamic"
+export const revalidate = 300
 
 export async function GET() {
   try {
     const data = await getSiteSettings()
     return NextResponse.json({
       siteName: data.siteName,
+      defaultMetaTitle: data.defaultMetaTitle,
+      defaultMetaDescription: data.defaultMetaDescription,
       brandPrimary: data.brandPrimary,
       brandSecondary: data.brandSecondary,
       siteTagline: data.siteTagline,
@@ -54,6 +56,10 @@ export async function GET() {
       dhlEnabled: data.dhlEnabled,
       upsEnabled: data.upsEnabled,
       fedexEnabled: data.fedexEnabled,
+    }, {
+      headers: {
+        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=86400",
+      },
     })
   } catch (error) {
     console.error("Error fetching public settings:", error)

@@ -1,7 +1,10 @@
 
+"use client"
+
 import Link from "next/link"
 import { ShoppingCart, Search, Shuffle, Heart } from "lucide-react"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
+import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
 
 interface Product {
     id: string
@@ -19,6 +22,7 @@ interface ProductGridProps {
 }
 
 export function ProductGrid({ products }: ProductGridProps) {
+    const { formatUsd } = useStorefrontCurrency()
     if (products.length === 0) return null
 
     return (
@@ -84,11 +88,11 @@ export function ProductGrid({ products }: ProductGridProps) {
                             </h3>
                             <div className="flex items-center gap-2">
                                 <p className="text-sm font-semibold text-slate-900">
-                                    ${product.price.toFixed(2)}
+                                    {formatUsd(product.price)}
                                 </p>
                                 {product.compareAtPrice && product.compareAtPrice > product.price && (
                                     <p className="text-xs text-slate-500 line-through">
-                                        ${product.compareAtPrice.toFixed(2)}
+                                        {formatUsd(product.compareAtPrice)}
                                     </p>
                                 )}
                             </div>

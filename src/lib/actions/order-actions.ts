@@ -3,11 +3,10 @@
 import { prisma as db } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 import { notifyOrderUpdate } from "@/lib/customer-messaging"
-import { grantReviewRightForOrder } from "@/lib/review-access"
 import { ensureOrderDetailsColumn, getOrderDetailsMap, getSingleOrderDetails, saveOrderDetails } from "@/lib/order-details"
 
 type ShipmentStatus = "PENDING" | "SHIPPED" | "IN_TRANSIT" | "DELIVERED"
-type AdminOrderStatus = "PENDING" | "PAID" | "PROCESSING" | "SHIPPED" | "DELIVERED" | "CANCELLED" | "REFUNDED" | "TRASHED"
+type AdminOrderStatus = "PENDING" | "PAID" | "PROCESSING" | "SHIPPED" | "DELIVERED" | "CANCELLED" | "REFUNDED" | "FAILED" | "TRASHED"
 type PaymentStatus = "PENDING" | "PAID" | "REFUNDED" | "FAILED" | "PARTIALLY_REFUNDED"
 
 const TRACKING_STATUS_LABEL: Record<ShipmentStatus, string> = {
@@ -45,7 +44,7 @@ function normalizeOrderStatus(input: string | null | undefined): AdminOrderStatu
     const value = (input || "").trim().toUpperCase()
     if (value === "FULFILLED") return "SHIPPED"
     if (value === "TRASHED") return "TRASHED"
-    if (value === "PENDING" || value === "PAID" || value === "PROCESSING" || value === "SHIPPED" || value === "DELIVERED" || value === "CANCELLED" || value === "REFUNDED") {
+    if (value === "PENDING" || value === "PAID" || value === "PROCESSING" || value === "SHIPPED" || value === "DELIVERED" || value === "CANCELLED" || value === "REFUNDED" || value === "FAILED") {
         return value
     }
     return "PENDING"
@@ -231,66 +230,6 @@ export async function addOrderEvent(orderId: string, type: string, title: string
     } catch {
         return { success: false, error: "Failed to add event" }
     }
-}
-
-// Seed helper for verify
-export async function createMockOrder(input?: { preferredEmail?: string }) {
-    await ensureOrderDetailsColumn()
-    const preferred = (input?.preferredEmail || "").trim().toLowerCase()
-    const fallbackUser = await db.user.findFirst({
-        where: {
-            role: "CUSTOMER",
-            ...(preferred ? { email: preferred } : {}),
-        },
-        orderBy: { createdAt: "desc" },
-        select: { id: true, email: true, name: true },
-    })
-
-    const orderNumber = `ORD-DEMO-${Date.now().toString().slice(-8)}`
-    const order = await db.order.create({
-        data: {
-            orderNumber,
-            userId: fallbackUser?.id || null,
-            customerEmail: fallbackUser?.email || "demo@example.com",
-            customerName: fallbackUser?.name || "Demo User",
-            total: 299.99,
-            status: "PAID",
-            items: {
-                create: [
-                    { title: "Vintage Rug 001", quantity: 1, price: 299.99 }
-                ]
-            },
-            events: {
-                create: [
-                    { type: "CREATED", title: "Order Placed", description: "Order received via Checkout", actorType: "CUSTOMER" },
-                    { type: "PAYMENT", title: "Payment Authorized", description: "VISA ending in 4242", actorType: "SYSTEM" },
-                    { type: "STATUS", title: "Processing Started", actorType: "SYSTEM" }
-                ]
-            }
-        }
-    })
-    await notifyOrderUpdate(
-        order.id,
-        "Order created",
-        `Your order ${order.orderNumber} has been created successfully.`,
-        "/account",
-        "CREATE",
-        { sendCustomerPanelMessage: true }
-    )
-    await saveOrderDetails(order.id, {
-        paymentMethod: "Manual",
-        paymentStatus: "PAID",
-        shippingMethod: "DHL Express",
-        subtotalAmount: 299.99,
-        taxAmount: 0,
-        discountAmount: 0,
-        shippingCost: 0,
-        invoiceNumber: `INV-${order.orderNumber}`,
-        invoiceIssuedAt: new Date().toISOString(),
-        currency: "USD",
-    })
-    await grantReviewRightForOrder(order.id)
-    return order.id
 }
 
 export async function fulfillOrder(orderId: string, carrier: string, trackingNumber: string, notes?: string) {

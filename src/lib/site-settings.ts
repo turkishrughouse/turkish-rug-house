@@ -1,3 +1,4 @@
+import { revalidateTag, unstable_cache } from "next/cache"
 import { prisma } from "@/lib/db"
 
 export type FooterSocialLink = {
@@ -21,6 +22,8 @@ export type HomeFeatureItem = {
 
 export type SiteSettings = {
   siteName: string
+  defaultMetaTitle: string
+  defaultMetaDescription: string
   brandPrimary: string
   brandSecondary: string
   siteTagline: string
@@ -157,6 +160,8 @@ export type SiteSettings = {
 
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   siteName: "Turkish Rug House",
+  defaultMetaTitle: "Handmade Turkish Rugs - Vintage Oushak Rugs - Turkish Rug House",
+  defaultMetaDescription: "Premium Rugs & Textiles",
   brandPrimary: "Turkish",
   brandSecondary: "Rug House",
   siteTagline: "Authentic, hand-knotted rugs from Anatolia.",
@@ -306,6 +311,14 @@ function normalizeSettings(input: unknown): SiteSettings {
   }
   return {
     siteName: typeof raw.siteName === "string" && raw.siteName.trim() ? raw.siteName.trim() : DEFAULT_SITE_SETTINGS.siteName,
+    defaultMetaTitle:
+      typeof raw.defaultMetaTitle === "string" && raw.defaultMetaTitle.trim().length > 0
+        ? raw.defaultMetaTitle.trim()
+        : DEFAULT_SITE_SETTINGS.defaultMetaTitle,
+    defaultMetaDescription:
+      typeof raw.defaultMetaDescription === "string" && raw.defaultMetaDescription.trim().length > 0
+        ? raw.defaultMetaDescription.trim()
+        : DEFAULT_SITE_SETTINGS.defaultMetaDescription,
     brandPrimary: typeof raw.brandPrimary === "string" && raw.brandPrimary.trim() ? raw.brandPrimary.trim() : DEFAULT_SITE_SETTINGS.brandPrimary,
     brandSecondary: typeof raw.brandSecondary === "string" && raw.brandSecondary.trim() ? raw.brandSecondary.trim() : DEFAULT_SITE_SETTINGS.brandSecondary,
     siteTagline: typeof raw.siteTagline === "string" ? raw.siteTagline.trim() : DEFAULT_SITE_SETTINGS.siteTagline,
@@ -751,7 +764,7 @@ function normalizeSettings(input: unknown): SiteSettings {
   }
 }
 
-export async function getSiteSettings(): Promise<SiteSettings> {
+async function readSiteSettings(): Promise<SiteSettings> {
   const row = await prisma.designSettings.findUnique({ where: { key: SETTINGS_KEY } })
   if (!row) return DEFAULT_SITE_SETTINGS
 
@@ -762,6 +775,15 @@ export async function getSiteSettings(): Promise<SiteSettings> {
   }
 }
 
+const getCachedSiteSettings = unstable_cache(readSiteSettings, ["site-settings"], {
+  revalidate: 300,
+  tags: ["site-settings"],
+})
+
+export async function getSiteSettings(): Promise<SiteSettings> {
+  return getCachedSiteSettings()
+}
+
 export async function saveSiteSettings(input: unknown): Promise<SiteSettings> {
   const next = normalizeSettings(input)
 
@@ -770,6 +792,8 @@ export async function saveSiteSettings(input: unknown): Promise<SiteSettings> {
     update: { config: JSON.stringify(next) },
     create: { key: SETTINGS_KEY, config: JSON.stringify(next) },
   })
+
+  revalidateTag("site-settings", "max")
 
   return next
 }

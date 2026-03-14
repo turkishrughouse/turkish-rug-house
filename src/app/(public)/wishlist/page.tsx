@@ -12,10 +12,12 @@ import {
   type EngagementItem,
 } from "@/lib/storefront/engagement"
 import { pickPrimaryImage } from "@/lib/product-images"
+import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
 
 export default function WishlistPage() {
   const [items, setItems] = useState<EngagementItem[]>([])
   const [fallbackBannerImage, setFallbackBannerImage] = useState("")
+  const { formatUsd } = useStorefrontCurrency()
 
   const refresh = () => setItems(readEngagementList("rughouse_wishlist"))
 
@@ -95,7 +97,7 @@ export default function WishlistPage() {
                   <Link href={`/product/${item.slug}`} className="line-clamp-1 text-lg font-semibold text-slate-900 hover:text-emerald-700">
                     {item.title}
                   </Link>
-                  <p className="mt-1 text-sm font-semibold text-emerald-700">${item.price.toFixed(2)}</p>
+                  <p className="mt-1 text-sm font-semibold text-emerald-700">{formatUsd(item.price)}</p>
                 </div>
                 <button
                   type="button"

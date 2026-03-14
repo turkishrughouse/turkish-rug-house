@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import { ChevronDown, ChevronUp, RotateCcw, Trash2 } from "lucide-react"
 import { toast } from "sonner"
+import { ResponsiveImage } from "@/components/ui/responsive-image"
 import {
   clearCart,
   getCartSummary,
@@ -13,8 +14,8 @@ import {
   updateCartItemQuantity,
   type CartItem,
 } from "@/lib/storefront/cart"
-import { formatCurrency, type CurrencySettings } from "@/lib/storefront/currency"
 import { parseProductImages, pickPrimaryImage } from "@/lib/product-images"
+import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
 
 type ExpandKey = "coupon" | "shipping" | "gift"
 type SuggestedProduct = {
@@ -31,13 +32,6 @@ function parseImages(images: string): string[] {
 
 export default function BasketPage() {
   const [items, setItems] = useState<CartItem[]>([])
-  const [currencySettings, setCurrencySettings] = useState<CurrencySettings>({
-    defaultCurrency: "USD",
-    currencyPosition: "left",
-    thousandSeparator: ".",
-    decimalSeparator: ",",
-    numberOfDecimals: 2,
-  })
   const [selectedShippingId, setSelectedShippingId] = useState("flat")
   const [flatShippingRate, setFlatShippingRate] = useState(20)
   const [localPickupRate, setLocalPickupRate] = useState(25)
@@ -49,6 +43,7 @@ export default function BasketPage() {
   })
   const [suggestedProducts, setSuggestedProducts] = useState<SuggestedProduct[]>([])
   const [fallbackBannerImage, setFallbackBannerImage] = useState("")
+  const { formatUsd } = useStorefrontCurrency()
 
   const refresh = () => setItems(readCart())
 
@@ -68,19 +63,12 @@ export default function BasketPage() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const res = await fetch("/api/public/settings", { cache: "no-store" })
+        const res = await fetch("/api/public/settings", { cache: "force-cache" })
         if (!res.ok) return
         const data = await res.json()
         if (typeof data.flatShippingRate === "number") setFlatShippingRate(Math.max(0, data.flatShippingRate))
         if (typeof data.localPickupRate === "number") setLocalPickupRate(Math.max(0, data.localPickupRate))
         setEnableTaxes(Boolean(data.enableTaxes))
-        setCurrencySettings({
-          defaultCurrency: data.defaultCurrency || "USD",
-          currencyPosition: data.currencyPosition || "left",
-          thousandSeparator: data.thousandSeparator || ".",
-          decimalSeparator: data.decimalSeparator || ",",
-          numberOfDecimals: typeof data.numberOfDecimals === "number" ? data.numberOfDecimals : 2,
-        })
       } catch {
         // keep defaults
       }
@@ -130,7 +118,7 @@ export default function BasketPage() {
   useEffect(() => {
     const loadFallbackBanner = async () => {
       try {
-        const res = await fetch("/api/v1/public/products?limit=1&sort=latest", { cache: "no-store" })
+        const res = await fetch("/api/v1/public/products?limit=1&sort=latest", { cache: "force-cache" })
         if (!res.ok) return
         const data = (await res.json().catch(() => ({}))) as {
           products?: Array<{ image?: string; featuredImage?: string; images?: unknown }>
@@ -165,7 +153,14 @@ export default function BasketPage() {
   return (
     <div className="min-h-screen bg-[#f5f5f5]">
       <section className="relative overflow-hidden border-b border-[#e2e2e2]">
-        <img src={heroImage} alt="Shopping cart banner" className="absolute inset-0 h-full w-full object-cover object-center" />
+        <ResponsiveImage
+          src={heroImage}
+          alt="Shopping cart banner"
+          fill
+          priority
+          sizes="100vw"
+          className="absolute inset-0 object-cover object-center"
+        />
         <div className="absolute inset-0 bg-black/35" />
         <div className="relative mx-auto flex w-full max-w-[1880px] flex-col items-center justify-center px-4 py-10 text-center sm:px-6 sm:py-12 md:px-8">
           <h1 className="text-3xl font-semibold text-white sm:text-[42px]">Shopping Cart</h1>
@@ -205,7 +200,14 @@ export default function BasketPage() {
                       className="grid min-h-[116px] grid-cols-[150px_1.35fr_0.85fr_1fr_0.75fr] items-center border-b border-[#dfdfdf] px-4 py-2.5"
                     >
                       <div className="mx-auto h-20 w-20 overflow-hidden border border-[#d8d8d8] bg-white">
-                        <img src={item.image || "/placeholder.jpg"} alt={item.title} className="h-full w-full object-cover" />
+                        <ResponsiveImage
+                          src={item.image || "/placeholder.jpg"}
+                          alt={item.title}
+                          width={80}
+                          height={80}
+                          sizes="80px"
+                          className="h-full w-full object-cover"
+                        />
                       </div>
 
                       <div className="min-w-0 pr-3 text-left">
@@ -266,7 +268,7 @@ export default function BasketPage() {
                       </div>
 
                       <p className="text-center text-[20px] font-semibold text-slate-900">
-                        {formatCurrency(item.price * item.quantity, currencySettings)}
+                        {formatUsd(item.price * item.quantity)}
                       </p>
                     </div>
                   ))}
@@ -277,14 +279,21 @@ export default function BasketPage() {
                     <div key={item.productId} className="rounded-md border border-[#dfdfdf] p-3">
                       <div className="flex gap-3">
                         <div className="h-20 w-20 shrink-0 overflow-hidden border border-[#d8d8d8] bg-white">
-                          <img src={item.image || "/placeholder.jpg"} alt={item.title} className="h-full w-full object-cover" />
+                          <ResponsiveImage
+                            src={item.image || "/placeholder.jpg"}
+                            alt={item.title}
+                            width={80}
+                            height={80}
+                            sizes="80px"
+                            className="h-full w-full object-cover"
+                          />
                         </div>
                         <div className="min-w-0 flex-1">
                           <Link href={`/product/${item.slug}`} className="line-clamp-2 text-sm font-medium leading-5 text-slate-900 hover:text-teal-700">
                             {item.title}
                           </Link>
                           <p className="mt-1 text-xs text-slate-500">SKU: {item.sku || "-"}</p>
-                          <p className="mt-1 text-lg font-semibold text-slate-900">{formatCurrency(item.price * item.quantity, currencySettings)}</p>
+                          <p className="mt-1 text-lg font-semibold text-slate-900">{formatUsd(item.price * item.quantity)}</p>
                         </div>
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -371,7 +380,7 @@ export default function BasketPage() {
               <div className="mt-6 overflow-hidden border border-[#d4d4d4]">
                 <div className="flex items-center justify-between border-b border-[#d4d4d4] px-4 py-2.5 text-[14px]">
                   <span className="text-slate-700">Sub-Total:</span>
-                  <span className="font-medium">{formatCurrency(summary.total, currencySettings)}</span>
+                  <span className="font-medium">{formatUsd(summary.total)}</span>
                 </div>
                 <div className="flex items-center justify-between border-b border-[#d4d4d4] px-4 py-2.5 text-[14px]">
                   <span className="text-slate-700">Shipping:</span>
@@ -382,14 +391,14 @@ export default function BasketPage() {
                   >
                     {shippingOptions.map((opt) => (
                       <option key={opt.id} value={opt.id}>
-                        {opt.label} ({formatCurrency(opt.amount, currencySettings)})
+                        {opt.label} ({formatUsd(opt.amount)})
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="flex items-center justify-between px-4 py-2.5 text-[15px] font-semibold">
                   <span>Total:</span>
-                  <span>{formatCurrency(total, currencySettings)}</span>
+                  <span>{formatUsd(total)}</span>
                 </div>
               </div>
 
@@ -433,11 +442,17 @@ export default function BasketPage() {
                         className="group overflow-hidden border border-[#d8d8d8] bg-white p-3 transition-all hover:shadow-md"
                       >
                         <div className="aspect-square overflow-hidden border border-slate-200">
-                          <img src={image} alt={product.title} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                          <ResponsiveImage
+                            src={image}
+                            alt={product.title}
+                            fill
+                            sizes="(max-width: 768px) 50vw, 20vw"
+                            className="object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
                         </div>
                         <p className="mt-3 line-clamp-2 text-[14px] font-medium text-slate-900">{product.title}</p>
                         <p className="mt-1 text-[16px] font-semibold text-emerald-700">
-                          {formatCurrency(product.price, currencySettings)}
+                          {formatUsd(product.price)}
                         </p>
                       </Link>
                     )

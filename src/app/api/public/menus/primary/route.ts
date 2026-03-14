@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 
-export const dynamic = 'force-dynamic' // Ensure validation
+export const revalidate = 300
 
 function buildTree(items: any[]) {
     const idMap = new Map()
@@ -45,12 +45,20 @@ export async function GET() {
 
         if (!menu) {
             // Null response is valid if no menu is assigned
-            return NextResponse.json(null)
+            return NextResponse.json(null, {
+                headers: {
+                    "Cache-Control": "public, s-maxage=300, stale-while-revalidate=86400",
+                },
+            })
         }
 
         return NextResponse.json({
             ...menu,
             items: buildTree(menu.items)
+        }, {
+            headers: {
+                "Cache-Control": "public, s-maxage=300, stale-while-revalidate=86400",
+            },
         })
 
     } catch (error) {

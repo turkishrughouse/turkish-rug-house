@@ -69,7 +69,6 @@ export function CreateMenuModal({ open, onOpenChange, onCreate }: CreateMenuModa
                                 <Select
                                     value={location}
                                     onValueChange={(val) => {
-                                        console.log("Selected Location:", val)
                                         setLocation(val)
                                     }}
                                     required

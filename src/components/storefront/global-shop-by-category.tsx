@@ -166,12 +166,12 @@ export function GlobalShopByCategory() {
                   alt={card.label}
                   className="absolute inset-0 block h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                 />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/55 via-black/20 to-transparent" />
               </div>
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-3 text-center">
-                <div className="pointer-events-none absolute inset-0 z-0 bg-black/50" />
-                <div className="relative z-10 rounded-md bg-black/35 px-4 py-2">
+              <div className="pointer-events-none absolute bottom-0 left-0 z-10 w-full p-4">
+                <div className="max-w-[85%]">
                   <div
-                    className="line-clamp-2 text-xl font-bold text-white sm:text-2xl"
+                    className="line-clamp-2 text-left text-xl font-bold text-white sm:text-2xl"
                     style={{ textShadow: "0 2px 10px rgba(0, 0, 0, 0.65)" }}
                   >
                     {card.label}

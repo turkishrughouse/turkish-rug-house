@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/db"
 import { getSiteSettings } from "@/lib/site-settings"
-import { notifyOrderUpdate } from "@/lib/customer-messaging"
-import { grantReviewRightForOrder } from "@/lib/review-access"
-import { saveOrderDetails } from "@/lib/order-details"
+import { finalizePaidOrder } from "@/lib/payment-orders"
 
 async function getPayPalToken(clientId: string, clientSecret: string, sandbox: boolean) {
   const base = sandbox ? "https://api-m.sandbox.paypal.com" : "https://api-m.paypal.com"
@@ -47,31 +44,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(new URL(`/basket?payment=failed&order=${encodeURIComponent(orderId)}`, req.nextUrl.origin))
     }
 
-    const updated = await prisma.order.update({
-      where: { id: orderId },
-      data: { status: "PAID" },
-      select: { orderNumber: true },
-    })
-    await prisma.orderEvent.create({
-      data: {
-        orderId,
-        type: "PAYMENT",
-        title: "Payment received",
-        description: "PayPal payment captured",
-        actorType: "SYSTEM",
-        isAdmin: false,
-      },
-    })
-    await saveOrderDetails(orderId, {
-      paymentStatus: "PAID",
+    await finalizePaidOrder({
+      orderId,
       paymentMethod: "PAYPAL",
       paymentReference: paypalOrderId,
-      invoiceIssuedAt: new Date().toISOString(),
+      eventDescription: "PayPal payment captured",
     })
-    await notifyOrderUpdate(orderId, "Order received", `Your payment for ${updated.orderNumber} was completed.`, "/account", "CREATE")
-    await grantReviewRightForOrder(orderId)
-
-    return NextResponse.redirect(new URL("/account?payment=success", req.nextUrl.origin))
+    return NextResponse.redirect(new URL(`/checkout/success?order=${encodeURIComponent(orderId)}`, req.nextUrl.origin))
   } catch {
     return NextResponse.redirect(new URL("/basket?payment=failed", req.nextUrl.origin))
   }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getSessionUser } from "@/lib/auth"
+import { getOrderDetailsMap } from "@/lib/order-details"
 
 export async function GET() {
   const user = await getSessionUser("customer")
@@ -24,9 +25,12 @@ export async function GET() {
     take: 100,
   })
 
+  const detailsMap = await getOrderDetailsMap(orders.map((order) => order.id))
+
   const data = orders.map((order) => ({
     ...order,
     total: order.total.toNumber(),
+    details: detailsMap.get(order.id) || null,
     items: order.items.map((item) => ({
       ...item,
       price: item.price.toNumber(),

@@ -5,33 +5,11 @@ import { messageEvents } from "@/lib/message-events"
 import { logWebhookEvent } from "@/lib/webhook-logger"
 import { isSenderBlocked } from "@/lib/message-blocklist"
 import { logger } from "@/lib/logger"
+import { checkFixedWindowRateLimit } from "@/lib/rate-limit"
+import { getSiteSettings } from "@/lib/site-settings"
+import { sendSiteEmail } from "@/lib/mailer"
 
 export const dynamic = "force-dynamic"
-
-// Simple in-memory rate limiting (in production, use Redis or similar)
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-
-function checkRateLimit(ip: string): boolean {
-    const now = Date.now()
-    const limit = rateLimitMap.get(ip)
-
-    if (!limit || now > limit.resetAt) {
-        // Reset or create new limit
-        rateLimitMap.set(ip, {
-            count: 1,
-            resetAt: now + 15 * 60 * 1000, // 15 minutes
-        })
-        return true
-    }
-
-    if (limit.count >= 5) {
-        // Max 5 requests per 15 minutes
-        return false
-    }
-
-    limit.count++
-    return true
-}
 
 /**
  * POST /api/messages/contact
@@ -43,7 +21,13 @@ export async function POST(req: NextRequest) {
         const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown"
 
         // Check rate limit
-        if (!checkRateLimit(ip)) {
+        const rateLimit = checkFixedWindowRateLimit({
+            scope: "contact-form",
+            key: ip,
+            limit: 5,
+            windowMs: 15 * 60 * 1000,
+        })
+        if (!rateLimit.allowed) {
             logger.warn("Contact rate limit exceeded", { ip }, "contact-api")
             logWebhookEvent({
                 timestamp: new Date().toISOString(),
@@ -102,6 +86,64 @@ export async function POST(req: NextRequest) {
                 attachments: "[]",
             },
         })
+
+        const settings = await getSiteSettings()
+        const submittedAt = metadata.submittedAt
+        const recipient = (settings.supportEmail || "info@turkishrughouse.com").trim() || "info@turkishrughouse.com"
+        const timestamp = new Date(submittedAt).toLocaleString("en-US", {
+            dateStyle: "medium",
+            timeStyle: "short",
+            timeZone: "Europe/Istanbul",
+        })
+        const isProductQuestion = typeof subject === "string" && subject.trim().toLowerCase().startsWith("product question -")
+        const introLine = isProductQuestion ? "New product question submission" : "New contact form submission"
+        const textLines = [
+            introLine,
+            "",
+            `Name: ${name}`,
+            `Email: ${email}`,
+            `Phone: ${phone || "-"}`,
+            `Timestamp: ${timestamp}`,
+            "",
+            "Message:",
+            message,
+        ]
+
+        const mailResult = await sendSiteEmail({
+            to: recipient,
+            subject: subject?.trim() || `Contact form message from ${name}`,
+            text: textLines.join("\n"),
+            replyTo: email,
+            html: [
+                `<p><strong>${introLine}</strong></p>`,
+                `<p><strong>Name:</strong> ${name}</p>`,
+                `<p><strong>Email:</strong> ${email}</p>`,
+                `<p><strong>Phone:</strong> ${phone || "-"}</p>`,
+                `<p><strong>Timestamp:</strong> ${timestamp}</p>`,
+                `<p><strong>Message:</strong></p>`,
+                `<p>${message.replace(/\n/g, "<br/>")}</p>`,
+            ].join(""),
+        })
+
+        if (!mailResult.ok) {
+            logger.error(
+                "Contact email delivery failed",
+                { messageId: newMessage.id, provider: mailResult.provider, error: mailResult.error },
+                "contact-api"
+            )
+            logWebhookEvent({
+                timestamp: new Date().toISOString(),
+                source: "CONTACT",
+                event: "message_email_failed",
+                status: "error",
+                error: mailResult.error || "Unknown email delivery failure",
+                metadata: { messageId: newMessage.id, provider: mailResult.provider },
+            })
+            return NextResponse.json(
+                { error: "Message saved but email delivery failed. Please verify SMTP settings." },
+                { status: 502 }
+            )
+        }
 
         // Broadcast to admin via SSE
         messageEvents.broadcastNewMessage(newMessage)

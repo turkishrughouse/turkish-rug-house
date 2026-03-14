@@ -10,7 +10,7 @@ import { getPublishedBlogPosts } from "@/lib/blog"
 import { getSiteSettings } from "@/lib/site-settings"
 import { parseProductImages } from "@/lib/product-images"
 
-export const dynamic = "force-dynamic"
+export const revalidate = 300
 
 function rotateByOffset<T>(items: T[], offset: number) {
   if (!items.length) return items

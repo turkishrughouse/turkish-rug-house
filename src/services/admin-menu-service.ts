@@ -62,7 +62,6 @@ export const menuService = {
 
     create: async (payload: { name: string, location: string }): Promise<Menu | null> => {
         const url = "/api/admin/menus"
-        console.log(`[AdminMenuService] Creating menu...`, { url, payload })
 
         try {
             const res = await fetch(url, {
@@ -70,8 +69,6 @@ export const menuService = {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             })
-
-            console.log(`[AdminMenuService] Response status:`, res.status)
 
             if (!res.ok) {
                 const text = await res.text()
@@ -88,7 +85,6 @@ export const menuService = {
             }
 
             const data = await res.json()
-            console.log(`[AdminMenuService] Menu created successfully:`, data)
             toast.success("Menu created successfully")
             return data
         } catch (error) {

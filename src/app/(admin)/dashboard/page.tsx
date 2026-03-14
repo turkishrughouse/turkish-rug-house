@@ -1,14 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle } from "@/components/ui/dialog"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
-import { Button } from "@/components/ui/button"
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
-import { ChevronLeft, ChevronRight, DollarSign, ShoppingBag, Users, Package, Globe2, Boxes, X, ClipboardList } from "lucide-react"
+import { ChevronLeft, ChevronRight, DollarSign, ShoppingBag, Users, Package, Globe2, Boxes, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { parseProductImages } from "@/lib/product-images"
@@ -155,13 +154,6 @@ type ProductCreatorResponse = {
   adminSection: ProductCreatorSection
 }
 
-type DashboardTask = {
-  id: string
-  title: string
-  description: string
-  badge: string
-}
-
 type GeoCollection = {
   type: "FeatureCollection"
   features: GeoFeature[]
@@ -171,27 +163,6 @@ const PRODUCT_PERIOD_OPTIONS = [
   { value: "week", labelEn: "This Week", labelTr: "Bu Hafta" },
   { value: "month", labelEn: "This Month", labelTr: "Bu Ay" },
   { value: "year", labelEn: "This Year", labelTr: "Bu Yıl" },
-] as const
-
-const DASHBOARD_TASKS: DashboardTask[] = [
-  {
-    id: "task-review-drafts",
-    title: "Review draft products",
-    description: "Check draft products waiting for final publish review and confirm their content quality before release.",
-    badge: "Review",
-  },
-  {
-    id: "task-media-cleanup",
-    title: "Clean product media folders",
-    description: "Audit product folders with missing or duplicate media so the team can archive sold-product assets faster.",
-    badge: "Media",
-  },
-  {
-    id: "task-stock-audit",
-    title: "Verify low-stock records",
-    description: "Open a stock audit pass for products that need inventory confirmation before new orders arrive.",
-    badge: "Stock",
-  },
 ] as const
 
 const COUNTRY_COORDS: Record<string, { lat: number; lng: number }> = {
@@ -211,6 +182,10 @@ const COUNTRY_COORDS: Record<string, { lat: number; lng: number }> = {
   AU: { lat: -25, lng: 133 },
   BR: { lat: -14, lng: -52 },
   MX: { lat: 23, lng: -102 },
+}
+
+function subscribeToHydration() {
+  return () => {}
 }
 
 function coordToPercent(lat: number, lng: number) {
@@ -425,7 +400,6 @@ export default function DashboardPage() {
   const [selectedSuperUserPeriod, setSelectedSuperUserPeriod] = useState<"week" | "month" | "year">("week")
   const [selectedAdminUserId, setSelectedAdminUserId] = useState("")
   const [selectedAdminUserPeriod, setSelectedAdminUserPeriod] = useState<"week" | "month" | "year">("week")
-  const [selectedTask, setSelectedTask] = useState<DashboardTask | null>(null)
   const [isOrdersDetailOpen, setIsOrdersDetailOpen] = useState(false)
   const [ordersCountryFilter, setOrdersCountryFilter] = useState<string | null>(null)
   const [isCustomersDetailOpen, setIsCustomersDetailOpen] = useState(false)
@@ -450,6 +424,7 @@ export default function DashboardPage() {
   const [isAbandonedCartsOpen, setIsAbandonedCartsOpen] = useState(false)
   const hasDeviceData = deviceLogins.length > 0
   const hasAbandonedCartData = abandonedCarts.length > 0
+  const chartsReady = useSyncExternalStore(subscribeToHydration, () => true, () => false)
 
   useEffect(() => {
     const langFromMain = document.querySelector("main[lang]")?.getAttribute("lang") || document.documentElement.lang || "en"
@@ -666,10 +641,14 @@ export default function DashboardPage() {
         const data = (await res.json()) as ProductCreatorResponse
         if (cancelled) return
         setProductCreatorData(data)
-        if (!selectedSuperUserId && data.superUsers[0]?.id) {
+        if (!selectedSuperUserId && data.superUserSection.selectedUserId) {
+          setSelectedSuperUserId(data.superUserSection.selectedUserId)
+        } else if (!selectedSuperUserId && data.superUsers[0]?.id) {
           setSelectedSuperUserId(data.superUsers[0].id)
         }
-        if (!selectedAdminUserId && data.adminUsers[0]?.id) {
+        if (!selectedAdminUserId && data.adminSection.selectedUserId) {
+          setSelectedAdminUserId(data.adminSection.selectedUserId)
+        } else if (!selectedAdminUserId && data.adminUsers[0]?.id) {
           setSelectedAdminUserId(data.adminUsers[0].id)
         }
       } catch {
@@ -955,6 +934,12 @@ export default function DashboardPage() {
     () => productCreatorData?.adminUsers.find((entry) => entry.id === selectedAdminUserId) || null,
     [productCreatorData?.adminUsers, selectedAdminUserId]
   )
+  const productActivityCards = [
+    { key: "today", label: tx("Today", "Bugün"), value: summary.productsAdded.today, breakdown: summary.productsAddedBy.today },
+    { key: "week", label: tx("Week", "Hafta"), value: summary.productsAdded.week, breakdown: summary.productsAddedBy.week },
+    { key: "month", label: tx("Month", "Ay"), value: summary.productsAdded.month, breakdown: summary.productsAddedBy.month },
+    { key: "year", label: tx("Year", "Yıl"), value: summary.productsAdded.year, breakdown: summary.productsAddedBy.year },
+  ] as const
 
   const openOrdersOverlay = (country: string | null = null) => {
     closeAllOverlays()
@@ -1581,30 +1566,51 @@ export default function DashboardPage() {
                     <div className="rounded-xl border border-[#e6ecf4] bg-slate-50 p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{tx("Task Area", "Görev Alanı")}</p>
-                          <p className="mt-1 text-xs text-slate-500">{tx("Prepared task structure for dashboard operations.", "Dashboard operasyonları için hazırlanmış görev yapısı.")}</p>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{tx("Live Product Activity", "Canlı Ürün Aktivitesi")}</p>
+                          <p className="mt-1 text-xs text-slate-500">{tx("Real-time product totals and creator breakdown from the dashboard summary source.", "Dashboard summary kaynağından gerçek zamanlı ürün toplamları ve creator dağılımı.")}</p>
                         </div>
                         <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                          {DASHBOARD_TASKS.length} {tx("tasks", "görev")}
+                          {summary.totalProducts} {tx("active", "aktif")}
                         </div>
                       </div>
-                      <div className="mt-4 space-y-3">
-                        {DASHBOARD_TASKS.map((task) => (
-                          <button
-                            key={task.id}
-                            type="button"
-                            onClick={() => setSelectedTask(task)}
-                            className="w-full rounded-lg border border-[#e6ecf4] bg-white p-3 text-left transition-colors hover:border-slate-300"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-slate-900">{task.title}</p>
-                                <p className="mt-1 line-clamp-2 text-xs text-slate-500">{task.description}</p>
-                              </div>
-                              <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{task.badge}</span>
-                            </div>
-                          </button>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        {productActivityCards.map((card) => (
+                          <div key={card.key} className="rounded-lg border border-[#e6ecf4] bg-white p-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{card.label}</p>
+                            <p className="mt-2 text-2xl font-bold text-slate-900">{card.value}</p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {card.breakdown[0] ? `${card.breakdown[0].creator} • ${card.breakdown[0].count}` : tx("No creator data", "Creator verisi yok")}
+                            </p>
+                          </div>
                         ))}
+                      </div>
+                      <div className="mt-4 rounded-lg border border-[#e6ecf4] bg-white p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-slate-900">{tx("Creator breakdown", "Creator dağılımı")}</p>
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{tx("Live", "Canlı")}</span>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {productActivityCards.map((card) => (
+                            <div key={`breakdown-${card.key}`} className="rounded-lg border border-[#e6ecf4] bg-slate-50 p-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{card.label}</p>
+                                <span className="text-xs font-semibold text-slate-700">{card.value}</span>
+                              </div>
+                              {card.breakdown.length === 0 ? (
+                                <p className="mt-2 text-xs text-slate-500">{tx("No creator records in this period.", "Bu dönemde creator kaydı yok.")}</p>
+                              ) : (
+                                <div className="mt-2 space-y-1.5">
+                                  {card.breakdown.slice(0, 3).map((row) => (
+                                    <div key={`${card.key}-${row.creator}`} className="flex items-center justify-between gap-3 text-xs">
+                                      <span className="truncate text-slate-700">{row.creator}</span>
+                                      <span className="shrink-0 font-semibold text-slate-900">{row.count}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1618,29 +1624,6 @@ export default function DashboardPage() {
             </div>
           </DialogPrimitive.Content>
         </DialogPortal>
-      </Dialog>
-      <Dialog open={Boolean(selectedTask)} onOpenChange={(open) => !open && setSelectedTask(null)}>
-        <DialogContent className="flex max-w-xl flex-col overflow-hidden border-[#dce3ed] bg-white p-0">
-          <DialogHeader className="shrink-0 border-b border-[#dce3ed] px-6 py-4 pr-14">
-            <DialogTitle>{selectedTask?.title || tx("Task detail", "Görev detayı")}</DialogTitle>
-          </DialogHeader>
-          <div className="flex min-h-[240px] flex-1 flex-col justify-between px-6 py-5">
-            <div className="space-y-3">
-              <div className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                <ClipboardList className="mr-2 h-3.5 w-3.5" />
-                {selectedTask?.badge || tx("Task", "Görev")}
-              </div>
-              <p className="text-sm leading-6 text-slate-600">
-                {selectedTask?.description || tx("Task description will appear here.", "Görev açıklaması burada görünecek.")}
-              </p>
-            </div>
-            <div className="pt-6">
-              <Button type="button" variant="outline" className="h-10 px-5">
-                {tx("Take Task", "Görevi Al")}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
       </Dialog>
       <Dialog open={isOrdersDetailOpen} onOpenChange={setIsOrdersDetailOpen}>
         <DialogContent className="flex max-h-[92dvh] w-[94vw] max-w-5xl flex-col overflow-hidden border-[#dce3ed] bg-white p-0">
@@ -1840,26 +1823,30 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="h-[300px] w-full mt-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={summary.salesAnalytics.chart} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#0D9488" stopOpacity={0.1} />
-                      <stop offset="95%" stopColor="#0D9488" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} tick={{ fill: '#94a3b8' }} dy={10} />
-                  <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `$${value}`} tick={{ fill: '#94a3b8' }} dx={-10} />
-                  <Tooltip
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                    itemStyle={{ color: '#334155' }}
-                    labelStyle={{ color: '#94a3b8', marginBottom: '0.25rem' }}
-                  />
-                  <Area type="monotone" dataKey="income" stroke="#0D9488" strokeWidth={2.5} fillOpacity={1} fill="url(#colorIncome)" activeDot={{ r: 6, strokeWidth: 0, fill: '#0D9488' }} />
-                  <Area type="monotone" dataKey="expense" stroke="#cbd5e1" strokeWidth={2} fillOpacity={0} fill="transparent" strokeDasharray="4 4" />
-                </AreaChart>
-              </ResponsiveContainer>
+              {chartsReady ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={summary.salesAnalytics.chart} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#0D9488" stopOpacity={0.1} />
+                        <stop offset="95%" stopColor="#0D9488" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} tick={{ fill: '#94a3b8' }} dy={10} />
+                    <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `$${value}`} tick={{ fill: '#94a3b8' }} dx={-10} />
+                    <Tooltip
+                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      itemStyle={{ color: '#334155' }}
+                      labelStyle={{ color: '#94a3b8', marginBottom: '0.25rem' }}
+                    />
+                    <Area type="monotone" dataKey="income" stroke="#0D9488" strokeWidth={2.5} fillOpacity={1} fill="url(#colorIncome)" activeDot={{ r: 6, strokeWidth: 0, fill: '#0D9488' }} />
+                    <Area type="monotone" dataKey="expense" stroke="#cbd5e1" strokeWidth={2} fillOpacity={0} fill="transparent" strokeDasharray="4 4" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full w-full animate-pulse rounded-xl bg-slate-100" />
+              )}
             </div>
           </CardContent>
         </Card>

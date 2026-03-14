@@ -1,5 +1,4 @@
-import net from "node:net"
-import tls from "node:tls"
+import nodemailer from "nodemailer"
 import { getSiteSettings } from "@/lib/site-settings"
 
 type SendEmailInput = {
@@ -7,6 +6,7 @@ type SendEmailInput = {
   subject: string
   text: string
   html?: string
+  replyTo?: string
 }
 
 type SendEmailResult = {
@@ -36,68 +36,8 @@ function parseBool(value: string | undefined, fallback: boolean) {
   return fallback
 }
 
-function encodeBase64(value: string) {
-  return Buffer.from(value, "utf8").toString("base64")
-}
-
-function sanitizeHeader(value: string) {
-  return value.replace(/[\r\n]/g, " ").trim()
-}
-
-function buildMimeMessage(input: {
-  fromName: string
-  fromEmail: string
-  replyTo?: string
-  to: string
-  subject: string
-  text: string
-  html?: string
-}) {
-  const fromName = sanitizeHeader(input.fromName || "Turkish Rug House")
-  const fromEmail = sanitizeHeader(input.fromEmail)
-  const to = sanitizeHeader(input.to)
-  const subject = sanitizeHeader(input.subject)
-  const replyTo = sanitizeHeader(input.replyTo || "")
-
-  if (input.html) {
-    const boundary = `rughouse_${Date.now()}_${Math.random().toString(16).slice(2)}`
-    return [
-      `From: ${fromName} <${fromEmail}>`,
-      `To: <${to}>`,
-      `Subject: ${subject}`,
-      "MIME-Version: 1.0",
-      ...(replyTo ? [`Reply-To: ${replyTo}`] : []),
-      `Content-Type: multipart/alternative; boundary="${boundary}"`,
-      "",
-      `--${boundary}`,
-      'Content-Type: text/plain; charset="UTF-8"',
-      "Content-Transfer-Encoding: 8bit",
-      "",
-      input.text,
-      "",
-      `--${boundary}`,
-      'Content-Type: text/html; charset="UTF-8"',
-      "Content-Transfer-Encoding: 8bit",
-      "",
-      input.html,
-      "",
-      `--${boundary}--`,
-      "",
-    ].join("\r\n")
-  }
-
-  return [
-    `From: ${fromName} <${fromEmail}>`,
-    `To: <${to}>`,
-    `Subject: ${subject}`,
-    "MIME-Version: 1.0",
-    ...(replyTo ? [`Reply-To: ${replyTo}`] : []),
-    'Content-Type: text/plain; charset="UTF-8"',
-    "Content-Transfer-Encoding: 8bit",
-    "",
-    input.text,
-    "",
-  ].join("\r\n")
+function isEmailAddress(value: string | undefined) {
+  return Boolean(value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
 }
 
 async function sendViaSmtp(input: {
@@ -114,84 +54,29 @@ async function sendViaSmtp(input: {
   text: string
   html?: string
 }) {
-  const socket = (input.secure
-    ? tls.connect({ host: input.host, port: input.port, servername: input.host })
-    : net.connect({ host: input.host, port: input.port })) as net.Socket
-
-  socket.setEncoding("utf8")
-  socket.setTimeout(20000)
-
-  let buffer = ""
-  const queue: Array<(line: string) => void> = []
-
-  const nextLine = () =>
-    new Promise<string>((resolve) => {
-      queue.push(resolve)
-    })
-
-  const flushBuffer = () => {
-    let idx = buffer.indexOf("\n")
-    while (idx >= 0) {
-      const line = buffer.slice(0, idx).replace(/\r$/, "")
-      buffer = buffer.slice(idx + 1)
-      const resolve = queue.shift()
-      if (resolve) resolve(line)
-      idx = buffer.indexOf("\n")
-    }
-  }
-
-  socket.on("data", (chunk: string) => {
-    buffer += chunk
-    flushBuffer()
+  const transporter = nodemailer.createTransport({
+    host: input.host,
+    port: input.port,
+    secure: input.secure,
+    auth: input.user && input.password ? { user: input.user, pass: input.password } : undefined,
+    name: input.fromEmail.split("@")[1] || undefined,
   })
 
-  await new Promise<void>((resolve, reject) => {
-    socket.once("error", reject)
-    socket.once("timeout", () => reject(new Error("SMTP connection timeout")))
-    socket.once("connect", () => resolve())
+  await transporter.verify()
+
+  await transporter.sendMail({
+    from: `${input.fromName} <${input.fromEmail}>`,
+    sender: isEmailAddress(input.user) ? `${input.fromName} <${input.user}>` : undefined,
+    to: input.to,
+    replyTo: input.replyTo || undefined,
+    subject: input.subject,
+    text: input.text,
+    html: input.html,
+    envelope: {
+      from: input.user || input.fromEmail,
+      to: input.to,
+    },
   })
-
-  const readResponse = async (acceptedStarts: string[]) => {
-    let last = ""
-    for (;;) {
-      const line = await nextLine()
-      last = line
-      const code = line.slice(0, 3)
-      const separator = line[3]
-      if (separator === "-") continue
-      if (!acceptedStarts.includes(code)) {
-        throw new Error(`SMTP error: ${line}`)
-      }
-      return last
-    }
-  }
-
-  const command = async (value: string, accepted: string[]) => {
-    socket.write(`${value}\r\n`)
-    await readResponse(accepted)
-  }
-
-  try {
-    await readResponse(["220"])
-    await command("EHLO rughouse.local", ["250"])
-
-    if (input.user && input.password) {
-      await command("AUTH LOGIN", ["334"])
-      await command(encodeBase64(input.user), ["334"])
-      await command(encodeBase64(input.password), ["235"])
-    }
-
-    await command(`MAIL FROM:<${sanitizeHeader(input.fromEmail)}>`, ["250"])
-    await command(`RCPT TO:<${sanitizeHeader(input.to)}>`, ["250", "251"])
-    await command("DATA", ["354"])
-
-    const mime = buildMimeMessage(input)
-    socket.write(`${mime}\r\n.\r\n`)
-    await readResponse(["250"])
-    await command("QUIT", ["221"])
-  } finally {
-    socket.destroy()
-  }
 }
 
 async function sendViaResend(input: SendEmailInput) {
@@ -226,13 +111,37 @@ async function sendViaResend(input: SendEmailInput) {
 export async function sendSiteEmail(input: SendEmailInput): Promise<SendEmailResult> {
   const settings = await getSiteSettings()
   const host = envFirst(settings.outgoingMailHost, process.env.SMTP_HOST, process.env.MAIL_HOST)
-  const port = parsePort(envFirst(process.env.SMTP_PORT, process.env.MAIL_PORT), settings.outgoingMailPort)
-  const secure = parseBool(process.env.SMTP_SECURE ?? process.env.MAIL_SECURE, settings.outgoingMailSecure)
+  const port = parsePort(
+    envFirst(String(settings.outgoingMailPort || ""), process.env.SMTP_PORT, process.env.MAIL_PORT),
+    settings.outgoingMailPort
+  )
+  const secure =
+    settings.outgoingMailSecure !== undefined
+      ? Boolean(settings.outgoingMailSecure)
+      : parseBool(process.env.SMTP_SECURE ?? process.env.MAIL_SECURE, true)
   const user = envFirst(settings.outgoingMailUser, process.env.SMTP_USER, process.env.MAIL_USER)
-  const password = envFirst(settings.outgoingMailPassword, process.env.SMTP_PASSWORD, process.env.SMTP_PASS, process.env.MAIL_PASSWORD)
-  const fromEmail = envFirst(settings.outgoingMailFromEmail, process.env.SMTP_FROM_EMAIL, process.env.MAIL_FROM_EMAIL, process.env.NOTIFICATION_FROM_EMAIL, process.env.EMAIL_FROM)
-  const fromName = envFirst(settings.outgoingMailFromName, process.env.SMTP_FROM_NAME, process.env.MAIL_FROM_NAME, "Turkish Rug House")
-  const replyTo = envFirst(settings.outgoingMailReplyTo, process.env.SMTP_REPLY_TO, process.env.MAIL_REPLY_TO)
+  const password = envFirst(
+    settings.outgoingMailPassword,
+    process.env.SMTP_PASSWORD,
+    process.env.SMTP_PASS,
+    process.env.MAIL_PASSWORD
+  )
+  const fromEmail = envFirst(
+    settings.outgoingMailFromEmail,
+    settings.supportEmail,
+    process.env.SMTP_FROM_EMAIL,
+    process.env.MAIL_FROM_EMAIL,
+    process.env.NOTIFICATION_FROM_EMAIL,
+    process.env.EMAIL_FROM,
+    "info@turkishrughouse.com"
+  )
+  const fromName = envFirst(
+    settings.outgoingMailFromName,
+    process.env.SMTP_FROM_NAME,
+    process.env.MAIL_FROM_NAME,
+    "Turkish Rug House"
+  )
+  const replyTo = envFirst(input.replyTo, settings.outgoingMailReplyTo, process.env.SMTP_REPLY_TO, process.env.MAIL_REPLY_TO)
 
   if (host && port && fromEmail) {
     try {

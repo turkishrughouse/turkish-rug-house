@@ -17,6 +17,8 @@ model User {
   emailVerifiedAt DateTime?
   emailVerificationTokenHash String?
   emailVerificationExpiresAt DateTime?
+  passwordResetTokenHash String?
+  passwordResetExpiresAt DateTime?
   name      String?
   role      String   @default("CUSTOMER") // SUPER_USER, ADMIN, EDITOR, MANAGER, STAFF, CUSTOMER
   phone     String?

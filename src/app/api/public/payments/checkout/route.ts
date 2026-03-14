@@ -3,42 +3,46 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/db"
 import { getSessionUser } from "@/lib/auth"
+import { checkFixedWindowRateLimit } from "@/lib/rate-limit"
 import { getSiteSettings } from "@/lib/site-settings"
 import { ensureOrderDetailsColumn, saveOrderDetails } from "@/lib/order-details"
+import { nextOrderNumber } from "@/lib/payment-orders"
+import { getAddressCountryConfig } from "@/lib/location/catalog"
+import {
+  buildDisplayAmountsFromUsd,
+  readCurrencyFromNextRequest,
+  resolveStorefrontCurrencyFromRequest,
+} from "@/lib/storefront/currency-server"
+import { normalizeCurrency } from "@/lib/storefront/currency"
+import {
+  resolveCheckoutDraft,
+  type CheckoutProvider,
+  type CheckoutShippingMethod,
+} from "@/lib/storefront/checkout"
 
 const payloadSchema = z.object({
   provider: z.enum(["stripe", "paypal", "paytr", "gpay", "applepay"]),
   customerName: z.string().min(1),
   customerEmail: z.string().email(),
   customerPhone: z.string().optional(),
+  company: z.string().optional(),
   addressLine1: z.string().optional(),
+  addressLine2: z.string().optional(),
   city: z.string().optional(),
   postcode: z.string().optional(),
   country: z.string().optional(),
-  shippingMethod: z.string().optional(),
-  shippingCost: z.number().nonnegative().optional(),
-  subtotal: z.number().nonnegative().optional(),
-  taxAmount: z.number().nonnegative().optional(),
+  countryCode: z.string().optional(),
+  regionState: z.string().optional(),
+  orderComment: z.string().optional(),
+  shippingMethod: z.enum(["dhl", "ups", "fedex"]).optional(),
+  displayCurrency: z.enum(["USD", "EUR"]).optional(),
   items: z.array(
     z.object({
-      productId: z.string().optional().nullable(),
-      title: z.string().min(1),
+      productId: z.string().min(1),
       quantity: z.number().int().min(1),
-      price: z.number().nonnegative(),
     })
   ).min(1),
-  total: z.number().nonnegative(),
 })
-
-async function nextOrderNumber() {
-  const latest = await prisma.order.findFirst({
-    orderBy: { createdAt: "desc" },
-    select: { orderNumber: true },
-  })
-  const lastNumber = latest?.orderNumber ? Number(String(latest.orderNumber).replace(/\D/g, "")) : 0
-  const next = Number.isFinite(lastNumber) ? lastNumber + 1 : 1
-  return `TRH-${String(next).padStart(3, "0")}`
-}
 
 function asMinor(value: number) {
   return Math.round(value * 100)
@@ -65,10 +69,15 @@ async function createStripeCheckout(input: {
 }) {
   const body = new URLSearchParams()
   body.set("mode", "payment")
+  body.set("client_reference_id", input.orderId)
   body.set("success_url", `${input.origin}/api/public/payments/stripe/success?orderId=${encodeURIComponent(input.orderId)}&session_id={CHECKOUT_SESSION_ID}`)
   body.set("cancel_url", `${input.origin}/basket?payment=cancelled&order=${encodeURIComponent(input.orderId)}`)
   body.set("metadata[orderId]", input.orderId)
   body.set("metadata[orderNumber]", input.orderNumber)
+  body.set("metadata[paymentProvider]", "STRIPE")
+  body.set("payment_intent_data[metadata][orderId]", input.orderId)
+  body.set("payment_intent_data[metadata][orderNumber]", input.orderNumber)
+  body.set("payment_intent_data[metadata][paymentProvider]", "STRIPE")
   body.set("customer_email", input.customerEmail)
 
   input.items.forEach((item, idx) => {
@@ -165,6 +174,7 @@ async function createPayTRToken(input: {
   origin: string
   orderId: string
   amount: number
+  currency: string
   customerEmail: string
   customerName: string
   customerPhone: string
@@ -188,7 +198,7 @@ async function createPayTRToken(input: {
   ).toString("base64")
   const noInstallment = "0"
   const maxInstallment = "0"
-  const currency = input.settings.defaultCurrency.toUpperCase()
+  const currency = input.currency.toUpperCase()
   const testMode = input.settings.paytrEnabled ? "0" : "1"
   const userIp = input.userIp || "127.0.0.1"
   const okUrl = input.settings.paytrMerchantOkUrl || `${input.origin}/account?payment=success&order=${encodeURIComponent(input.orderId)}`
@@ -252,8 +262,96 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Please sign in to checkout" }, { status: 401 })
     }
     const input = parsed.data
+    if (settings.requirePhoneAtCheckout && !input.customerPhone?.trim()) {
+      return NextResponse.json({ error: "Phone is required for checkout" }, { status: 400 })
+    }
+    if (
+      settings.requireAddressAtCheckout &&
+      (!input.country?.trim() || !input.addressLine1?.trim() || !input.city?.trim() || !input.postcode?.trim())
+    ) {
+      return NextResponse.json({ error: "Country, address, city and postal code are required for checkout" }, { status: 400 })
+    }
+    const countryConfig = getAddressCountryConfig((input.countryCode || "").trim().toUpperCase())
+    if (countryConfig.regionRequired && !input.regionState?.trim()) {
+      return NextResponse.json({ error: `${countryConfig.regionLabel} is required for checkout` }, { status: 400 })
+    }
     const origin = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin
     const clientIp = getClientIp(req) || "unknown"
+    const rateLimit = checkFixedWindowRateLimit({
+      scope: "checkout-init",
+      key: clientIp,
+      limit: 12,
+      windowMs: 15 * 60 * 1000,
+    })
+    if (!rateLimit.allowed) {
+      return NextResponse.json({ error: "Too many checkout attempts. Please try again shortly." }, { status: 429 })
+    }
+    const headerCountryCode =
+      req.headers.get("x-vercel-ip-country") ||
+      req.headers.get("cf-ipcountry") ||
+      req.headers.get("x-country-code") ||
+      ""
+
+    const provider = input.provider as CheckoutProvider
+    const shippingMethod = (input.shippingMethod || "dhl") as CheckoutShippingMethod
+
+    if ((provider === "stripe" || provider === "gpay" || provider === "applepay")) {
+      const isGPay = provider === "gpay"
+      const isApplePay = provider === "applepay"
+      if (isGPay && !settings.googlePayEnabled) {
+        return NextResponse.json({ error: "Google Pay is not configured" }, { status: 400 })
+      }
+      if (isApplePay && !settings.applePayEnabled) {
+        return NextResponse.json({ error: "Apple Pay is not configured" }, { status: 400 })
+      }
+      if (provider === "stripe" && !settings.stripeEnabled) {
+        return NextResponse.json({ error: "Stripe is not configured" }, { status: 400 })
+      }
+      const secretKey = isGPay
+        ? (settings.googlePayApiSecret || settings.stripeSecretKey)
+        : isApplePay
+          ? (settings.applePayApiSecret || settings.stripeSecretKey)
+          : settings.stripeSecretKey
+      if (!secretKey) {
+        return NextResponse.json({ error: "Stripe API secret is missing for this provider" }, { status: 400 })
+      }
+    } else if (provider === "paypal") {
+      if (!settings.paypalEnabled || !settings.paypalClientId || !settings.paypalClientSecret) {
+        return NextResponse.json({ error: "PayPal is not configured" }, { status: 400 })
+      }
+    } else if (!settings.paytrEnabled) {
+      return NextResponse.json({ error: "PayTR is not configured" }, { status: 400 })
+    }
+
+    const draft = await resolveCheckoutDraft({
+      lines: input.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+      })),
+      shippingMethod,
+      settings,
+    })
+
+    const requestedDisplayCurrency = normalizeCurrency(input.displayCurrency || readCurrencyFromNextRequest(req) || null)
+    const currencySnapshot = await resolveStorefrontCurrencyFromRequest({
+      cookieCurrency: requestedDisplayCurrency,
+      countryCode: headerCountryCode,
+      acceptLanguage: req.headers.get("accept-language") || "",
+    })
+    const displayAmounts = buildDisplayAmountsFromUsd({
+      subtotalUsd: draft.subtotal,
+      shippingUsd: draft.shippingCost,
+      taxUsd: draft.taxAmount,
+      discountUsd: 0,
+      selectedCurrency: currencySnapshot.selectedCurrency,
+      usdToEurRate: currencySnapshot.usdToEurRate,
+    })
+    const displayItems = draft.items.map((item) => ({
+      ...item,
+      displayPrice: currencySnapshot.selectedCurrency === "USD"
+        ? item.price
+        : Math.round(item.price * currencySnapshot.usdToEurRate * 100) / 100,
+    }))
 
     const order = await prisma.order.create({
       data: {
@@ -261,12 +359,12 @@ export async function POST(req: NextRequest) {
         userId: isCustomerSession ? sessionUser.id : null,
         customerName: input.customerName,
         customerEmail: input.customerEmail.toLowerCase(),
-        total: input.total,
+        total: draft.total,
         status: "PENDING",
         shipmentStatus: "PENDING",
         items: {
-          create: input.items.map((item) => ({
-            productId: item.productId || null,
+          create: draft.items.map((item) => ({
+            productId: item.productId,
             title: item.title,
             quantity: item.quantity,
             price: item.price,
@@ -287,58 +385,67 @@ export async function POST(req: NextRequest) {
     })
     await saveOrderDetails(order.id, {
       customerPhone: input.customerPhone?.trim() || null,
+      addressLine2: input.addressLine2?.trim() || null,
       addressLine1: input.addressLine1?.trim() || null,
       city: input.city?.trim() || null,
+      state: input.regionState?.trim() || null,
       postcode: input.postcode?.trim() || null,
       country: input.country?.trim() || null,
-      paymentMethod: input.provider.toUpperCase(),
+      paymentMethod: provider.toUpperCase(),
+      paymentProvider: provider.toUpperCase(),
       paymentStatus: "PENDING",
-      shippingMethod: input.shippingMethod?.trim() || null,
-      shippingCost: Number(input.shippingCost || 0),
-      subtotalAmount: Number(input.subtotal || 0),
-      taxAmount: Number(input.taxAmount || 0),
+      shippingMethod: shippingMethod.toUpperCase(),
+      shippingCost: draft.shippingCost,
+      subtotalAmount: draft.subtotal,
+      taxAmount: draft.taxAmount,
       discountAmount: 0,
-      currency: settings.defaultCurrency || "USD",
+      currency: currencySnapshot.selectedCurrency,
+      baseCurrency: "USD",
+      baseSubtotalAmount: draft.subtotal,
+      baseShippingAmount: draft.shippingCost,
+      baseTaxAmount: draft.taxAmount,
+      baseDiscountAmount: 0,
+      baseTotalAmount: draft.total,
+      displayCurrency: currencySnapshot.selectedCurrency,
+      exchangeRateUsed: currencySnapshot.selectedCurrency === "EUR" ? currencySnapshot.usdToEurRate : 1,
+      displaySubtotalAmount: displayAmounts.subtotal,
+      displayShippingAmount: displayAmounts.shipping,
+      displayTaxAmount: displayAmounts.tax,
+      displayDiscountAmount: displayAmounts.discount,
+      displayTotalAmount: displayAmounts.total,
       invoiceNumber: `INV-${order.orderNumber}`,
     })
 
-    if (input.provider === "stripe" || input.provider === "gpay" || input.provider === "applepay") {
-      const isGPay = input.provider === "gpay"
-      const isApplePay = input.provider === "applepay"
-      if (isGPay && !settings.googlePayEnabled) {
-        return NextResponse.json({ error: "Google Pay is not configured" }, { status: 400 })
-      }
-      if (isApplePay && !settings.applePayEnabled) {
-        return NextResponse.json({ error: "Apple Pay is not configured" }, { status: 400 })
-      }
-      if (input.provider === "stripe" && !settings.stripeEnabled) {
-        return NextResponse.json({ error: "Stripe is not configured" }, { status: 400 })
-      }
+    if (provider === "stripe" || provider === "gpay" || provider === "applepay") {
+      const isGPay = provider === "gpay"
+      const isApplePay = provider === "applepay"
       const secretKey = isGPay
         ? (settings.googlePayApiSecret || settings.stripeSecretKey)
         : isApplePay
           ? (settings.applePayApiSecret || settings.stripeSecretKey)
           : settings.stripeSecretKey
-      if (!secretKey) {
-        return NextResponse.json({ error: "Stripe API secret is missing for this provider" }, { status: 400 })
-      }
       const stripe = await createStripeCheckout({
         secretKey,
         origin,
         orderId: order.id,
         orderNumber: order.orderNumber,
-        currency: settings.defaultCurrency || "USD",
-        items: input.items,
-        shippingCost: input.shippingCost || 0,
+        currency: currencySnapshot.selectedCurrency,
+        items: displayItems.map((item) => ({
+          title: item.title,
+          quantity: item.quantity,
+          price: item.displayPrice,
+        })),
+        shippingCost: displayAmounts.shipping,
         customerEmail: input.customerEmail,
       })
-      return NextResponse.json({ redirectUrl: stripe.redirectUrl, orderId: order.id, provider: input.provider })
+      await saveOrderDetails(order.id, {
+        paymentReference: stripe.externalPaymentId || null,
+        paymentSessionId: stripe.externalPaymentId || null,
+      })
+      return NextResponse.json({ redirectUrl: stripe.redirectUrl, orderId: order.id, provider })
     }
 
-    if (input.provider === "paypal") {
-      if (!settings.paypalEnabled || !settings.paypalClientId || !settings.paypalClientSecret) {
-        return NextResponse.json({ error: "PayPal is not configured" }, { status: 400 })
-      }
+    if (provider === "paypal") {
       const paypal = await createPayPalOrder({
         clientId: settings.paypalClientId,
         clientSecret: settings.paypalClientSecret,
@@ -346,25 +453,27 @@ export async function POST(req: NextRequest) {
         origin,
         orderId: order.id,
         orderNumber: order.orderNumber,
-        amount: input.total,
-        currency: settings.defaultCurrency || "USD",
+        amount: displayAmounts.total,
+        currency: currencySnapshot.selectedCurrency,
       })
       return NextResponse.json({ redirectUrl: paypal.redirectUrl, orderId: order.id, provider: "paypal" })
     }
 
-    if (!settings.paytrEnabled) {
-      return NextResponse.json({ error: "PayTR is not configured" }, { status: 400 })
-    }
     const paytr = await createPayTRToken({
       settings,
       origin,
       orderId: order.id,
-      amount: input.total,
+      amount: displayAmounts.total,
+      currency: currencySnapshot.selectedCurrency,
       customerEmail: input.customerEmail.toLowerCase(),
       customerName: input.customerName,
       customerPhone: input.customerPhone || "",
-      address: [input.addressLine1, input.city, input.postcode, input.country].filter(Boolean).join(" "),
-      items: input.items,
+      address: [input.addressLine1, input.addressLine2, input.city, input.postcode, input.country].filter(Boolean).join(" "),
+      items: displayItems.map((item) => ({
+        title: item.title,
+        quantity: item.quantity,
+        price: item.displayPrice,
+      })),
       userIp: clientIp,
     })
     return NextResponse.json({ redirectUrl: paytr.redirectUrl, orderId: order.id, provider: "paytr" })

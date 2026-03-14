@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 import { prisma } from "@/lib/db"
 import { Metadata } from "next"
 import Link from "next/link"
+import Image from "next/image"
 import { getSiteSettings } from "@/lib/site-settings"
 import { ContactForm } from "@/components/storefront/contact-form"
 import { PageBanner } from "@/components/storefront/page-banner"
@@ -39,6 +40,42 @@ function parseAboutExcerpt(excerpt: string | null | undefined, fallbackTitle: st
         sectionTitle: parts[5] || "About our online store",
         leadText: parts[6] || "",
     }
+}
+
+type AboutGalleryImage = {
+    imageUrl: string
+    alt: string
+    width: number
+    height: number
+}
+
+async function getAboutGalleryImages() {
+    const rows = await prisma.$queryRawUnsafe<Array<{
+        image_url: string
+        alt: string | null
+        width: number | null
+        height: number | null
+    }>>(
+        `
+          SELECT "image_url", "alt", "width", "height"
+          FROM "MediaAsset"
+          WHERE "variant" = 'master'
+            AND "image_url" IS NOT NULL
+            AND "width" >= 1200
+            AND "height" >= 900
+          ORDER BY "created_at" DESC
+          LIMIT 3
+        `
+    )
+
+    return rows
+        .filter((row) => typeof row.image_url === "string" && row.image_url.trim())
+        .map((row, index) => ({
+            imageUrl: row.image_url.trim(),
+            alt: row.alt?.trim() || `Turkish Rug House gallery image ${index + 1}`,
+            width: Number(row.width || 1600),
+            height: Number(row.height || 1200),
+        })) satisfies AboutGalleryImage[]
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -112,66 +149,128 @@ export default async function InfoPage({ params }: Props) {
     const lead = splitText(aboutMeta.leadText || longBody, 320)
 
     if (isAboutTemplate) {
+        const galleryImages = await getAboutGalleryImages()
         return (
-            <div className="bg-[#f7f7f7] min-h-screen pb-20">
-                <PageBanner
-                    title={page.title}
-                    subtitle={page.excerpt || ""}
-                    image={page.featuredImage}
-                    imageClassName="object-center"
-                />
-                <section className="border-y border-slate-200 bg-[#f5f5f5]">
-                    <div className="container mx-auto px-6 py-14">
-                        <div className="grid grid-cols-1 gap-10 lg:grid-cols-12">
-                            <div className="lg:col-span-5">
-                                <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">{aboutMeta.topBadge}</p>
-                                <h1 className="mt-4 max-w-[520px] font-serif text-4xl font-bold leading-tight text-slate-900">
-                                    {aboutMeta.heroTitle}
-                                </h1>
+            <div className="min-h-screen bg-[#f6f3ee] pb-20 text-slate-900">
+                <section className="border-b border-[#e6dfd3] bg-gradient-to-b from-[#f7f2ea] to-[#f6f3ee]">
+                    <div className="mx-auto grid w-full max-w-[1320px] gap-12 px-6 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-24">
+                        <div className="max-w-[640px]">
+                            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8f6f4f]">About Turkish Rug House</p>
+                            <h1 className="mt-5 font-serif text-4xl leading-tight md:text-5xl lg:text-6xl">
+                                Handmade Turkish rugs with lasting provenance, restraint, and character.
+                            </h1>
+                            <p className="mt-6 text-lg leading-8 text-slate-600">
+                                Turkish Rug House curates one-of-a-kind handmade rugs shaped by Anatolian weaving culture. Our mission is direct:
+                                present authentic pieces with clarity, respect for craftsmanship, and a level of trust suited to high-value interiors.
+                            </p>
+                            <div className="mt-8 grid gap-4 sm:grid-cols-3">
+                                <div className="rounded-2xl border border-[#e3d7c7] bg-white/80 p-4">
+                                    <div className="text-2xl font-semibold">Handmade</div>
+                                    <div className="mt-1 text-sm text-slate-500">Every piece is individually woven, not factory replicated.</div>
+                                </div>
+                                <div className="rounded-2xl border border-[#e3d7c7] bg-white/80 p-4">
+                                    <div className="text-2xl font-semibold">Direct</div>
+                                    <div className="mt-1 text-sm text-slate-500">Curated with direct sourcing and close control over quality.</div>
+                                </div>
+                                <div className="rounded-2xl border border-[#e3d7c7] bg-white/80 p-4">
+                                    <div className="text-2xl font-semibold">Global</div>
+                                    <div className="mt-1 text-sm text-slate-500">Prepared for international delivery with insured shipping.</div>
+                                </div>
                             </div>
-                            <div className="lg:col-span-3">
-                                <h3 className="text-3xl font-semibold text-slate-900">{aboutMeta.cardOneTitle}</h3>
-                                <p className="mt-4 text-lg leading-8 text-slate-600">{blockOne}</p>
-                                <Link href="#about-story" className="mt-6 inline-block border-b-2 border-emerald-700 text-sm font-semibold uppercase tracking-wide text-slate-800 hover:text-emerald-700">
-                                    Read More
-                                </Link>
-                            </div>
-                            <div className="lg:col-span-4">
-                                <h3 className="text-3xl font-semibold text-slate-900">{aboutMeta.cardTwoTitle}</h3>
-                                <p className="mt-4 text-lg leading-8 text-slate-600">{blockTwo}</p>
-                                <Link href="#about-story" className="mt-6 inline-block border-b-2 border-emerald-700 text-sm font-semibold uppercase tracking-wide text-slate-800 hover:text-emerald-700">
-                                    Read More
-                                </Link>
-                            </div>
+                        </div>
+
+                        <div className="overflow-hidden rounded-[32px] border border-[#e3d7c7] bg-white shadow-[0_30px_80px_rgba(22,30,45,0.08)]">
+                            {page.featuredImage || galleryImages[0]?.imageUrl ? (
+                                <div className="relative aspect-[4/5]">
+                                    <Image
+                                        src={page.featuredImage || galleryImages[0]?.imageUrl || "/placeholder.jpg"}
+                                        alt={page.title}
+                                        fill
+                                        sizes="(max-width: 1024px) 100vw, 42vw"
+                                        className="object-cover"
+                                        priority
+                                    />
+                                </div>
+                            ) : (
+                                <div className="aspect-[4/5] bg-[#ebe4d8]" />
+                            )}
                         </div>
                     </div>
                 </section>
 
-                <section id="about-story" className="container mx-auto px-6 py-14">
-                    <div className="grid grid-cols-1 gap-10 lg:grid-cols-12 lg:items-center">
-                        <div className="lg:col-span-6">
-                            <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
-                                {page.featuredImage ? (
-                                    <img
-                                        src={page.featuredImage}
-                                        alt={page.title}
-                                        className="h-full w-full object-cover"
-                                    />
-                                ) : (
-                                    <div className="aspect-[16/10] bg-slate-200" />
-                                )}
-                            </div>
+                <section className="mx-auto w-full max-w-[1320px] px-6 py-16">
+                    <div className="grid gap-10 lg:grid-cols-2">
+                        <div className="rounded-[28px] border border-[#e3d7c7] bg-white p-8 shadow-sm">
+                            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8f6f4f]">Craftsmanship</p>
+                            <h2 className="mt-4 font-serif text-3xl md:text-4xl">A tradition of weaving that cannot be mass-produced</h2>
+                            <p className="mt-5 text-base leading-8 text-slate-600">
+                                Handmade rugs carry variation by nature: knot density, wool character, natural wear, and the rhythm of the loom.
+                                That variation is the value. Anatolian weaving tradition is not decorative nostalgia here; it is the basis of how each rug is judged, sourced, and presented.
+                            </p>
+                            <p className="mt-4 text-base leading-8 text-slate-600">
+                                Each piece remains singular. Size, dye movement, field balance, and patina give a rug its own presence in a room. That is why we treat every listing as a one-piece acquisition rather than interchangeable inventory.
+                            </p>
                         </div>
 
-                        <div className="lg:col-span-6">
-                            <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">{aboutMeta.sectionBadge}</p>
-                            <h2 className="mt-4 font-serif text-5xl font-bold text-slate-900">{aboutMeta.sectionTitle}</h2>
-                            <p className="mt-6 text-xl italic leading-9 text-slate-500">
-                                {lead || "Rug House blends Anatolian heritage with modern interiors for unique, hand-crafted living spaces."}
+                        <div className="rounded-[28px] border border-[#e3d7c7] bg-[#f1ebe1] p-8">
+                            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8f6f4f]">Story</p>
+                            <h2 className="mt-4 font-serif text-3xl md:text-4xl">Heritage, authenticity, and timeless design</h2>
+                            <p className="mt-5 text-base leading-8 text-slate-700">
+                                The brand philosophy is straightforward: respect origin, avoid noise, and let material quality speak. We focus on rugs that hold historical character while still working inside contemporary homes, hospitality spaces, and designer projects.
                             </p>
-                            <p className="mt-6 text-lg leading-9 text-slate-600">
-                                {longBody || "Our team curates authentic, hand-made pieces and shares the stories behind each one. We focus on quality, provenance, and timeless style for every home."}
+                            <p className="mt-4 text-base leading-8 text-slate-700">
+                                Authenticity matters more than volume. Timeless design matters more than trend. The goal is to help clients choose pieces with permanence, not short-term novelty.
                             </p>
+                        </div>
+                    </div>
+                </section>
+
+                <section className="mx-auto w-full max-w-[1320px] px-6 pb-16">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                        <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8f6f4f]">Gallery</p>
+                            <h2 className="mt-3 font-serif text-3xl md:text-4xl">Three pieces from our media library</h2>
+                        </div>
+                        <p className="max-w-[560px] text-sm leading-7 text-slate-600">
+                            High-resolution imagery is pulled directly from the media library to keep the page aligned with the actual catalog and visual quality of the brand.
+                        </p>
+                    </div>
+                    <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                        {galleryImages.map((image) => (
+                            <div key={image.imageUrl} className="overflow-hidden rounded-[26px] border border-[#e3d7c7] bg-white shadow-sm">
+                                <div className="relative aspect-[4/5]">
+                                    <Image
+                                        src={image.imageUrl}
+                                        alt={image.alt}
+                                        fill
+                                        sizes="(max-width: 767px) 100vw, (max-width: 1279px) 50vw, 33vw"
+                                        className="object-cover"
+                                    />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="border-y border-[#e6dfd3] bg-white">
+                    <div className="mx-auto grid w-full max-w-[1320px] gap-10 px-6 py-16 lg:grid-cols-[0.95fr_1.05fr]">
+                        <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8f6f4f]">Global Trust</p>
+                            <h2 className="mt-4 font-serif text-3xl md:text-4xl">A global service model built for collectible rugs</h2>
+                        </div>
+                        <div className="grid gap-6 md:grid-cols-3">
+                            <div>
+                                <h3 className="text-lg font-semibold">Worldwide shipping</h3>
+                                <p className="mt-2 text-sm leading-7 text-slate-600">Orders are prepared for insured international delivery with clear communication and careful packing.</p>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold">Curated selection</h3>
+                                <p className="mt-2 text-sm leading-7 text-slate-600">The catalog is edited for character and quality rather than inflated with generic stock.</p>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold">Direct sourcing</h3>
+                                <p className="mt-2 text-sm leading-7 text-slate-600">Direct sourcing protects provenance and keeps material quality visible at every step.</p>
+                            </div>
                         </div>
                     </div>
                 </section>

@@ -2,7 +2,6 @@
 
 import { useState } from "react"
 import { Upload, X, Loader2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 
 interface MediaUploaderProps {
@@ -18,9 +17,6 @@ export function MediaUploader({ images, onImagesChange }: MediaUploaderProps) {
             const file = e.target.files[0]
             setIsUploading(true)
 
-            // Client-side logging to confirm path
-            console.log("CLIENT UPLOAD via /api/upload")
-
             try {
                 const formData = new FormData()
                 formData.append("file", file)
@@ -30,12 +26,15 @@ export function MediaUploader({ images, onImagesChange }: MediaUploaderProps) {
                     method: "POST",
                     body: formData,
                 })
+                const data = await res.json()
 
                 if (!res.ok) {
-                    throw new Error(`Upload failed with status: ${res.status}`)
+                    if (res.status === 409 && data?.duplicate) {
+                        toast.error(data.error || "This image has already been uploaded.")
+                        return
+                    }
+                    throw new Error(data?.error || `Upload failed with status: ${res.status}`)
                 }
-
-                const data = await res.json()
 
                 if (data.success && data.url) {
                     const updated = [...images, data.url]

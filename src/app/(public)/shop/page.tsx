@@ -1,15 +1,20 @@
 import Link from "next/link"
 import { Grid3X3, LayoutGrid, Menu } from "lucide-react"
 
+import { ResponsiveImage } from "@/components/ui/responsive-image"
 import { ShopProductCard } from "@/components/storefront/shop-product-card"
 import { getProducts, getProductOptions } from "@/lib/actions/product-actions"
 import { prisma } from "@/lib/db"
 import { getSiteSettings } from "@/lib/site-settings"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
+import { formatCurrency } from "@/lib/storefront/currency"
+import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
 
 type ShopPageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }
+
+export const revalidate = 300
 
 function getMaterialDelegate() {
   return (prisma as unknown as {
@@ -32,6 +37,12 @@ function getSingle(params: { [key: string]: string | string[] | undefined }, key
 }
 
 export default async function ShopPage({ searchParams }: ShopPageProps) {
+  const currencySnapshot = await getStorefrontCurrencySnapshot()
+  const currencySettings = {
+    selectedCurrency: currencySnapshot.selectedCurrency,
+    usdToEurRate: currencySnapshot.usdToEurRate,
+    locale: currencySnapshot.locale,
+  }
   const resolved = await searchParams
   const query = getSingle(resolved, "q")
   const sortInput = getSingle(resolved, "sort")
@@ -164,7 +175,16 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
   return (
     <div className="min-h-screen bg-white">
       <section className="relative overflow-hidden border-b border-[#e5e7eb]">
-        <img src={heroImage} alt="Shop banner" className="h-[210px] w-full object-cover object-center" />
+        <div className="relative h-[210px] w-full">
+          <ResponsiveImage
+            src={heroImage}
+            alt="Shop banner"
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover object-center"
+          />
+        </div>
         <div className="absolute inset-0 bg-[rgba(15,23,42,0.42)]" />
         <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
           <h1 className="font-serif text-5xl font-bold text-white md:text-6xl">Shop</h1>
@@ -335,10 +355,17 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                     const image = getProductImageUrl(parsedImages[0], "thumb") || "/placeholder.jpg"
                     return (
                       <Link key={product.id} href={`/product/${product.slug}`} className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-slate-50">
-                        <img src={image} alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt })} loading="lazy" decoding="async" className="h-12 w-12 rounded-md border border-slate-200 object-cover" />
+                        <ResponsiveImage
+                          src={image}
+                          alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt })}
+                          width={48}
+                          height={48}
+                          sizes="48px"
+                          className="h-12 w-12 rounded-md border border-slate-200 object-cover"
+                        />
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-slate-900">{product.title}</p>
-                          <p className="text-sm font-semibold text-emerald-700">${product.price.toFixed(2)}</p>
+                          <p className="text-sm font-semibold text-emerald-700">{formatCurrency(product.price, currencySettings)}</p>
                         </div>
                       </Link>
                     )
@@ -363,15 +390,9 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                     <ShopProductCard
                       key={product.id}
                       product={product}
-                      catalogMode={siteSettings.showCatalogMode === "catalog"}
-                      currencySettings={{
-                        defaultCurrency: siteSettings.defaultCurrency,
-                        currencyPosition: siteSettings.currencyPosition,
-                        thousandSeparator: siteSettings.thousandSeparator,
-                        decimalSeparator: siteSettings.decimalSeparator,
-                        numberOfDecimals: siteSettings.numberOfDecimals,
-                      }}
-                    />
+                catalogMode={siteSettings.showCatalogMode === "catalog"}
+                currencySettings={currencySettings}
+              />
                   ))}
                 </div>
                 <p className="mt-8 text-sm text-slate-500">{visibleProducts.length} products listed</p>

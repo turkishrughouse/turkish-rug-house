@@ -84,6 +84,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
             <option value="DELIVERED">Delivered</option>
             <option value="CANCELLED">Cancelled</option>
             <option value="REFUNDED">Refunded</option>
+            <option value="FAILED">Failed</option>
           </select>
           <select name="paymentStatus" defaultValue={paymentStatus} className="h-10 rounded-md border border-slate-300 px-3 text-sm">
             <option value="">All payments</option>

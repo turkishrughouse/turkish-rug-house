@@ -1,28 +1,33 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import type { Metadata } from "next"
+import "./globals.css"
 import { Toaster } from "@/components/ui/sonner"
 import { ensureCacheCleanerStarted } from "@/lib/cache-maintenance"
+import { getSiteSettings } from "@/lib/site-settings"
 
-export const metadata: Metadata = {
-  title: "RugHouse",
-  description: "Premium Rugs & Textiles",
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
+export async function generateMetadata(): Promise<Metadata> {
+  const settings = await getSiteSettings()
+
+  return {
+    title: settings.defaultMetaTitle,
+    description: settings.defaultMetaDescription,
+    robots: {
       index: true,
       follow: true,
-      "max-image-preview": "large",
-      "max-snippet": -1,
-      "max-video-preview": -1,
+      googleBot: {
+        index: true,
+        follow: true,
+        "max-image-preview": "large",
+        "max-snippet": -1,
+        "max-video-preview": -1,
+      },
     },
-  },
-};
+  }
+}
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode;
+  children: React.ReactNode
 }>) {
   ensureCacheCleanerStarted()
 
@@ -35,5 +40,5 @@ export default function RootLayout({
         <Toaster />
       </body>
     </html>
-  );
+  )
 }

@@ -34,11 +34,18 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
     const [categoryTree, setCategoryTree] = React.useState<TreeCategory[]>([])
     const [activeCategoryId, setActiveCategoryId] = React.useState<string | null>(null)
     const [activeChildId, setActiveChildId] = React.useState<string | null>(null)
-    const [loading, setLoading] = React.useState(true)
+    const [categoriesLoading, setCategoriesLoading] = React.useState(true)
+    const [infoLoading, setInfoLoading] = React.useState(true)
+    const categoriesLoadedRef = React.useRef(false)
+    const infoLoadedRef = React.useRef(false)
 
     React.useEffect(() => {
-        const fetchCategoryTree = async () => {
-            setLoading(true)
+        const fetchCategoryTree = async (force = false) => {
+            if (categoriesLoadedRef.current && !force) {
+                setCategoriesLoading(false)
+                return
+            }
+            setCategoriesLoading(true)
             try {
                 const response = await fetch("/api/categories?tree=true", { cache: "no-store" })
                 if (!response.ok) {
@@ -47,15 +54,20 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
                 }
                 const data = await response.json()
                 setCategoryTree(normalizeCategoryTree(data))
+                categoriesLoadedRef.current = true
             } catch {
                 setCategoryTree([])
             } finally {
-                setLoading(false)
+                setCategoriesLoading(false)
             }
         }
 
-        const fetchInfoData = async () => {
-            setLoading(true)
+        const fetchInfoData = async (force = false) => {
+            if (infoLoadedRef.current && !force) {
+                setInfoLoading(false)
+                return
+            }
+            setInfoLoading(true)
             try {
                 const menuRes = await fetch("/api/public/menus/location/HEADER_INFORMATION", { cache: "no-store" })
                 if (menuRes.ok) {
@@ -64,26 +76,18 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
                 } else {
                     setInfoItems([])
                 }
+                infoLoadedRef.current = true
             } catch (err) {
                 console.error("[SharedMegaPanel] Failed to fetch Information menu", err)
                 setInfoItems([])
             } finally {
-                setLoading(false)
+                setInfoLoading(false)
             }
         }
 
-        if (activeTab === "categories") {
-            void fetchCategoryTree()
-            return
-        }
-
-        if (activeTab === "information") {
-            void fetchInfoData()
-            return
-        }
-
-        setLoading(false)
-    }, [activeTab])
+        void fetchCategoryTree()
+        void fetchInfoData()
+    }, [])
 
     React.useEffect(() => {
         if (categoryTree.length === 0) {
@@ -101,7 +105,7 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
         [activeCategoryId, categoryTree]
     )
 
-    const activeChildren = activeCategory?.children || []
+    const activeChildren = React.useMemo(() => activeCategory?.children || [], [activeCategory])
 
     React.useEffect(() => {
         if (activeChildren.length === 0) {
@@ -119,14 +123,12 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
         [activeChildId, activeChildren]
     )
 
-    const activeGrandchildren = activeChild?.children || []
-
     if (!activeTab) return null
 
     return (
         <div
             className={cn(
-                "absolute top-full z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-200",
+                "absolute top-full z-50 overflow-hidden transition-[opacity,transform] duration-150 ease-out",
                 activeTab === "categories" ? "left-0 mt-1 w-full" : "right-0 mt-1"
             )}
             onMouseEnter={onMouseEnter}
@@ -134,12 +136,12 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
         >
             {activeTab === "categories" && (
                 <div className="w-full border-y border-[#ece5dc] bg-white shadow-[0_22px_50px_rgba(26,25,22,0.08)]">
-                    <div className="grid grid-cols-[252px_minmax(0,1fr)] items-start">
+                    <div className="grid min-h-[380px] grid-cols-[252px_minmax(0,1fr)] items-stretch">
                         <aside className="border-r border-[#d7e4dc] bg-[#edf5f0] px-8 py-7">
                             <p className="mb-5 text-[10px] font-medium uppercase tracking-[0.22em] text-[#8c8070]">
                                 Shop Collections
                             </p>
-                            {loading ? (
+                            {categoriesLoading ? (
                                 <p className="text-sm text-[#8c8070]">Loading categories...</p>
                             ) : categoryTree.length === 0 ? (
                                 <p className="text-sm text-[#8c8070]">No categories found.</p>
@@ -172,7 +174,7 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
                         </aside>
 
                         <div className="bg-white px-9 py-7">
-                            {loading ? (
+                            {categoriesLoading ? (
                                 <div className="flex h-40 items-center justify-center text-sm text-[#8c8070]">Loading categories...</div>
                             ) : activeCategory ? (
                                 activeChildren.length > 0 ? (
@@ -200,8 +202,8 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
             )}
 
             {activeTab === "information" && (
-                <div className="w-[900px] p-8">
-                    {loading ? (
+                <div className="w-[900px] rounded-[22px] border border-[#dce3ed] bg-white p-8 shadow-[0_22px_50px_rgba(15,23,42,0.12)]">
+                    {infoLoading ? (
                         <div className="flex items-center justify-center h-40 text-slate-400 text-sm">Loading information...</div>
                     ) : infoItems.length === 0 ? (
                         <div className="flex items-center justify-center h-40 text-slate-400 text-sm">

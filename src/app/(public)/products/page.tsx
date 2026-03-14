@@ -2,6 +2,7 @@ import Link from "next/link"
 import { getProducts } from "@/lib/actions/product-actions"
 import { ShopProductCard } from "@/components/storefront/shop-product-card"
 import { getSiteSettings } from "@/lib/site-settings"
+import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
 
 type ProductsPageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
@@ -14,6 +15,7 @@ function getSingle(params: { [key: string]: string | string[] | undefined }, key
 }
 
 export default async function ProductsPage({ searchParams }: ProductsPageProps) {
+  const currencySnapshot = await getStorefrontCurrencySnapshot()
   const resolved = await searchParams
   const query = getSingle(resolved, "q")
   const sortInput = getSingle(resolved, "sort")
@@ -81,11 +83,9 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
                 product={product}
                 catalogMode={siteSettings.showCatalogMode === "catalog"}
                 currencySettings={{
-                  defaultCurrency: siteSettings.defaultCurrency,
-                  currencyPosition: siteSettings.currencyPosition,
-                  thousandSeparator: siteSettings.thousandSeparator,
-                  decimalSeparator: siteSettings.decimalSeparator,
-                  numberOfDecimals: siteSettings.numberOfDecimals,
+                  selectedCurrency: currencySnapshot.selectedCurrency,
+                  usdToEurRate: currencySnapshot.usdToEurRate,
+                  locale: currencySnapshot.locale,
                 }}
               />
             ))}

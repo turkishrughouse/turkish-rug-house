@@ -11,9 +11,11 @@ import {
   removeEngagementItem,
   type EngagementItem,
 } from "@/lib/storefront/engagement"
+import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
 
 export default function ComparePage() {
   const [items, setItems] = useState<EngagementItem[]>([])
+  const { formatUsd } = useStorefrontCurrency()
 
   const refresh = () => setItems(readEngagementList("rughouse_compare"))
 
@@ -58,7 +60,7 @@ export default function ComparePage() {
                 <Link href={`/product/${item.slug}`} className="mt-3 line-clamp-1 block text-lg font-semibold text-slate-900 hover:text-emerald-700">
                   {item.title}
                 </Link>
-                <p className="mt-1 text-sm font-semibold text-emerald-700">${item.price.toFixed(2)}</p>
+                <p className="mt-1 text-sm font-semibold text-emerald-700">{formatUsd(item.price)}</p>
                 <div className="mt-4 flex items-center gap-2">
                   <button
                     type="button"

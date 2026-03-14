@@ -17,6 +17,8 @@ const homeFeatureItemSchema = z.object({
 
 const settingsSchema = z.object({
   siteName: z.string().min(1).optional(),
+  defaultMetaTitle: z.string().optional(),
+  defaultMetaDescription: z.string().optional(),
   brandPrimary: z.string().min(1).optional(),
   brandSecondary: z.string().min(1).optional(),
   siteTagline: z.string().optional(),

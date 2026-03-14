@@ -5,7 +5,8 @@ import { createSessionToken, getAuthCookieName, getSessionMaxAge, shouldUseSecur
 import { verifyPassword } from "@/lib/password"
 
 const loginSchema = z.object({
-  identifier: z.string().min(1),
+  identifier: z.string().min(1).optional(),
+  email: z.string().min(1).optional(),
   password: z.string().min(1),
 })
 
@@ -21,7 +22,13 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const rawIdentifier = parsed.data.identifier.trim()
+    const rawIdentifier = String(parsed.data.identifier || parsed.data.email || "").trim()
+    if (!rawIdentifier) {
+      return NextResponse.json(
+        { error: "Invalid credentials" },
+        { status: 400 }
+      )
+    }
     const identifier = rawIdentifier.toLowerCase()
     const password = parsed.data.password
 

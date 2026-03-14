@@ -23,8 +23,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { AdminMobileDetailCard } from "@/components/admin/mobile-detail-card"
-import type { BlogListItem } from "@/lib/blog"
-import { formatBlogDate } from "@/lib/blog"
+import type { BlogListItem } from "@/lib/blog-shared"
+import { formatBlogDate } from "@/lib/blog-shared"
 import { cn } from "@/lib/utils"
 
 export function BlogList({
