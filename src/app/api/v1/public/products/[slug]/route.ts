@@ -13,8 +13,8 @@ export async function GET(
 
         // We use prisma directly here or need an action that supports slug
         // Existing action is getProduct(id). Let's do direct DB for efficiency/speed here.
-        const product = await prisma.product.findUnique({
-            where: { slug: slug },
+        const product = await prisma.product.findFirst({
+            where: { slug: slug, isPublished: true },
             include: {
                 categories: true,
                 colors: true,
