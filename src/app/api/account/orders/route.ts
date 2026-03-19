@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { getOrderDetailsMap } from "@/lib/order-details"
 
 export async function GET() {

@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Folder, FolderPlus, Image as ImageIcon, Loader2, Trash2 } from "lucide-react"
+import { ChevronRight, Folder, FolderPlus, Image as ImageIcon, Loader2, Trash2, Upload } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -9,9 +9,8 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { isManagedUploadUrl } from "@/lib/storage/url"
 
-type Folder = { name: string; count: number }
+type FolderInfo = { name: string; count: number }
 type Asset = {
   id: string
   url: string
@@ -21,32 +20,51 @@ type Asset = {
   usedIn: string
 }
 
-const ALL_TOP = "__all__"
-const ALL_SUB = "__all_sub__"
-const SKU_FOLDER_ROOTS = new Set(["by-type", "cushion-covers", "by-age", "by-area"])
-
-const FOLDER_LABELS: Record<string, string> = {
-  "by-type": "By Type",
-  "by-style": "By Style",
-  "by-size": "By Size",
-  "by-color": "By Color",
-  "by-age": "By Age",
-  "by-area": "By Area",
-  "cushion-covers": "Cushion Covers",
-  categories: "Categories",
-  pages: "Pages",
-  profile: "Profile",
+type CategoryFolderMeta = {
+  path: string
+  label: string
+  count: number
+  productCount: number
 }
 
-function folderLabel(value: string) {
-  const raw = value.trim()
-  if (!raw) return value
-  const direct = FOLDER_LABELS[raw]
-  if (direct) return direct
-  return raw
-    .split("-")
+type ProductFolderMeta = {
+  path: string
+  categoryPath: string
+  sku: string
+  productId: string
+  count: number
+}
+
+type MediaResponse = {
+  folders?: FolderInfo[]
+  assets?: Asset[]
+  categoryFolders?: CategoryFolderMeta[]
+  productFolders?: ProductFolderMeta[]
+  error?: string
+}
+
+type FolderCard = {
+  path: string
+  label: string
+  count: number
+  kind: "category" | "product"
+}
+
+const ALL_TOP = "__all__"
+const ALL_CATEGORY = "__all_category__"
+const SPECIAL_ROOT_FOLDERS = ["Kategori-Fotoğrafları"] as const
+
+function formatFolderLabel(value: string) {
+  return value
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
     .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .map((part) => {
+      if (/^[A-Z0-9]+$/.test(part)) return part
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+    })
     .join(" ")
 }
 
@@ -63,18 +81,45 @@ function prettifyAssetName(asset: Asset) {
   return raw || asset.name
 }
 
+function formatProductCount(count: number) {
+  return `${count} ${count === 1 ? "product" : "products"}`
+}
+
+function looksLikeSkuPath(path: string) {
+  const leaf = path.split("/").filter(Boolean).pop() || path
+  return /[0-9]/.test(leaf) && /^[A-Z0-9-]{6,}$/i.test(leaf)
+}
+
+function getImmediateChildPaths(folderNames: string[], parentPath: string) {
+  const prefix = `${parentPath}/`
+  return Array.from(
+    new Set(
+      folderNames
+        .filter((folder) => folder.startsWith(prefix))
+        .map((folder) => {
+          const remainder = folder.slice(prefix.length)
+          const child = remainder.split("/").filter(Boolean)[0] || ""
+          return child ? `${parentPath}/${child}` : ""
+        })
+        .filter(Boolean)
+    )
+  ).sort((a, b) => a.localeCompare(b))
+}
+
 export function MediaBrowser() {
-  const [folders, setFolders] = useState<Folder[]>([])
+  const [folders, setFolders] = useState<FolderInfo[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
+  const [categoryFolders, setCategoryFolders] = useState<CategoryFolderMeta[]>([])
+  const [productFolders, setProductFolders] = useState<ProductFolderMeta[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedTopFolder, setSelectedTopFolder] = useState(ALL_TOP)
-  const [selectedSubfolder, setSelectedSubfolder] = useState(ALL_SUB)
-  const [selectedChildFolder, setSelectedChildFolder] = useState("")
-  const [searchTerm, setSearchTerm] = useState("")
+  const [selectedCategoryFolder, setSelectedCategoryFolder] = useState(ALL_CATEGORY)
+  const [selectedProductFolder, setSelectedProductFolder] = useState("")
   const [selectedFolderCard, setSelectedFolderCard] = useState("")
+  const [searchTerm, setSearchTerm] = useState("")
   const [selectedUrls, setSelectedUrls] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
-  const [moving, setMoving] = useState(false)
+  const [creatingFolder, setCreatingFolder] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [previewAsset, setPreviewAsset] = useState<Asset | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -83,10 +128,12 @@ export function MediaBrowser() {
     setLoading(true)
     try {
       const res = await fetch("/api/admin/media", { cache: "no-store" })
-      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[]; assets?: Asset[] })
+      const json = await res.json().catch(() => null as null | MediaResponse)
       if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
       setFolders(json?.folders || [])
       setAssets(json?.assets || [])
+      setCategoryFolders(json?.categoryFolders || [])
+      setProductFolders(json?.productFolders || [])
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to fetch media")
     } finally {
@@ -98,182 +145,138 @@ export function MediaBrowser() {
     loadMedia()
   }, [loadMedia])
 
-  const topFolders = useMemo(() => {
-    const names = new Set<string>()
-    for (const folder of folders) {
-      const top = folder.name.split("/")[0] || folder.name
-      if (top) names.add(top)
-    }
-    return Array.from(names).sort((a, b) => folderLabel(a).localeCompare(folderLabel(b)))
-  }, [folders])
+  const rootCategoryCards = useMemo<FolderCard[]>(() => {
+    const categoryCards = [...categoryFolders]
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .map((folder) => ({
+        path: folder.path,
+        label: folder.label || formatFolderLabel(folder.path),
+        count: folder.productCount,
+        kind: "category" as const,
+      }))
 
-  const subfolders = useMemo(() => {
-    if (selectedTopFolder === ALL_TOP) return [] as string[]
-    const prefix = `${selectedTopFolder}/`
-    return folders
-      .map((folder) => folder.name)
-      .filter((name) => name.startsWith(prefix))
-      .map((name) => name.slice(prefix.length))
-      .filter((rest) => rest.length > 0 && !rest.includes("/"))
-      .map((leaf) => `${selectedTopFolder}/${leaf}`)
-      .sort((a, b) => folderLabel(a).localeCompare(folderLabel(b)))
-  }, [folders, selectedTopFolder])
+    const specialRootCards = SPECIAL_ROOT_FOLDERS
+      .filter((path) => folders.some((folder) => folder.name === path || folder.name.startsWith(`${path}/`)))
+      .map((path) => ({
+        path,
+        label: formatFolderLabel(path),
+        count: folders.filter((folder) => folder.name === path || folder.name.startsWith(`${path}/`)).length,
+        kind: "category" as const,
+      }))
+
+    return [...categoryCards, ...specialRootCards]
+  }, [categoryFolders, folders])
+
+  const categoryOptions = useMemo(() => {
+    if (selectedTopFolder === ALL_TOP) return [] as CategoryFolderMeta[]
+    const childPaths = getImmediateChildPaths(
+      folders.map((folder) => folder.name),
+      selectedTopFolder
+    ).filter((path) => !looksLikeSkuPath(path))
+
+    return childPaths.map((path) => ({
+      path,
+      label: formatFolderLabel(path.split("/").pop() || path),
+      count: 0,
+      productCount: productFolders.filter((folder) => folder.categoryPath === path).length,
+    }))
+  }, [folders, productFolders, selectedTopFolder])
+
+  const activeCategoryPath =
+    selectedTopFolder === ALL_TOP
+      ? ""
+      : selectedCategoryFolder !== ALL_CATEGORY
+        ? selectedCategoryFolder
+        : selectedTopFolder
+
+  const productFolderCards = useMemo<FolderCard[]>(() => {
+    if (!activeCategoryPath) return []
+    return getImmediateChildPaths(
+      folders.map((folder) => folder.name),
+      activeCategoryPath
+    ).map((path) => {
+      const hasChildren = folders.some((folder) => folder.name.startsWith(`${path}/`))
+      const productMeta = productFolders.find((folder) => folder.path === path)
+      return {
+        path,
+        label: productMeta?.sku || formatFolderLabel(path.split("/").pop() || path),
+        count: productMeta?.count || folders.find((folder) => folder.name === path)?.count || 0,
+        kind: hasChildren ? ("category" as const) : ("product" as const),
+      }
+    })
+  }, [activeCategoryPath, folders, productFolders])
+
+  const activeAssetFolder = selectedProductFolder || (activeCategoryPath && productFolderCards.length === 0 ? activeCategoryPath : "")
+
+  const currentFolderCards = activeAssetFolder ? [] : activeCategoryPath ? productFolderCards : rootCategoryCards
+
+  const filteredFolderCards = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase()
+    if (!normalizedSearch) return currentFolderCards
+    return currentFolderCards.filter((folder) => folder.label.toLowerCase().includes(normalizedSearch))
+  }, [currentFolderCards, searchTerm])
+
+  const filteredAssets = useMemo(() => {
+    if (!activeAssetFolder) return [] as Asset[]
+    const normalizedSearch = searchTerm.trim().toLowerCase()
+    return assets.filter((asset) => {
+      const inFolder = asset.folder === activeAssetFolder || asset.folder.startsWith(`${activeAssetFolder}/`)
+      if (!inFolder) return false
+      if (!normalizedSearch) return true
+      return (
+        prettifyAssetName(asset).toLowerCase().includes(normalizedSearch) ||
+        asset.name.toLowerCase().includes(normalizedSearch)
+      )
+    })
+  }, [activeAssetFolder, assets, searchTerm])
 
   useEffect(() => {
-    setSelectedSubfolder(ALL_SUB)
-    setSelectedChildFolder("")
-    setSearchTerm("")
+    setSelectedCategoryFolder(ALL_CATEGORY)
+    setSelectedProductFolder("")
     setSelectedFolderCard("")
     setSelectedUrls([])
+    setSearchTerm("")
   }, [selectedTopFolder])
 
   useEffect(() => {
-    setSelectedChildFolder("")
-    setSearchTerm("")
+    setSelectedProductFolder("")
     setSelectedFolderCard("")
     setSelectedUrls([])
-  }, [selectedSubfolder])
+    setSearchTerm("")
+  }, [selectedCategoryFolder])
 
-  const activeFolder = selectedChildFolder || (selectedSubfolder !== ALL_SUB ? selectedSubfolder : selectedTopFolder !== ALL_TOP ? selectedTopFolder : "")
-
-  const childFolders = useMemo(() => {
-    if (selectedSubfolder === ALL_SUB) return [] as string[]
-    const prefix = `${selectedSubfolder}/`
-    return folders
-      .map((folder) => folder.name)
-      .filter((name) => name.startsWith(prefix))
-      .map((name) => name.slice(prefix.length))
-      .filter((rest) => rest.length > 0 && !rest.includes("/"))
-      .map((leaf) => `${selectedSubfolder}/${leaf}`)
-      .sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
-  }, [folders, selectedSubfolder])
-
-  const normalizedSearchTerm = searchTerm.trim().toLowerCase()
-
-  const currentLevelFolders = useMemo(() => {
-    if (selectedChildFolder) return [] as string[]
-    if (selectedSubfolder !== ALL_SUB) return childFolders
-    return subfolders
-  }, [childFolders, selectedChildFolder, selectedSubfolder, subfolders])
-
-  const searchableFolders = useMemo(() => {
-    const allFolderNames = folders.map((folder) => folder.name)
-
-    if (selectedChildFolder) {
-      const prefix = `${selectedChildFolder}/`
-      return allFolderNames
-        .filter((name) => name.startsWith(prefix))
-        .sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
-    }
-
-    if (selectedSubfolder !== ALL_SUB) {
-      const prefix = `${selectedSubfolder}/`
-      return allFolderNames
-        .filter((name) => name.startsWith(prefix))
-        .sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
-    }
-
-    if (selectedTopFolder !== ALL_TOP) {
-      const prefix = `${selectedTopFolder}/`
-      return allFolderNames
-        .filter((name) => name.startsWith(prefix))
-        .sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
-    }
-
-    return allFolderNames.sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
-  }, [folders, selectedChildFolder, selectedSubfolder, selectedTopFolder])
-
-  const visibleCurrentLevelFolders = useMemo(() => {
-    if (!normalizedSearchTerm) return currentLevelFolders
-    return searchableFolders.filter((folder) => {
-      const folderLeaf = folder.split("/").pop() || folder
-      return folder.toLowerCase().includes(normalizedSearchTerm) || folderLeaf.toLowerCase().includes(normalizedSearchTerm)
-    })
-  }, [currentLevelFolders, normalizedSearchTerm, searchableFolders])
-
-  const usesSkuFolders = useMemo(() => {
-    if (selectedSubfolder === ALL_SUB) return false
-    const root = selectedTopFolder !== ALL_TOP ? selectedTopFolder : selectedSubfolder.split("/")[0] || ""
-    return SKU_FOLDER_ROOTS.has(root)
-  }, [selectedSubfolder, selectedTopFolder])
-
-  const filteredAssets = useMemo(() => {
-    return assets.filter((asset) => {
-      if (selectedChildFolder) {
-        const inFolder = asset.folder === selectedChildFolder || asset.folder.startsWith(`${selectedChildFolder}/`)
-        if (!inFolder) return false
-      } else if (selectedSubfolder !== ALL_SUB) {
-        if (usesSkuFolders) return false
-        const inSubfolder = asset.folder === selectedSubfolder || asset.folder.startsWith(`${selectedSubfolder}/`)
-        if (!inSubfolder) return false
-      } else {
-        const inFolder =
-          !activeFolder ||
-          asset.folder === activeFolder ||
-          asset.folder.startsWith(`${activeFolder}/`)
-        if (!inFolder) return false
-      }
-
-      if (!normalizedSearchTerm) return true
-
-      const displayName = prettifyAssetName(asset).toLowerCase()
-      return (
-        displayName.includes(normalizedSearchTerm) ||
-        asset.name.toLowerCase().includes(normalizedSearchTerm) ||
-        asset.folder.toLowerCase().includes(normalizedSearchTerm) ||
-        asset.usedIn.toLowerCase().includes(normalizedSearchTerm)
-      )
-    })
-  }, [activeFolder, assets, normalizedSearchTerm, selectedChildFolder, selectedSubfolder, usesSkuFolders])
-
-  const renameSelectedFolder = async () => {
-    if (!selectedFolderCard) return
-    const currentName = selectedFolderCard.split("/").pop() || selectedFolderCard
-    const nextName = window.prompt("Yeni klasör adı", currentName)
-    if (!nextName) return
-    const trimmed = nextName.trim()
-    if (!trimmed) return
-
-    const res = await fetch("/api/admin/media/folders", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ folder: selectedFolderCard, newName: trimmed }),
-    })
-    const json = await res.json().catch(() => null as null | { error?: string; folder?: string })
-    if (!res.ok || !json?.folder) {
-      toast.error(json?.error || "Folder rename failed")
-      return
-    }
-    toast.success("Klasör güncellendi")
-    setSelectedFolderCard(json.folder)
-    await loadMedia()
-  }
-
-  const deleteSelectedFolder = async () => {
-    if (!selectedFolderCard) return
-    if (!window.confirm(`${selectedFolderCard} klasoru silinsin mi?`)) return
-    const res = await fetch("/api/admin/media/folders", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ folder: selectedFolderCard }),
-    })
-    const json = await res.json().catch(() => null as null | { error?: string })
-    if (!res.ok) {
-      toast.error(json?.error || "Folder delete failed")
-      return
-    }
-    toast.success("Klasör silindi")
-    if (selectedChildFolder === selectedFolderCard) {
-      setSelectedChildFolder("")
-    }
+  useEffect(() => {
     setSelectedFolderCard("")
-    await loadMedia()
-  }
+    setSelectedUrls([])
+    setSearchTerm("")
+  }, [selectedProductFolder])
 
-  const allFilteredSelected = filteredAssets.length > 0 && filteredAssets.every((asset) => selectedUrls.includes(asset.url))
+  const breadcrumbItems = useMemo(() => {
+    const items = [{ label: "Media", value: "root" as const }]
+    if (activeCategoryPath) {
+      const categoryLabel =
+        categoryFolders.find((folder) => folder.path === activeCategoryPath)?.label ||
+        formatFolderLabel(activeCategoryPath.split("/").pop() || activeCategoryPath)
+      items.push({ label: categoryLabel, value: activeCategoryPath as const })
+    }
+    if (selectedProductFolder) {
+      items.push({
+        label: selectedProductFolder.split("/").filter(Boolean).pop() || selectedProductFolder,
+        value: selectedProductFolder as const,
+      })
+    }
+    return items
+  }, [activeCategoryPath, categoryFolders, selectedProductFolder])
+
+  const allFilteredSelected =
+    selectedProductFolder.length > 0 &&
+    filteredAssets.length > 0 &&
+    filteredAssets.every((asset) => selectedUrls.includes(asset.url))
+
+  const canGoBack = breadcrumbItems.length > 1
 
   const toggleSelectAll = () => {
-    if (filteredAssets.length === 0) return
+    if (!selectedProductFolder || filteredAssets.length === 0) return
     if (allFilteredSelected) {
       const visibleUrls = new Set(filteredAssets.map((asset) => asset.url))
       setSelectedUrls((prev) => prev.filter((url) => !visibleUrls.has(url)))
@@ -282,20 +285,94 @@ export function MediaBrowser() {
     setSelectedUrls(Array.from(new Set(filteredAssets.map((asset) => asset.url))))
   }
 
+  const openFolder = (folder: FolderCard) => {
+    if (folder.kind === "category") {
+      const topFolder = folder.path.split("/")[0] || folder.path
+      setSelectedTopFolder(topFolder)
+      setSelectedCategoryFolder(folder.path)
+      setSelectedFolderCard(folder.path)
+      return
+    }
+    setSelectedProductFolder(folder.path)
+    setSelectedFolderCard(folder.path)
+  }
+
+  const navigateTo = (target: "root" | string) => {
+    if (target === "root") {
+      setSelectedTopFolder(ALL_TOP)
+      setSelectedCategoryFolder(ALL_CATEGORY)
+      setSelectedProductFolder("")
+      setSelectedFolderCard("")
+      return
+    }
+    const topFolder = target.split("/")[0] || target
+    if (target === activeCategoryPath) {
+      setSelectedTopFolder(topFolder)
+      setSelectedCategoryFolder(target)
+      setSelectedProductFolder("")
+      setSelectedFolderCard("")
+      return
+    }
+    setSelectedTopFolder(topFolder)
+    setSelectedCategoryFolder(topFolder)
+    setSelectedProductFolder(target)
+    setSelectedFolderCard(target)
+  }
+
+  const handleNavigateBack = () => {
+    if (!canGoBack) return
+    const previous = breadcrumbItems[breadcrumbItems.length - 2]
+    if (!previous) return
+    navigateTo(previous.value)
+  }
+
   const openFilePicker = () => {
-    if (selectedSubfolder === ALL_SUB && !selectedChildFolder) {
-      toast.error("Once an alt kategori secin")
+    if (!selectedProductFolder && !activeCategoryPath) {
+      toast.error("Open a category or SKU folder first")
       return
     }
     fileInputRef.current?.click()
   }
 
+  const handleCreateFolder = async () => {
+    const nextName = window.prompt("Folder name")
+    if (!nextName?.trim()) return
+
+    const parentFolder = selectedProductFolder || activeCategoryPath || ""
+    setCreatingFolder(true)
+    try {
+      const res = await fetch("/api/admin/media", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parentFolder ? { parentFolder, name: nextName.trim() } : { name: nextName.trim() }),
+      })
+      const json = await res.json().catch(() => null as null | { error?: string; folder?: string })
+      if (!res.ok || !json?.folder) throw new Error(json?.error || "Failed to create folder")
+      toast.success("Folder created")
+      await loadMedia()
+      const createdFolder = json.folder
+      const topFolder = createdFolder.split("/")[0] || createdFolder
+      if (!createdFolder.includes("/")) {
+        setSelectedTopFolder(topFolder)
+        setSelectedCategoryFolder(topFolder)
+        setSelectedFolderCard(topFolder)
+      } else if ((selectedProductFolder || activeCategoryPath) === (createdFolder.split("/").slice(0, -1).join("/"))) {
+        setSelectedFolderCard(createdFolder)
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create folder")
+    } finally {
+      setCreatingFolder(false)
+    }
+  }
+
   const handleUpload = async (files: FileList | File[]) => {
-    const targetFolder = selectedChildFolder || selectedSubfolder
-    if (targetFolder === ALL_SUB || !targetFolder) {
-      toast.error("Once an alt kategori secin")
+    const targetFolder = selectedProductFolder || activeCategoryPath
+    if (!targetFolder) {
+      toast.error("Open a category or SKU folder first")
       return
     }
+
     const list = Array.from(files || [])
     if (list.length === 0) return
 
@@ -312,7 +389,7 @@ export function MediaBrowser() {
         const json = await res.json().catch(() => null as null | { error?: string })
         if (!res.ok) throw new Error(json?.error || "Upload failed")
       }
-      toast.success(`${list.length} dosya eklendi`)
+      toast.success(`${list.length} file(s) uploaded`)
       await loadMedia()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Upload failed")
@@ -322,51 +399,31 @@ export function MediaBrowser() {
     }
   }
 
-  const moveSelectedToSubfolder = async () => {
-    const targetFolder = selectedChildFolder || selectedSubfolder
-    if (targetFolder === ALL_SUB || !targetFolder) {
-      toast.error("Once bir alt kategori secin")
+  const deleteSelectedFolder = async () => {
+    if (!selectedFolderCard || selectedProductFolder) return
+    if (!window.confirm(`${selectedFolderCard} folder will be deleted. Continue?`)) return
+    const res = await fetch("/api/admin/media/folders", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folder: selectedFolderCard }),
+    })
+    const json = await res.json().catch(() => null as null | { error?: string })
+    if (!res.ok) {
+      toast.error(json?.error || "Folder delete failed")
       return
     }
-    if (selectedUrls.length === 0) {
-      toast.error("Once fotograf secin")
-      return
-    }
-
-    const uploadOnly = assets.filter((asset) => selectedUrls.includes(asset.url) && isManagedUploadUrl(asset.url))
-    if (uploadOnly.length === 0) {
-      toast.error("Secilen medya tasinamiyor")
-      return
-    }
-
-    setMoving(true)
-    try {
-      for (const asset of uploadOnly) {
-        const res = await fetch("/api/admin/media", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: asset.url, targetFolder }),
-        })
-        const json = await res.json().catch(() => null as null | { error?: string })
-        if (!res.ok) throw new Error(json?.error || "Move failed")
-      }
-      toast.success(`${uploadOnly.length} fotograf eklendi`)
-      setSelectedUrls([])
-      await loadMedia()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Move failed")
-    } finally {
-      setMoving(false)
-    }
+    toast.success("Folder deleted")
+    setSelectedFolderCard("")
+    await loadMedia()
   }
 
   const deleteSelected = async () => {
-    if (!selectedChildFolder && selectedFolderCard) {
+    if (!selectedProductFolder && selectedFolderCard) {
       await deleteSelectedFolder()
       return
     }
     if (selectedUrls.length === 0) return
-    if (!window.confirm(`${selectedUrls.length} fotograf silinsin mi?`)) return
+    if (!window.confirm(`${selectedUrls.length} file(s) will be deleted. Continue?`)) return
 
     setDeleting(true)
     try {
@@ -379,7 +436,7 @@ export function MediaBrowser() {
         const json = await res.json().catch(() => null as null | { error?: string })
         if (!res.ok) throw new Error(json?.error || "Delete failed")
       }
-      toast.success(`${selectedUrls.length} fotograf silindi`)
+      toast.success(`${selectedUrls.length} file(s) deleted`)
       setSelectedUrls([])
       setPreviewAsset(null)
       await loadMedia()
@@ -390,119 +447,103 @@ export function MediaBrowser() {
     }
   }
 
+  const searchPlaceholder = selectedProductFolder
+    ? "Search files in this SKU folder"
+    : activeCategoryPath
+      ? "Search SKU folders"
+      : "Search categories"
+
   return (
     <>
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
+        <Button type="button" variant="outline" className="h-12 px-5" onClick={handleCreateFolder} disabled={creatingFolder}>
+          {creatingFolder ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FolderPlus className="mr-2 h-4 w-4" />}
+          New folder
+        </Button>
+        <Button type="button" variant="outline" className="h-12 px-5" onClick={handleNavigateBack} disabled={!canGoBack}>
+          Geri
+        </Button>
+        <Button type="button" className="h-12 px-5" onClick={openFilePicker} disabled={uploading}>
+          {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+          Upload media
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-12 px-5"
+          onClick={toggleSelectAll}
+          disabled={!selectedProductFolder || filteredAssets.length === 0}
+        >
+          {allFilteredSelected ? "Clear Selection" : "Select All"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-12 px-5"
+          onClick={deleteSelected}
+          disabled={deleting || (selectedUrls.length === 0 && (!selectedFolderCard || Boolean(selectedProductFolder)))}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Delete
+        </Button>
+      </div>
+
       <Card className="border border-[#dce3ed] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
         <CardContent className="space-y-6 p-6">
-          <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-center xl:justify-start">
-            <div className="flex flex-1 flex-col gap-3 lg:flex-row lg:items-center">
-              <div className="grid gap-3 sm:grid-cols-[260px_260px_minmax(220px,1fr)_auto]">
-                <Select value={selectedTopFolder} onValueChange={setSelectedTopFolder}>
-                  <SelectTrigger className="h-12 border-[#cfd9e4] bg-white text-[15px]">
-                    <SelectValue placeholder="Ana sayfalar" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL_TOP}>All media items</SelectItem>
-                    {topFolders.map((folder) => (
-                      <SelectItem key={folder} value={folder}>
-                        {folderLabel(folder)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          <div className="grid gap-3 sm:grid-cols-[260px_260px_minmax(220px,1fr)]">
+            <Select value={selectedTopFolder} onValueChange={setSelectedTopFolder}>
+              <SelectTrigger className="h-12 border-[#cfd9e4] bg-white text-[15px]">
+                <SelectValue placeholder="Category folders" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_TOP}>All categories</SelectItem>
+                {rootCategoryCards.map((folder) => (
+                  <SelectItem key={folder.path} value={folder.path}>
+                    {folder.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-                  <Select
-                    value={selectedSubfolder}
-                    onValueChange={(value) => {
-                      setSelectedSubfolder(value)
-                      setSelectedChildFolder("")
-                    }}
-                    disabled={selectedTopFolder === ALL_TOP}
-                  >
-                  <SelectTrigger className="h-12 border-[#cfd9e4] bg-white text-[15px]">
-                    <SelectValue placeholder="Alt kategoriler" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL_SUB}>All subcategories</SelectItem>
-                    {subfolders.map((folder) => (
-                      <SelectItem key={folder} value={folder}>
-                        {folderLabel(folder.split("/").pop() || folder)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            <Select
+              value={selectedCategoryFolder}
+              onValueChange={setSelectedCategoryFolder}
+              disabled={selectedTopFolder === ALL_TOP}
+            >
+              <SelectTrigger className="h-12 border-[#cfd9e4] bg-white text-[15px]">
+                <SelectValue placeholder="Category level" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_CATEGORY}>Current category</SelectItem>
+                {categoryOptions.map((folder) => (
+                  <SelectItem key={folder.path} value={folder.path}>
+                    {folder.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-                <Input
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder="Klasor veya fotograf ara"
-                  className="h-12 border-[#cfd9e4] bg-white text-[15px]"
-                />
-
-                {selectedSubfolder !== ALL_SUB ? (
-                  <div className="flex gap-2">
-                    <Button type="button" className="h-12 px-5" onClick={openFilePicker} disabled={uploading}>
-                      {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FolderPlus className="mr-2 h-4 w-4" />}
-                      Ekle
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 xl:ml-0">
-              <Button type="button" variant="outline" className="h-12 px-5" onClick={toggleSelectAll} disabled={filteredAssets.length === 0}>
-                {allFilteredSelected ? "Secimi Kaldir" : "Tumunu Sec"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={deleteSelected}
-                disabled={deleting || (selectedUrls.length === 0 && (!selectedFolderCard || Boolean(selectedChildFolder)))}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Sil
-              </Button>
-            </div>
+            <Input
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder={searchPlaceholder}
+              className="h-12 border-[#cfd9e4] bg-white text-[15px]"
+            />
           </div>
 
-          {selectedChildFolder ? (
-            <div className="flex items-center justify-between rounded-xl border border-[#dce3ed] bg-[#f8fafc] px-4 py-3">
-              <p className="text-sm text-slate-600">
-                {folderLabel(selectedChildFolder.split("/").pop() || selectedChildFolder)}
-              </p>
-              <Button type="button" variant="outline" className="h-9 px-3" onClick={() => setSelectedChildFolder("")}>
-                Geri
-              </Button>
-            </div>
-          ) : null}
-
-          {!selectedChildFolder && visibleCurrentLevelFolders.length > 0 ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-              {visibleCurrentLevelFolders.map((folderPath) => (
-                <button
-                  key={folderPath}
-                  type="button"
-                  onClick={() => setSelectedFolderCard(folderPath)}
-                  onDoubleClick={() => {
-                    setSelectedFolderCard(folderPath)
-                    setSelectedChildFolder(folderPath)
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault()
-                    setSelectedFolderCard(folderPath)
-                  }}
-                  className={`flex min-h-[132px] flex-col items-start justify-between rounded-2xl border bg-white p-4 text-left transition hover:border-slate-300 ${
-                    selectedFolderCard === folderPath ? "border-teal-500 ring-2 ring-teal-200" : "border-[#dce3ed]"
-                  }`}
-                >
-                  <Folder className="h-8 w-8 text-amber-500" />
-                  <div>
-                    <p className="truncate text-sm font-medium text-slate-900">
-                      {folderLabel(folderPath.split("/").pop() || folderPath)}
-                    </p>
-                  </div>
-                </button>
+          {breadcrumbItems.length > 1 ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#dce3ed] bg-[#f8fafc] px-4 py-3 text-sm">
+              {breadcrumbItems.map((item, index) => (
+                <div key={`${item.value}-${index}`} className="flex items-center gap-2">
+                  {index > 0 ? <ChevronRight className="h-4 w-4 text-slate-400" /> : null}
+                  <button
+                    type="button"
+                    onClick={() => navigateTo(item.value)}
+                    className="font-medium text-slate-700 transition-colors hover:text-slate-900"
+                  >
+                    {item.label}
+                  </button>
+                </div>
               ))}
             </div>
           ) : null}
@@ -521,61 +562,99 @@ export function MediaBrowser() {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Loading media...
             </div>
-          ) : filteredAssets.length === 0 && visibleCurrentLevelFolders.length === 0 ? (
-            <div className="flex h-[420px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
-              <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
-              No images found
+          ) : !activeAssetFolder && filteredFolderCards.length > 0 ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+              {filteredFolderCards.map((folder) => (
+                <button
+                  key={folder.path}
+                  type="button"
+                  onClick={() => setSelectedFolderCard(folder.path)}
+                  onDoubleClick={() => openFolder(folder)}
+                  className={`flex min-h-[148px] flex-col items-start justify-between rounded-2xl border bg-white p-4 text-left transition hover:border-slate-300 ${
+                    selectedFolderCard === folder.path ? "border-teal-500 ring-2 ring-teal-200" : "border-[#dce3ed]"
+                  }`}
+                >
+                  <Folder className="h-8 w-8 text-amber-500" />
+                  <div className="space-y-1">
+                    <p className="truncate text-sm font-medium text-slate-900">{folder.label}</p>
+                    {folder.kind === "category" ? (
+                      <>
+                        <p className="text-xs text-slate-500">{folder.path.includes("/") ? "Folder" : "Category folder"}</p>
+                        <p className="text-xs text-slate-500">
+                          {folder.path.includes("/") ? `${folder.count} ${folder.count === 1 ? "item" : "items"}` : formatProductCount(folder.count)}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-slate-500">
+                        SKU folder{folder.count > 0 ? ` (${folder.count})` : ""}
+                      </p>
+                    )}
+                  </div>
+                </button>
+              ))}
             </div>
-          ) : visibleCurrentLevelFolders.length === 0 ? (
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-              {filteredAssets.map((asset) => {
-                const selected = selectedUrls.includes(asset.url)
-                return (
-                  <div
-                    key={asset.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() =>
-                      setSelectedUrls((prev) =>
-                        prev.includes(asset.url) ? prev.filter((url) => url !== asset.url) : [...prev, asset.url]
-                      )
-                    }
-                    onDoubleClick={() => setPreviewAsset(asset)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault()
+          ) : activeAssetFolder ? (
+            filteredAssets.length > 0 ? (
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+                {filteredAssets.map((asset) => {
+                  const selected = selectedUrls.includes(asset.url)
+                  return (
+                    <div
+                      key={asset.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() =>
                         setSelectedUrls((prev) =>
                           prev.includes(asset.url) ? prev.filter((url) => url !== asset.url) : [...prev, asset.url]
                         )
                       }
-                    }}
-                    className={`overflow-hidden rounded-2xl border bg-white text-left transition ${
-                      selected ? "border-teal-500 ring-2 ring-teal-200" : "border-[#dce3ed] hover:border-slate-300"
-                    }`}
-                  >
-                    <div className="relative aspect-square overflow-hidden bg-slate-100">
-                      <div className="absolute left-3 top-3 z-10 rounded-md bg-white/95 p-1.5">
-                        <Checkbox
-                          checked={selected}
-                          onClick={(event) => event.stopPropagation()}
-                          onCheckedChange={() =>
-                            setSelectedUrls((prev) =>
-                              prev.includes(asset.url) ? prev.filter((url) => url !== asset.url) : [...prev, asset.url]
-                            )
-                          }
-                        />
+                      onDoubleClick={() => setPreviewAsset(asset)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault()
+                          setSelectedUrls((prev) =>
+                            prev.includes(asset.url) ? prev.filter((url) => url !== asset.url) : [...prev, asset.url]
+                          )
+                        }
+                      }}
+                      className={`overflow-hidden rounded-2xl border bg-white text-left transition ${
+                        selected ? "border-teal-500 ring-2 ring-teal-200" : "border-[#dce3ed] hover:border-slate-300"
+                      }`}
+                    >
+                      <div className="relative aspect-square overflow-hidden bg-slate-100">
+                        <div className="absolute left-3 top-3 z-10 rounded-md bg-white/95 p-1.5">
+                          <Checkbox
+                            checked={selected}
+                            onClick={(event) => event.stopPropagation()}
+                            onCheckedChange={() =>
+                              setSelectedUrls((prev) =>
+                                prev.includes(asset.url) ? prev.filter((url) => url !== asset.url) : [...prev, asset.url]
+                              )
+                            }
+                          />
+                        </div>
+                        <img src={asset.url} alt={asset.name} className="h-full w-full object-cover" />
                       </div>
-                      <img src={asset.url} alt={asset.name} className="h-full w-full object-cover" />
+                      <div className="space-y-1 p-3">
+                        <p className="truncate text-sm font-medium text-slate-900">{prettifyAssetName(asset)}</p>
+                        <p className="truncate text-xs text-slate-500">{asset.name}</p>
+                      </div>
                     </div>
-                    <div className="space-y-1 p-3">
-                      <p className="truncate text-sm font-medium text-slate-900">{prettifyAssetName(asset)}</p>
-                      <p className="truncate text-xs text-slate-500">{asset.folder}</p>
-                    </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="flex h-[420px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
+                <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
+                        No files found in this folder
+              </div>
+            )
+          ) : (
+            <div className="flex h-[420px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
+              <Folder className="mb-3 h-10 w-10 text-slate-300" />
+              {activeCategoryPath ? "No SKU folders found in this category" : "No category folders found"}
             </div>
-          ) : null}
+          )}
         </CardContent>
       </Card>
 

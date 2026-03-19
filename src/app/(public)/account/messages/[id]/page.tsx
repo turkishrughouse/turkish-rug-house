@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { AccountMessageThread } from "@/components/storefront/account/account-message-thread"
 
 export default async function AccountMessageThreadPage({

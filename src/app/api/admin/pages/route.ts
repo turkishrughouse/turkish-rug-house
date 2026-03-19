@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { Prisma } from "@prisma/client"
 import { z } from "zod"
+import { revalidatePath } from "next/cache"
 
 export const dynamic = 'force-dynamic'
 
@@ -70,6 +71,18 @@ const pageCreateSchema = z.object({
     metaDescription: z.string().optional(),
 })
 
+function normalizeOptionalText(value: string | null | undefined) {
+    const trimmed = (value ?? "").trim()
+    return trimmed.length > 0 ? trimmed : null
+}
+
+function revalidatePagePaths(slug: string) {
+    const safeSlug = String(slug || "").trim()
+    if (!safeSlug) return
+    revalidatePath(`/${safeSlug}`)
+    revalidatePath(`/info/${safeSlug}`)
+}
+
 // POST /api/admin/pages
 export async function POST(req: NextRequest) {
     try {
@@ -90,6 +103,7 @@ export async function POST(req: NextRequest) {
         if (!slug || slug.trim() === "") {
             slug = data.title.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '')
         }
+        slug = slug.trim()
 
         // Check uniqueness
         const existingPage = await prisma.page.findUnique({ where: { slug } })
@@ -104,17 +118,18 @@ export async function POST(req: NextRequest) {
 
         const newPage = await prisma.page.create({
             data: {
-                title: data.title,
+                title: data.title.trim(),
                 slug: uniqueSlug,
-                content: data.content,
-                featuredImage: data.featuredImage,
+                content: data.content ?? null,
+                featuredImage: normalizeOptionalText(data.featuredImage),
                 status: data.status,
-                excerpt: data.excerpt,
-                metaTitle: data.metaTitle,
-                metaDescription: data.metaDescription
+                excerpt: normalizeOptionalText(data.excerpt),
+                metaTitle: normalizeOptionalText(data.metaTitle),
+                metaDescription: normalizeOptionalText(data.metaDescription),
             }
         })
 
+        revalidatePagePaths(newPage.slug)
         return NextResponse.json(newPage, { status: 201 })
 
     } catch (error) {

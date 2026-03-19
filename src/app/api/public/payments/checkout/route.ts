@@ -2,7 +2,7 @@ import crypto from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/db"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { checkFixedWindowRateLimit } from "@/lib/rate-limit"
 import { getSiteSettings } from "@/lib/site-settings"
 import { ensureOrderDetailsColumn, saveOrderDetails } from "@/lib/order-details"
@@ -19,6 +19,7 @@ import {
   type CheckoutProvider,
   type CheckoutShippingMethod,
 } from "@/lib/storefront/checkout"
+import { upsertCustomerAddress } from "@/lib/customer-addresses"
 
 const payloadSchema = z.object({
   provider: z.enum(["stripe", "paypal", "paytr", "gpay", "applepay"]),
@@ -34,6 +35,8 @@ const payloadSchema = z.object({
   countryCode: z.string().optional(),
   regionState: z.string().optional(),
   orderComment: z.string().optional(),
+  saveAddressToProfile: z.boolean().optional(),
+  makeDefaultShippingAddress: z.boolean().optional(),
   shippingMethod: z.enum(["dhl", "ups", "fedex"]).optional(),
   displayCurrency: z.enum(["USD", "EUR"]).optional(),
   items: z.array(
@@ -415,6 +418,23 @@ export async function POST(req: NextRequest) {
       displayTotalAmount: displayAmounts.total,
       invoiceNumber: `INV-${order.orderNumber}`,
     })
+
+    if (isCustomerSession && input.saveAddressToProfile && input.addressLine1?.trim()) {
+      await upsertCustomerAddress(sessionUser.id, {
+        label: "Checkout",
+        fullName: input.customerName,
+        phoneNumber: input.customerPhone || "",
+        country: input.country || "",
+        countryCode: input.countryCode || "",
+        state: input.regionState || "",
+        city: input.city || "",
+        addressLine1: input.addressLine1 || "",
+        addressLine2: input.addressLine2 || "",
+        postalCode: input.postcode || "",
+      }, {
+        makeDefaultShipping: Boolean(input.makeDefaultShippingAddress),
+      })
+    }
 
     if (provider === "stripe" || provider === "gpay" || provider === "applepay") {
       const isGPay = provider === "gpay"

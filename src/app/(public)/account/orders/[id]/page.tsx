@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { prisma } from "@/lib/db"
 import { formatOrderCurrency, getOrderDisplaySummary, getSingleOrderDetails } from "@/lib/order-details"
 

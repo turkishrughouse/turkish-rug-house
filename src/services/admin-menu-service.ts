@@ -22,15 +22,27 @@ export type Menu = {
     items: MenuItemFlat[]
 }
 
+function isAbortError(error: unknown) {
+    return error instanceof DOMException && error.name === "AbortError"
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit & { timeoutMs?: number }) {
+    const controller = new AbortController()
+    const timeoutMs = init?.timeoutMs ?? 8000
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+        const { timeoutMs: _timeoutMs, ...rest } = init || {}
+        return await fetch(input, { ...rest, signal: controller.signal })
+    } finally {
+        clearTimeout(timeoutId)
+    }
+}
+
 export const menuService = {
     list: async (): Promise<Menu[]> => {
         try {
-            const res = await fetch("/api/admin/menus", {
-                cache: "no-store"
-            })
+            const res = await fetchWithTimeout("/api/admin/menus", { cache: "no-store", timeoutMs: 10000 })
             if (!res.ok) {
-                const txt = await res.text()
-                console.error(res.status, txt)
                 toast.error("Failed to load menus")
                 return []
             }
@@ -38,24 +50,27 @@ export const menuService = {
             if (!Array.isArray(data)) return []
             return data
         } catch (error) {
-            console.error("menuService.list error:", error)
-            toast.error("Network error fetching menus")
+            if (!isAbortError(error)) {
+                console.error("menuService.list error:", error)
+                toast.error("Network error fetching menus")
+            }
             return []
         }
     },
 
     get: async (id: string): Promise<Menu | null> => {
         try {
-            const res = await fetch(`/api/admin/menus/${id}`, { cache: "no-store" })
+            const res = await fetchWithTimeout(`/api/admin/menus/${id}`, { cache: "no-store", timeoutMs: 10000 })
             if (!res.ok) {
-                console.error(`Failed to fetch menu ${id}: ${res.status}`)
                 toast.error("Failed to load menu details")
                 return null
             }
             return await res.json()
         } catch (error) {
-            console.error(error)
-            toast.error("Failed to load menu details")
+            if (!isAbortError(error)) {
+                console.error(error)
+                toast.error("Failed to load menu details")
+            }
             return null
         }
     },

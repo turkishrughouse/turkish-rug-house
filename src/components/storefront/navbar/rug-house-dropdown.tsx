@@ -209,39 +209,49 @@ export function RugHouseDropdown() {
                 >
                     <button
                         type="button"
-                        className="inline-flex h-16 w-full items-center justify-center gap-2 rounded-md px-4 text-left text-slate-900 hover:bg-slate-100/50"
+                        className="inline-flex h-14 w-full items-center justify-center gap-2.5 rounded-lg px-4 text-left text-slate-900 transition-colors hover:bg-slate-50"
                         onClick={() => setGuestOpen((current) => !current)}
                     >
-                        <UserCircle2 className="h-8 w-8 shrink-0 text-teal-800" />
+                        <UserCircle2 className="h-7 w-7 shrink-0 text-slate-500" />
                         <span className="flex flex-col leading-tight">
-                            <span className="text-base font-semibold text-slate-900">Account</span>
-                            <span className="text-xs font-medium text-slate-600">Login / Register</span>
+                            <span className="text-[13px] font-semibold text-slate-900">Account</span>
+                            <span className="text-[11px] text-slate-500">Login / Register</span>
                         </span>
                     </button>
 
                     {guestOpen ? (
-                        <div className="absolute left-1/2 top-[calc(100%-2px)] z-[90] w-52 -translate-x-1/2 rounded-sm border border-slate-200 bg-white p-0 text-slate-700 shadow-xl">
+                        <div className="absolute left-1/2 top-[calc(100%+4px)] z-[90] w-52 -translate-x-1/2 overflow-hidden rounded-xl border border-slate-200/80 bg-white p-1 text-slate-700 shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
                             <button
                                 type="button"
-                                className="flex w-full items-center gap-2.5 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
                                 onClick={() => {
                                     setGuestModalMode("login")
                                     setGuestOpen(false)
                                 }}
                             >
-                                <LogIn className="h-5 w-5 text-slate-500" />
-                                <span className="text-[15px] text-slate-700">Login</span>
+                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+                                    <LogIn className="h-4 w-4" />
+                                </div>
+                                <div className="flex flex-col gap-0">
+                                    <span className="text-[13px] font-semibold text-slate-900">Login</span>
+                                    <span className="text-[11px] text-slate-500">Returning customer</span>
+                                </div>
                             </button>
                             <button
                                 type="button"
-                                className="flex w-full items-center gap-2.5 border-t border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
                                 onClick={() => {
                                     setGuestModalMode("register")
                                     setGuestOpen(false)
                                 }}
                             >
-                                <UserPlus className="h-5 w-5 text-slate-500" />
-                                <span className="text-[15px] text-slate-700">Register</span>
+                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+                                    <UserPlus className="h-4 w-4" />
+                                </div>
+                                <div className="flex flex-col gap-0">
+                                    <span className="text-[13px] font-semibold text-slate-900">Register</span>
+                                    <span className="text-[11px] text-slate-500">Create a new account</span>
+                                </div>
                             </button>
                         </div>
                     ) : null}
@@ -449,51 +459,51 @@ export function RugHouseDropdown() {
         >
             <Button
                 variant="ghost"
-                className={`h-16 w-full justify-center px-4 font-medium gap-2 text-base rounded-md bg-transparent border-none shadow-none ${
-                    open ? "text-teal-800 bg-slate-100/50" : "text-slate-700 hover:text-slate-900 hover:bg-slate-100/50"
+                className={`h-14 w-full justify-center px-4 font-medium gap-2 text-sm rounded-lg bg-transparent border-none shadow-none ${
+                    open ? 'text-[#0f766e] bg-slate-50' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
                 }`}
             >
                 My Account
-                <ChevronDown className="h-5 w-5 text-slate-400" />
+                <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${open ? 'rotate-180 text-[#0f766e]' : 'text-slate-400'}`} />
             </Button>
 
             {open ? (
-                <div className="absolute left-1/2 top-[calc(100%-2px)] z-[80] w-56 -translate-x-1/2 rounded-md border border-slate-200 bg-white p-2 text-slate-900 shadow-xl">
-                    <div className="flex flex-col gap-1">
-                        <Link href="/account" className="flex items-center gap-3 rounded-md p-2.5 text-slate-800 hover:bg-slate-50">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-600">
+                <div className="absolute left-1/2 top-[calc(100%+4px)] z-[80] w-56 -translate-x-1/2 overflow-hidden rounded-xl border border-slate-200/80 bg-white p-1 text-slate-900 shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
+                    <div className="flex flex-col gap-0.5">
+                        <Link href="/account" className="flex items-center gap-3 rounded-lg p-3 text-slate-800 transition-colors hover:bg-slate-50">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600">
                                 <LogIn className="h-4 w-4" />
                             </div>
-                            <div className="flex flex-col gap-0.5">
-                                <span className="text-sm font-medium text-slate-900">My Account</span>
-                                <span className="text-[10px] text-slate-500">Manage profile</span>
+                            <div className="flex flex-col gap-0">
+                                <span className="text-[13px] font-semibold text-slate-900">My Account</span>
+                                <span className="text-[11px] text-slate-500">Manage profile</span>
                             </div>
                         </Link>
-                        <Link href="/account?tab=orders" className="flex items-center gap-3 rounded-md p-2.5 text-slate-800 hover:bg-slate-50">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-600">
+                        <Link href="/account?tab=orders" className="flex items-center gap-3 rounded-lg p-3 text-slate-800 transition-colors hover:bg-slate-50">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600">
                                 <Package className="h-4 w-4" />
                             </div>
-                            <div className="flex flex-col gap-0.5">
-                                <span className="text-sm font-medium text-slate-900">Orders</span>
-                                <span className="text-[10px] text-slate-500">Track & history</span>
+                            <div className="flex flex-col gap-0">
+                                <span className="text-[13px] font-semibold text-slate-900">Orders</span>
+                                <span className="text-[11px] text-slate-500">Track &amp; history</span>
                             </div>
                         </Link>
-                        <Link href="/wishlist" className="flex items-center gap-3 rounded-md p-2.5 text-slate-800 hover:bg-slate-50">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-600">
+                        <Link href="/wishlist" className="flex items-center gap-3 rounded-lg p-3 text-slate-800 transition-colors hover:bg-slate-50">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600">
                                 <Heart className="h-4 w-4" />
                             </div>
-                            <div className="flex flex-col gap-0.5">
-                                <span className="text-sm font-medium text-slate-900">Wishlist</span>
-                                <span className="text-[10px] text-slate-500">Saved items</span>
+                            <div className="flex flex-col gap-0">
+                                <span className="text-[13px] font-semibold text-slate-900">Wishlist</span>
+                                <span className="text-[11px] text-slate-500">Saved items</span>
                             </div>
                         </Link>
-                        <Link href="/saved-searches" className="flex items-center gap-3 rounded-md p-2.5 text-slate-800 hover:bg-slate-50">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-600">
+                        <Link href="/saved-searches" className="flex items-center gap-3 rounded-lg p-3 text-slate-800 transition-colors hover:bg-slate-50">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600">
                                 <Search className="h-4 w-4" />
                             </div>
-                            <div className="flex flex-col gap-0.5">
-                                <span className="text-sm font-medium text-slate-900">Saved Searches</span>
-                                <span className="text-[10px] text-slate-500">Search history</span>
+                            <div className="flex flex-col gap-0">
+                                <span className="text-[13px] font-semibold text-slate-900">Saved Searches</span>
+                                <span className="text-[11px] text-slate-500">Search history</span>
                             </div>
                         </Link>
                     </div>

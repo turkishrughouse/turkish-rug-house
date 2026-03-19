@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/db"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { isAdminRole } from "@/lib/rbac"
-import { hashPassword } from "@/lib/password"
 
 const normalizeText = (max = 255) =>
   z.preprocess(
@@ -34,7 +33,6 @@ const profilePatchSchema = z.object({
   bioEn: normalizeText(3000),
   bioTr: normalizeText(3000),
   avatarUrl: normalizeText(1000),
-  newPassword: z.string().min(8).max(128).optional(),
 })
 
 async function requireAdminUser() {
@@ -185,7 +183,7 @@ export async function PATCH(req: NextRequest) {
     } = {}
     if (nextName !== undefined) userData.name = nextName
     if (data.email !== undefined) userData.email = data.email
-    if (data.newPassword) userData.password = hashPassword(data.newPassword)
+    // Password changes must go through /api/admin/account/password with current password verification.
 
     const profileData: {
       avatarUrl?: string

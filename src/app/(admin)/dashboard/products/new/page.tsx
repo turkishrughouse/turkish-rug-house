@@ -1,6 +1,6 @@
 import { ProductForm } from "@/components/admin/products/product-form"
 import { getProductOptions } from "@/lib/actions/product-actions"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { prisma } from "@/lib/db"
 import { resolveAdminLanguage } from "@/lib/admin/i18n"
 

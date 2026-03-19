@@ -30,7 +30,13 @@ const nextConfig: NextConfig = {
         ]
       }
     ]
-  }
+  },
+  async rewrites() {
+    return [
+      // Many components use /placeholder.jpg as a fallback; serve a lightweight SVG instead.
+      { source: "/placeholder.jpg", destination: "/placeholder.svg" },
+    ]
+  },
 };
 
 export default nextConfig;

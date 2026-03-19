@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { readdir, readFile, stat, writeFile } from "fs/promises"
 import path from "path"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { isAdminRole } from "@/lib/rbac"
 import { optimizeImageForUpload } from "@/lib/image-optimizer"
 

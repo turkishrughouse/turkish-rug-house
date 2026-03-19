@@ -4,6 +4,8 @@ export type BlogCardItem = {
   slug: string
   excerpt: string
   featuredImage: string | null
+  category?: string | null
+  readTimeMinutes?: number | null
   publishedAt: string
 }
 
@@ -16,6 +18,13 @@ export type BlogListItem = {
   excerpt: string
   content: string
   featuredImage: string | null
+  featuredImageAlt?: string | null
+  author?: string | null
+  category?: string | null
+  tags?: string[]
+  readTimeMinutes?: number | null
+  isFeatured?: boolean
+  contentBlocks?: unknown[]
   status: BlogStatus
   publishedAt: Date | null
   createdAt: Date

@@ -25,6 +25,15 @@ export default function AccountAuthPage() {
   const [phone, setPhone] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [addressEnabled, setAddressEnabled] = useState(false)
+  const [addressConsent, setAddressConsent] = useState(false)
+  const [addressLine1, setAddressLine1] = useState("")
+  const [addressLine2, setAddressLine2] = useState("")
+  const [city, setCity] = useState("")
+  const [state, setState] = useState("")
+  const [postalCode, setPostalCode] = useState("")
+  const [country, setCountry] = useState("")
+  const [countryCode, setCountryCode] = useState("")
   const [loading, setLoading] = useState(false)
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
 
@@ -36,7 +45,29 @@ export default function AccountAuthPage() {
       const body =
         mode === "login"
           ? { email, password }
-          : { name, phone, email, password, marketingOptIn: true, source: "account" as const }
+          : {
+              name,
+              phone,
+              email,
+              password,
+              marketingOptIn: true,
+              source: "account" as const,
+              saveAddressToProfile: addressEnabled && addressConsent && Boolean(addressLine1.trim()),
+              address: addressEnabled
+                ? {
+                    label: "Primary",
+                    fullName: name,
+                    phoneNumber: phone,
+                    country,
+                    countryCode,
+                    state,
+                    city,
+                    addressLine1,
+                    addressLine2,
+                    postalCode,
+                  }
+                : undefined,
+            }
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -100,6 +131,30 @@ export default function AccountAuthPage() {
               <>
                 <input value={name} onChange={(e) => setName(e.target.value)} required className="h-11 w-full rounded border border-slate-300 px-3 text-sm" placeholder="Full name" />
                 <input value={phone} onChange={(e) => setPhone(e.target.value)} required className="h-11 w-full rounded border border-slate-300 px-3 text-sm" placeholder="Phone (required)" />
+                <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  <input className="mt-1 h-4 w-4" type="checkbox" checked={addressEnabled} onChange={(e) => setAddressEnabled(e.target.checked)} />
+                  <span>I want to add my address now</span>
+                </label>
+                {addressEnabled ? (
+                  <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
+                    <input value={country} onChange={(e) => setCountry(e.target.value)} className="h-11 w-full rounded border border-slate-300 px-3 text-sm" placeholder="Country" />
+                    <input value={countryCode} onChange={(e) => setCountryCode(e.target.value)} className="h-11 w-full rounded border border-slate-300 px-3 text-sm" placeholder="Country code" />
+                    <input value={state} onChange={(e) => setState(e.target.value)} className="h-11 w-full rounded border border-slate-300 px-3 text-sm" placeholder="State / Region" />
+                    <input value={city} onChange={(e) => setCity(e.target.value)} className="h-11 w-full rounded border border-slate-300 px-3 text-sm" placeholder="City" />
+                    <input value={addressLine1} onChange={(e) => setAddressLine1(e.target.value)} className="h-11 w-full rounded border border-slate-300 px-3 text-sm md:col-span-2" placeholder="Address line 1" />
+                    <input value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)} className="h-11 w-full rounded border border-slate-300 px-3 text-sm md:col-span-2" placeholder="Address line 2" />
+                    <input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} className="h-11 w-full rounded border border-slate-300 px-3 text-sm" placeholder="ZIP / Postal code" />
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
+                      Full name and phone number will be saved from your account details.
+                    </div>
+                  </div>
+                ) : null}
+                {addressEnabled ? (
+                  <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    <input className="mt-1 h-4 w-4" type="checkbox" checked={addressConsent} onChange={(e) => setAddressConsent(e.target.checked)} />
+                    <span>Save this address to my account for faster checkout next time.</span>
+                  </label>
+                ) : null}
               </>
             ) : null}
             <input

@@ -34,7 +34,7 @@ type NotificationsResponse = {
 
 const LAST_SEEN_KEY = "rughouse_admin_notifications_seen_at"
 const LAST_SALE_ALERT_KEY = "rughouse_admin_last_sale_alert_id"
-const NOTIFICATION_POLL_MS = 3000
+const NOTIFICATION_POLL_MS = 5000
 
 function formatTimeAgo(iso: string) {
   const diff = Date.now() - new Date(iso).getTime()
@@ -143,10 +143,14 @@ export function NotificationCenter({ lang = "en" }: NotificationCenterProps) {
     if (notificationsInFlightRef.current) return
     notificationsInFlightRef.current = true
     try {
-      const res = await fetch("/api/admin/notifications", { cache: "no-store" })
+      const controller = new AbortController()
+      const timeoutId = window.setTimeout(() => controller.abort(), 8000)
+      const res = await fetch("/api/admin/notifications", { cache: "no-store", signal: controller.signal })
+      window.clearTimeout(timeoutId)
       if (!res.ok) return
       const json = (await res.json()) as NotificationsResponse
       setData(json)
+      window.dispatchEvent(new Event("admin-notifications-updated"))
 
        const latestSale = json.items.find((item) => item.type === "SALE")
        if (latestSale) {
@@ -170,11 +174,32 @@ export function NotificationCenter({ lang = "en" }: NotificationCenterProps) {
 
   useEffect(() => {
     if (typeof window === "undefined") return
-    const audio = new Audio("/sounds/shopify-order.mp3")
-    audio.preload = "auto"
-    audio.volume = 0.9
-    orderAudioRef.current = audio
+    let cancelled = false
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), 3000)
+
+    // Avoid repeated 404s / decode noise when the file is missing or invalid.
+    void fetch("/sounds/shopify-order.mp3", { method: "HEAD", cache: "no-store", signal: controller.signal })
+      .then((res) => {
+        if (cancelled) return
+        if (!res.ok) return
+        const len = Number(res.headers.get("content-length") || "0")
+        if (len > 1024) {
+          const audio = new Audio("/sounds/shopify-order.mp3")
+          audio.preload = "auto"
+          audio.volume = 0.9
+          orderAudioRef.current = audio
+        }
+      })
+      .catch(() => {
+        // fall back to generated chime
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId)
+      })
     return () => {
+      cancelled = true
+      controller.abort()
       orderAudioRef.current = null
     }
   }, [])
@@ -214,6 +239,7 @@ export function NotificationCenter({ lang = "en" }: NotificationCenterProps) {
     document.addEventListener("visibilitychange", handleVisibilityChange)
 
     const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return
       void fetchNotifications()
     }, NOTIFICATION_POLL_MS)
     return () => {

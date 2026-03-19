@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation"
 import { ProductForm } from "@/components/admin/products/product-form"
 import { getProduct, getProductOptions } from "@/lib/actions/product-actions"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { prisma } from "@/lib/db"
 import { resolveAdminLanguage } from "@/lib/admin/i18n"
+import { requireAdminSection } from "@/lib/admin-guard"
 
 interface PageProps {
     params: Promise<{ id: string }>
@@ -11,7 +12,15 @@ interface PageProps {
 
 export default async function EditProductPage({ params }: PageProps) {
     const { id } = await params
+    await requireAdminSection("products")
     const user = await getSessionUser("admin")
+    if (!user) notFound()
+
+    const ownership = await prisma.product.findFirst({
+      where: { id, createdById: user.id },
+      select: { id: true },
+    }).catch(() => null)
+    if (!ownership) notFound()
     const profile = user
         ? await prisma.customerProfile.findUnique({
             where: { userId: user.id },
@@ -54,27 +63,7 @@ export default async function EditProductPage({ params }: PageProps) {
         console.error("Error fetching product options:", error)
     }
 
-    try {
-        product = await getProduct(id)
-        if (!product) {
-            const exists = await prisma.product.findUnique({
-                where: { id },
-                select: { id: true },
-            })
-            if (exists) {
-                product = await getProduct(id)
-            }
-        }
-    } catch (error) {
-        console.error("Error fetching product:", error)
-        const exists = await prisma.product.findUnique({
-            where: { id },
-            select: { id: true },
-        }).catch(() => null)
-        if (exists) {
-            product = await getProduct(id).catch(() => null)
-        }
-    }
+    product = await getProduct(id).catch(() => null)
 
     if (!product) notFound()
 

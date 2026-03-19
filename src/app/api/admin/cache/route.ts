@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { isAdminRole } from "@/lib/rbac"
 import { runCacheCleanup } from "@/lib/cache-maintenance"
 

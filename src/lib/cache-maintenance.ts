@@ -14,7 +14,12 @@ async function clearDirectory(path: string) {
     await rm(path, { recursive: true, force: true })
     await mkdir(path, { recursive: true })
   } catch (error) {
-    console.error("[cache-cleaner] failed:", path, error)
+    const code = typeof error === "object" && error && "code" in error ? (error as { code?: unknown }).code : undefined
+    // Next may still be writing into these directories; avoid noisy logs for known races.
+    if (code === "ENOTEMPTY" || code === "EBUSY") return
+    if (process.env.NODE_ENV !== "production") {
+      console.error("[cache-cleaner] failed:", path, error)
+    }
   }
 }
 
@@ -32,6 +37,8 @@ export async function runCacheCleanup() {
 
 export function ensureCacheCleanerStarted() {
   if (typeof window !== "undefined") return
+  // Never run automatically in production builds; enable explicitly when debugging.
+  if (process.env.NODE_ENV === "production" && process.env.RUGHOUSE_CACHE_CLEANER !== "1") return
   if (globalThis.__rughouseCacheCleanerStarted) return
 
   globalThis.__rughouseCacheCleanerStarted = true

@@ -55,24 +55,25 @@ export function DiscoveryCapsule() {
                Relative positioning used for anchoring the SharedMegaPanel
             */}
             <div className="relative w-full">
-                <div className="flex items-center w-full bg-slate-50 border border-slate-200 rounded-lg shadow-sm transition-all overflow-visible h-16">
+                <div className="flex items-center w-full bg-white border border-slate-200/80 rounded-xl shadow-[0_2px_12px_rgba(15,23,42,0.06)] transition-all overflow-visible h-14">
 
                     {/* 1. All Categories Trigger (Auto Width + Padding) */}
                     <div className="shrink-0 pl-1 h-full flex items-center">
                         <Button
                             variant="ghost"
-                            className={`h-16 w-auto px-6 justify-center text-base font-semibold transition-colors rounded-md bg-transparent border-none shadow-none hover:bg-slate-100/50 gap-2 ${activeTab === 'categories' ? 'text-teal-800 bg-slate-100/50' : 'text-slate-900 hover:text-teal-700'
-                                }`}
+                            className={`h-14 w-auto px-5 justify-center text-sm font-medium transition-colors rounded-lg bg-transparent border-none shadow-none hover:bg-slate-50 gap-1.5 ${
+                                activeTab === 'categories' ? 'text-[#0f766e] bg-slate-50' : 'text-slate-700 hover:text-slate-900'
+                            }`}
                             onMouseEnter={() => handleMouseEnter('categories')}
                             onMouseLeave={handleMouseLeave}
                         >
                             All Categories
-                            <ChevronDown className="h-5 w-5 text-slate-400" />
+                            <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${activeTab === 'categories' ? 'text-[#0f766e] rotate-180' : 'text-slate-400'}`} />
                         </Button>
                     </div>
 
                     {/* Divider */}
-                    <div className="h-8 w-px bg-slate-200 shrink-0" />
+                    <div className="h-6 w-px bg-slate-200/80 shrink-0" />
 
                     {/* 2. Search Bar (Flex-1: Fills remaining space) */}
                     <div className="flex-1 min-w-0 h-full">
@@ -80,7 +81,7 @@ export function DiscoveryCapsule() {
                     </div>
 
                     {/* Divider */}
-                    <div className="h-8 w-px bg-slate-200 shrink-0" />
+                    <div className="h-6 w-px bg-slate-200/80 shrink-0" />
 
                     {/* 3. Rug House Dropdown (Auto Width) */}
                     <div className="shrink-0 h-full flex items-center">
@@ -90,19 +91,20 @@ export function DiscoveryCapsule() {
                     </div>
 
                     {/* Divider */}
-                    <div className="h-8 w-px bg-slate-200 shrink-0" />
+                    <div className="h-6 w-px bg-slate-200/80 shrink-0" />
 
                     {/* 4. Information Trigger (Auto Width) */}
                     <div className="shrink-0 pr-1 h-full flex items-center">
                         <Button
                             variant="ghost"
-                            className={`h-16 w-auto px-6 justify-center text-base font-semibold transition-colors rounded-md bg-transparent border-none shadow-none hover:bg-slate-100/50 gap-2 ${activeTab === 'information' ? 'text-teal-800 bg-slate-100/50' : 'text-slate-900 hover:text-teal-700'
-                                }`}
+                            className={`h-14 w-auto px-5 justify-center text-sm font-medium transition-colors rounded-lg bg-transparent border-none shadow-none hover:bg-slate-50 gap-1.5 ${
+                                activeTab === 'information' ? 'text-[#0f766e] bg-slate-50' : 'text-slate-700 hover:text-slate-900'
+                            }`}
                             onMouseEnter={() => handleMouseEnter('information')}
                             onMouseLeave={handleMouseLeave}
                         >
                             Information
-                            <ChevronDown className="h-5 w-5 text-slate-400" />
+                            <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${activeTab === 'information' ? 'text-[#0f766e] rotate-180' : 'text-slate-400'}`} />
                         </Button>
                     </div>
                 </div>

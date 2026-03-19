@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/db"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { notifyOrderUpdate } from "@/lib/customer-messaging"
 import { getSiteSettings } from "@/lib/site-settings"
 import { grantReviewRightForOrder } from "@/lib/review-access"

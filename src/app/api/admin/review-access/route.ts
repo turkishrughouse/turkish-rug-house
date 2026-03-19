@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 
 const ADMIN_ROLES = new Set(["SUPER_USER", "ADMIN", "MANAGER"])
 

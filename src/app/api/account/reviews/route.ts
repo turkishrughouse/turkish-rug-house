@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { reconcileReviewAccessForUser } from "@/lib/review-access"
 
 const PURCHASE_REQUIRED_MESSAGE = "You should buy a product to write a review"

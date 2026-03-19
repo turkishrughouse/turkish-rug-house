@@ -77,7 +77,36 @@ export function StorefrontCurrencyProvider({
 export function useStorefrontCurrency() {
   const context = useContext(StorefrontCurrencyContext)
   if (!context) {
-    throw new Error("useStorefrontCurrency must be used within StorefrontCurrencyProvider")
+    // Defensive fallback: avoid hard-crashing storefront rendering if the provider
+    // is temporarily missing during edge cases (e.g. mixed layout/render paths).
+    const selectedCurrency: SupportedCurrency = "USD"
+    const locale = getCurrencyLocale(selectedCurrency)
+    return {
+      selectedCurrency,
+      locale,
+      usdToEurRate: 1,
+      setCurrency: () => {},
+      getCurrencySettings: (valueCurrency: SupportedCurrency = "USD") => ({
+        selectedCurrency,
+        valueCurrency,
+        usdToEurRate: 1,
+        locale,
+      }),
+      formatUsd: (amount: number) =>
+        formatCurrency(amount, {
+          selectedCurrency,
+          valueCurrency: "USD",
+          usdToEurRate: 1,
+          locale,
+        }),
+      formatAmount: (amount: number, valueCurrency: SupportedCurrency = "USD") =>
+        formatCurrency(amount, {
+          selectedCurrency,
+          valueCurrency,
+          usdToEurRate: 1,
+          locale,
+        }),
+    }
   }
   return context
 }

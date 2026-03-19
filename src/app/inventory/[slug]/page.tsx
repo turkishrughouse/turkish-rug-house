@@ -65,20 +65,20 @@ export default async function InventoryProductDetailPage({
         variant="outline"
         className="h-10 rounded-sm border-[#c3c4c7] bg-[#f6f7f7] px-3 text-[12px] font-semibold text-slate-800 hover:bg-white"
       >
-        <a href="/api/inventory/export">
+        <Link href="/api/inventory/export">
           <Download className="mr-2 h-4 w-4" />
           Export CSV
-        </a>
+        </Link>
       </Button>
       <Button
         asChild
         variant="outline"
         className="h-10 rounded-sm border-[#c3c4c7] bg-[#f6f7f7] px-3 text-[12px] font-semibold text-slate-800 hover:bg-white"
       >
-        <a href="/api/inventory/images">
+        <Link href="/api/inventory/images">
           <Images className="mr-2 h-4 w-4" />
           Download Product Images
-        </a>
+        </Link>
       </Button>
     </>
   )

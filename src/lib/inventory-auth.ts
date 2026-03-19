@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation"
 import { NextRequest, NextResponse } from "next/server"
-import { getAuthCookieName, getSessionUser, shouldUseSecureCookies } from "@/lib/auth"
-import { canAccessPortal, isAdminRole } from "@/lib/rbac"
+import { getAuthCookieName, shouldUseSecureCookies } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
+import { isAdminRole } from "@/lib/rbac"
 
 export async function resolveInventorySessionUser() {
   const user = await getSessionUser("inventory")
-  if (!user || !isAdminRole(user.role) || !canAccessPortal(user, "inventory")) {
+  if (!user || !isAdminRole(user.role)) {
     return null
   }
   return user

@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { z } from "zod"
+import { relocateCategoryImageToFolder } from "@/lib/media-folders"
 
 const categoryUpdateSchema = z.object({
     title: z.string().min(1, "Title is required").optional(),
@@ -84,7 +85,7 @@ export async function PATCH(
         }
 
         // 3. Update
-        const category = await prisma.category.update({
+        let category = await prisma.category.update({
             where: { id },
             data: {
                 title: data.title,
@@ -94,6 +95,15 @@ export async function PATCH(
                 image: data.image
             }
         })
+        if (category.image) {
+            const nextImage = await relocateCategoryImageToFolder(category.slug, category.image)
+            if (nextImage && nextImage !== category.image) {
+                category = await prisma.category.update({
+                    where: { id: category.id },
+                    data: { image: nextImage },
+                })
+            }
+        }
 
         console.log(`[ADMIN] Category Updated: ${category.id}`)
         return NextResponse.json(category)

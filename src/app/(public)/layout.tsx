@@ -3,7 +3,7 @@ import { Footer } from "@/components/storefront/footer"
 import { ActivityPing } from "@/components/storefront/activity-ping"
 import { getSiteSettings } from "@/lib/site-settings"
 import { MaintenanceScreen } from "@/components/public/maintenance-screen"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
 import { StorefrontCurrencyProvider } from "@/components/storefront/currency-provider"
 

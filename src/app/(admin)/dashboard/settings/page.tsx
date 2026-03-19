@@ -1,6 +1,6 @@
 import { SettingsForm } from "@/components/admin/settings/settings-form"
 import { getSiteSettings } from "@/lib/site-settings"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { prisma } from "@/lib/db"
 import { adminText, resolveAdminLanguage } from "@/lib/admin/i18n"
 import { getCurrencyRateDiagnostics } from "@/lib/storefront/currency-server"

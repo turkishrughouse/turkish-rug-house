@@ -1,4 +1,4 @@
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { prisma } from "@/lib/db"
 import { adminText, resolveAdminLanguage, type AdminLanguage } from "@/lib/admin/i18n"
 

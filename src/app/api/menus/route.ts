@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
-import { buildCategoryPathMap } from "@/lib/category-paths"
+import { buildCategoryPathMap, fetchCategoryPathRows } from "@/lib/category-paths"
 
 export async function GET(req: Request) {
     try {
@@ -30,11 +30,13 @@ export async function GET(req: Request) {
             const pageIds = menu.items.filter(i => i.type === "PAGE" && i.referenceId).map(i => i.referenceId!)
 
             // 2. Fetch Data
-            const [categories, pages] = await Promise.all([
+            const [categoryRows, categories, pages] = await Promise.all([
+                fetchCategoryPathRows(),
                 catIds.length > 0 ? prisma.category.findMany({ where: { id: { in: catIds } } }) : [],
                 pageIds.length > 0 ? prisma.page.findMany({ where: { id: { in: pageIds } } }) : []
             ])
-            const { pathById } = buildCategoryPathMap(categories)
+            // Use full tree so nested category URLs are correct.
+            const { pathById } = buildCategoryPathMap(categoryRows)
 
             // 3. Map Data
             const enrichedItems = menu.items.map(item => {

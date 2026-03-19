@@ -12,7 +12,7 @@ type PageBannerProps = {
 }
 
 export function PageBanner({ title, subtitle, image, className = "", size = "tall", imageClassName = "object-center" }: PageBannerProps) {
-  const bannerImage = image && image.trim().length > 0 ? image : "/placeholder.jpg"
+  const bannerImage = image && image.trim().length > 0 ? image : "/placeholder.svg"
   const contentPaddingClass = size === "tall" ? "py-20 md:py-24" : "py-14 md:py-16"
 
   return (

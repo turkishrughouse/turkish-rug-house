@@ -29,7 +29,7 @@ export function ResponsiveImage({
   quality = 80,
   unoptimized,
 }: ResponsiveImageProps) {
-  const resolvedSrc = src && src.trim().length > 0 ? src : "/placeholder.jpg"
+  const resolvedSrc = src && src.trim().length > 0 ? src : "/placeholder.svg"
   const shouldSkipOptimization = unoptimized ?? isRemoteSource(resolvedSrc)
 
   if (fill) {

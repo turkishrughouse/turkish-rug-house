@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { hashPassword } from "@/lib/password"
 import { createCustomerMessage } from "@/lib/customer-messaging"
 import { getSiteSettings } from "@/lib/site-settings"
+import { upsertCustomerAddress } from "@/lib/customer-addresses"
 
 const registerSchema = z.object({
   name: z.string().min(2, "Name is required"),
@@ -12,6 +13,19 @@ const registerSchema = z.object({
   phone: z.string().min(6, "Phone is required").optional(),
   marketingOptIn: z.boolean().optional(),
   source: z.enum(["account", "checkout"]).optional(),
+  saveAddressToProfile: z.boolean().optional(),
+  address: z.object({
+    label: z.string().optional(),
+    fullName: z.string().optional(),
+    phoneNumber: z.string().optional(),
+    country: z.string().optional(),
+    countryCode: z.string().optional(),
+    state: z.string().optional(),
+    city: z.string().optional(),
+    addressLine1: z.string().optional(),
+    addressLine2: z.string().optional(),
+    postalCode: z.string().optional(),
+  }).optional(),
 })
 
 export async function POST(req: NextRequest) {
@@ -61,6 +75,17 @@ export async function POST(req: NextRequest) {
       },
       select: { id: true, email: true, name: true, role: true },
     })
+
+    if (parsed.data.saveAddressToProfile && parsed.data.address?.addressLine1) {
+      await upsertCustomerAddress(user.id, {
+        ...parsed.data.address,
+        fullName: parsed.data.address.fullName || parsed.data.name.trim(),
+        phoneNumber: parsed.data.address.phoneNumber || parsed.data.phone?.trim() || "",
+      }, {
+        makeDefaultShipping: true,
+        makeDefaultBilling: true,
+      })
+    }
 
     await createCustomerMessage(user.id, {
       kind: "SYSTEM",

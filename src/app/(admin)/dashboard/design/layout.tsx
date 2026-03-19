@@ -1,6 +1,6 @@
-import { requireAdminRoles } from "@/lib/admin-guard"
+import { requireAdminSection } from "@/lib/admin-guard"
 
 export default async function DesignLayout({ children }: { children: React.ReactNode }) {
-  await requireAdminRoles(["SUPER_USER"])
+  await requireAdminSection("design")
   return children
 }

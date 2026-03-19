@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useRef, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
@@ -72,6 +72,10 @@ export default function MessagesPage() {
     })
     const [countryCounts, setCountryCounts] = useState<CountryCount[]>([])
     const [selectedCountry, setSelectedCountry] = useState("ALL")
+    const fetchAbortRef = useRef<AbortController | null>(null)
+    const lastFetchErrorAtRef = useRef(0)
+    const fetchInFlightRef = useRef(false)
+    const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     const fetchSourceCounts = async () => {
         try {
@@ -116,9 +120,18 @@ export default function MessagesPage() {
     }
 
     // Fetch messages
-    const fetchMessages = async () => {
+    const fetchMessages = async (options?: { silent?: boolean }) => {
         try {
-            setLoading(true)
+            if (fetchInFlightRef.current) return
+            fetchInFlightRef.current = true
+            if (!options?.silent) {
+                setLoading(true)
+            }
+            fetchAbortRef.current?.abort()
+            const controller = new AbortController()
+            fetchAbortRef.current = controller
+            if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current)
+            fetchTimeoutRef.current = setTimeout(() => controller.abort(), 10000)
             const params = new URLSearchParams({
                 page: pagination.page.toString(),
                 pageSize: pagination.pageSize.toString(),
@@ -129,7 +142,7 @@ export default function MessagesPage() {
             if (searchQuery) params.append("q", searchQuery)
             if (selectedCountry !== "ALL") params.append("country", selectedCountry)
 
-            const response = await fetch(`/api/admin/messages?${params}`)
+            const response = await fetch(`/api/admin/messages?${params}`, { signal: controller.signal })
             if (!response.ok) throw new Error("Failed to fetch messages")
 
             const data = await response.json()
@@ -145,10 +158,24 @@ export default function MessagesPage() {
 
             void fetchSourceCounts()
         } catch (error) {
-            console.error("Error fetching messages:", error)
-            toast.error("Failed to load messages")
+            const isAbort = error instanceof DOMException && error.name === "AbortError"
+            if (!isAbort) {
+                const now = Date.now()
+                // Avoid spamming toasts/logs on transient navigation/connection issues.
+                if (now - lastFetchErrorAtRef.current > 15000) {
+                    toast.error("Failed to load messages")
+                    lastFetchErrorAtRef.current = now
+                }
+            }
         } finally {
-            setLoading(false)
+            if (fetchTimeoutRef.current) {
+                clearTimeout(fetchTimeoutRef.current)
+                fetchTimeoutRef.current = null
+            }
+            fetchInFlightRef.current = false
+            if (!options?.silent) {
+                setLoading(false)
+            }
         }
     }
 
@@ -171,27 +198,43 @@ export default function MessagesPage() {
 
     // Real-time SSE connection
     useEffect(() => {
-        const eventSource = new EventSource("/api/admin/messages/stream")
+        let eventSource: EventSource | null = null
+        let retryTimer: ReturnType<typeof setTimeout> | null = null
+        let closed = false
+        let backoffMs = 2000
 
-        eventSource.onmessage = (event) => {
-            const data = JSON.parse(event.data)
+        const connect = () => {
+            if (closed) return
+            eventSource?.close()
+            eventSource = new EventSource("/api/admin/messages/stream")
 
-            if (data.type === "new_message") {
-                toast.success(`New message from ${data.data.from}`, {
-                    description: data.data.preview,
-                })
-                setNewMessageCount((prev) => prev + 1)
-                fetchMessages() // Refresh list
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data)
+
+                if (data.type === "new_message") {
+                    toast.success(`New message from ${data.data.from}`, {
+                        description: data.data.preview,
+                    })
+                    setNewMessageCount((prev) => prev + 1)
+                    fetchMessages({ silent: true }) // Refresh list without blocking UI
+                }
+            }
+
+            eventSource.onerror = () => {
+                eventSource?.close()
+                if (closed) return
+                if (retryTimer) clearTimeout(retryTimer)
+                retryTimer = setTimeout(connect, backoffMs)
+                backoffMs = Math.min(30000, Math.round(backoffMs * 1.6))
             }
         }
 
-        eventSource.onerror = (error) => {
-            console.error("SSE error:", error)
-            eventSource.close()
-        }
-
+        connect()
         return () => {
-            eventSource.close()
+            closed = true
+            fetchAbortRef.current?.abort()
+            if (retryTimer) clearTimeout(retryTimer)
+            eventSource?.close()
         }
     }, [])
 

@@ -1,15 +1,17 @@
 import { Suspense } from "react"
 import { getProductAdminStats, getProductOptions, getProducts } from "@/lib/actions/product-actions"
 import { ProductList } from "@/components/admin/products/product-list"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { prisma } from "@/lib/db"
 import { resolveAdminLanguage } from "@/lib/admin/i18n"
+import { requireAdminSection } from "@/lib/admin-guard"
 
 export default async function ProductsPage({
     searchParams,
 }: {
     searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }) {
+    await requireAdminSection("products")
     const user = await getSessionUser("admin")
     const profile = user
         ? await prisma.customerProfile.findUnique({
@@ -49,6 +51,7 @@ export default async function ProductsPage({
                 featuredOnly: status === "featured",
                 trashOnly: status === "trash",
                 scheduledDate: status === "schedule" ? scheduleDate : undefined,
+                // No creatorId filter — Admin sees the full shared product catalog
             }
         ),
         getProductAdminStats(query),

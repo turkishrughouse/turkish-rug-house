@@ -2,7 +2,8 @@
 import { NextResponse } from "next/server";
 import { getProducts } from "@/lib/actions/product-actions";
 
-export const revalidate = 300;
+export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
     try {
@@ -38,11 +39,15 @@ export async function GET(request: Request) {
 
         return NextResponse.json(result, {
             headers: {
-                "Cache-Control": "public, s-maxage=300, stale-while-revalidate=86400",
+                "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
             },
         });
     } catch (error) {
-        console.error("API Products Error:", error);
+        const digest = typeof error === "object" && error && "digest" in error ? (error as { digest?: unknown }).digest : undefined
+        const isNextDynamicUsage = digest === "DYNAMIC_SERVER_USAGE" || String((error as Error | undefined)?.message || "").includes("Dynamic server usage")
+        if (!isNextDynamicUsage) {
+            console.error("API Products Error:", error);
+        }
         return NextResponse.json(
             { error: "Failed to fetch products" },
             { status: 500 }

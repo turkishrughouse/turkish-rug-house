@@ -48,7 +48,7 @@ interface AdminSidebarProps {
     user: SidebarUser
 }
 
-const SIDEBAR_NOTIFICATION_POLL_MS = 3000
+const SIDEBAR_NOTIFICATION_POLL_MS = 60000
 
 export function AdminSidebar({ user }: AdminSidebarProps) {
     const [activeItem, setActiveItem] = useState<{ id: string, items: NavSubItem[], rect: DOMRect } | null>(null)
@@ -111,7 +111,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
         {
             name: t.sidebar.design,
             href: "/dashboard/design?tab=banners",
-            section: "menus",
+            section: "design",
             icon: Menu,
             items: [
                 { name: t.sidebar.designBanners, href: "/dashboard/design?tab=banners" },

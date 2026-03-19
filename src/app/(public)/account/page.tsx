@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { AccountDashboard } from "@/components/storefront/account/account-dashboard"
 
 export default async function AccountPage() {

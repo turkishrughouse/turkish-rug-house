@@ -39,6 +39,7 @@ model User {
   supportTickets   SupportTicket[]
   customerProfile  CustomerProfile?
   reviewAccesses   ReviewAccess[]
+  orderMessages    OrderMessage[]
 
   @@unique([provider, providerAccountId])
 }
@@ -119,6 +120,11 @@ model Product {
   stockCount  Int      @default(1)
   isFeatured  Boolean  @default(false)
   isPublished Boolean  @default(false)
+  deletedAt   DateTime?
+  createdById   String?
+  createdByName String?
+  suppliers     String? // JSON array / text payload (legacy)
+  customAttributes String? // JSON array (legacy)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -254,6 +260,8 @@ model Order {
   items         OrderItem[]
   events        OrderEvent[]
   customerMessages CustomerMessage[]
+  orderMessages OrderMessage[]
+  messagingState OrderMessagingState?
 }
 
 model OrderItem {
@@ -264,6 +272,29 @@ model OrderItem {
   title     String
   quantity  Int
   price     Decimal
+}
+
+model OrderMessagingState {
+  orderId       String   @id
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  messagingOpen Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([messagingOpen, updatedAt(sort: Desc)])
+}
+
+model OrderMessage {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type      String   @default("customer") // customer | system | tracking
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([orderId, createdAt(sort: Desc)])
 }
 
 model OrderEvent {
@@ -301,6 +332,13 @@ model BlogPost {
   excerpt         String?
   content         String?
   featuredImage   String?
+  featuredImageAlt String?
+  author          String?
+  category        String?
+  tags            String   @default("[]") // JSON array of strings
+  readTimeMinutes Int?
+  isFeatured      Boolean  @default(false)
+  contentBlocks   String   @default("[]") // JSON array of content blocks
   status          String   @default("DRAFT") // DRAFT, PUBLISHED
   publishedAt     DateTime?
   metaTitle       String?

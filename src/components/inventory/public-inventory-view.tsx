@@ -19,16 +19,108 @@ function specValue(value: string | null | undefined) {
   return String(value || "").trim() || "-"
 }
 
+type InventoryCardSpecs = {
+  origin: string | null
+  material: string | null
+  weaveType: string | null
+  dimensions: string | null
+  condition: string | null
+  age: string | null
+  style: string | null
+  sku: string | null
+}
+
+function decodeInventorySpecHtml(input: string) {
+  return input
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+}
+
+function cleanInventorySpecText(input: string) {
+  return decodeInventorySpecHtml(String(input || ""))
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function parseInventorySpecPairs(shortDescription: string | null | undefined) {
+  const input = String(shortDescription || "")
+  if (!input.trim()) return new Map<string, string>()
+
+  const pairs = new Map<string, string>()
+  const assign = (label: string, value: string) => {
+    const normalizedLabel = label.toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, " ").trim()
+    const normalizedValue = cleanInventorySpecText(value)
+    if (!normalizedLabel || !normalizedValue || pairs.has(normalizedLabel)) return
+    pairs.set(normalizedLabel, normalizedValue)
+  }
+
+  for (const match of input.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const cells = Array.from(match[1].matchAll(/<(td|th)[^>]*>([\s\S]*?)<\/\1>/gi))
+    if (cells.length < 2) continue
+    assign(cleanInventorySpecText(cells[0][2]), cells[1][2])
+  }
+
+  for (const match of input.matchAll(/<dt[^>]*>([\s\S]*?)<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/gi)) {
+    assign(cleanInventorySpecText(match[1]), match[2])
+  }
+
+  const normalizedText = decodeInventorySpecHtml(input)
+    .replace(/<(br|hr)\s*\/?>/gi, "\n")
+    .replace(/<(li|p|div|section|article|tr|dt|dd|h[1-6])[^>]*>/gi, "\n")
+    .replace(/<\/(li|p|div|section|article|tr|dt|dd|h[1-6]|ul|ol|table|tbody|thead|tfoot)>/gi, "\n")
+    .replace(/<\/t[dh]>\s*<t[dh][^>]*>/gi, " : ")
+    .replace(/<(td|th)[^>]*>/gi, "")
+    .replace(/[•·]/g, "\n")
+    .replace(/<[^>]+>/g, " ")
+
+  for (const line of normalizedText.split(/\n+/)) {
+    const match = line.match(/^\s*([^:–—-]+?)\s*[:–—-]\s*(.+?)\s*$/)
+    if (!match) continue
+    assign(match[1], match[2])
+  }
+
+  return pairs
+}
+
+function parseInventoryCardSpecs(shortDescription: string | null | undefined): InventoryCardSpecs {
+  const pairs = parseInventorySpecPairs(shortDescription)
+  const parsedSpecs = parseProductSpecs(shortDescription)
+  const getPair = (...labels: string[]) => {
+    for (const label of labels) {
+      const value = pairs.get(label.toLowerCase())
+      if (value) return value
+    }
+    return null
+  }
+
+  return {
+    origin: getPair("origin", "country of origin") || parsedSpecs.origin,
+    material: getPair("material", "materials") || parsedSpecs.material,
+    weaveType: getPair("weave type"),
+    dimensions: getPair("dimensions", "dimension") || getPair("size"),
+    condition: getPair("condition", "rug condition") || parsedSpecs.condition,
+    age: getPair("age", "age/circa", "circa") || parsedSpecs.age,
+    style: getPair("style"),
+    sku: getPair("sku", "stock code", "stockcode") || parsedSpecs.sku,
+  }
+}
+
 function buildSpecItems(row: InventoryProductRow) {
-  const parsedSpecs = parseProductSpecs(row.description)
+  const parsedSpecs = parseInventoryCardSpecs(row.shortDescription)
   return [
     ["Origin", parsedSpecs.origin],
     ["Material", parsedSpecs.material],
-    ["Size", parsedSpecs.size],
-    ["Age", parsedSpecs.age],
+    ["Weave Type", parsedSpecs.weaveType],
+    ["Dimensions", parsedSpecs.dimensions],
     ["Condition", parsedSpecs.condition],
-    ["Pile", parsedSpecs.pile],
-    ["Knot Density", parsedSpecs.knotDensity],
+    ["Age", parsedSpecs.age],
+    ["Style", parsedSpecs.style],
     ["SKU", parsedSpecs.sku || row.sku],
   ]
 }
@@ -48,7 +140,7 @@ export function PublicInventoryView({
 
   const specMap = useMemo(() => {
     return new Map(
-      rows.map((row) => [row.id, parseProductSpecs(row.description)])
+      rows.map((row) => [row.id, parseProductSpecs(row.shortDescription)])
     )
   }, [rows])
 
@@ -129,11 +221,13 @@ export function PublicInventoryView({
     [rows, selectedRowId]
   )
 
-  const selectedCount = selectedIds.length
+  const rowIdSet = useMemo(() => new Set(rows.map((row) => row.id)), [rows])
+  const effectiveSelectedIds = useMemo(
+    () => selectedIds.filter((id) => rowIdSet.has(id)),
+    [selectedIds, rowIdSet]
+  )
 
-  useEffect(() => {
-    setSelectedIds((current) => current.filter((id) => rows.some((row) => row.id === id)))
-  }, [rows])
+  const selectedCount = effectiveSelectedIds.length
 
   useEffect(() => {
     if (!selectedRow) return
@@ -166,8 +260,8 @@ export function PublicInventoryView({
 
   const buildExportHref = (pathname: "/api/inventory/export" | "/api/inventory/images") => {
     const params = new URLSearchParams()
-    if (selectedIds.length > 0) {
-      params.set("ids", selectedIds.join(","))
+    if (effectiveSelectedIds.length > 0) {
+      params.set("ids", effectiveSelectedIds.join(","))
     }
     const query = params.toString()
     return query ? `${pathname}?${query}` : pathname
@@ -282,7 +376,7 @@ export function PublicInventoryView({
         <div className="grid gap-6 xl:grid-cols-2">
           {filteredRows.map((row) => {
             const specItems = buildSpecItems(row)
-            const checked = selectedIds.includes(row.id)
+            const checked = effectiveSelectedIds.includes(row.id)
             return (
               <article key={row.id} className="overflow-hidden rounded-sm border border-[#dcdcde] bg-white">
                 <div className="grid min-h-full grid-cols-1 items-start gap-5 p-5 md:grid-cols-[280px_minmax(0,1fr)] md:gap-6">

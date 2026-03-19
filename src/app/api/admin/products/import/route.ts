@@ -2,7 +2,7 @@ import { revalidatePath } from "next/cache"
 import { NextRequest, NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { isAdminRole } from "@/lib/rbac"
 import { normalizeProductImageRecords } from "@/lib/product-images"
 

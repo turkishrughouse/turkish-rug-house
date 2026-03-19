@@ -41,6 +41,7 @@ type RelatedProduct = {
   id: string
   slug: string
   title: string
+  shortDescription?: string | null
   description?: string | null
   price: number
   compareAtPrice: number | null
@@ -106,9 +107,9 @@ export function ProductDetailView({
     if (records.length === 0) {
       return [
         {
-          src: "/placeholder.jpg",
-          zoomSrc: "/placeholder.jpg",
-          thumbSrc: "/placeholder.jpg",
+          src: "/placeholder.svg",
+          zoomSrc: "/placeholder.svg",
+          thumbSrc: "/placeholder.svg",
           alt: buildProductImageAlt({
             title: product.title,
             categories: product.categories,
@@ -168,8 +169,7 @@ export function ProductDetailView({
     ? Math.round((((product.compareAtPrice as number) - product.price) / (product.compareAtPrice as number)) * 100)
     : 0
   const primaryCategory = product.categories[0]
-  const shortDescriptionHtml =
-    normalizeRichTextHtml(product.shortDescription?.trim()) || normalizeRichTextHtml(product.description)
+  const shortDescriptionHtml = normalizeRichTextHtml(product.shortDescription?.trim())
   const longDescriptionHtml = normalizeRichTextHtml(product.description)
   const bottomDescriptionHtml = longDescriptionHtml || "<p>Detailed product information is not available yet.</p>"
   const bottomDescriptionTextLength = bottomDescriptionHtml.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().length
@@ -183,7 +183,7 @@ export function ProductDetailView({
   useEffect(() => {
     if (typeof window === "undefined") return
     const storageKey = "rughouse_recently_viewed_products"
-    const image = gallery[0]?.src || "/placeholder.jpg"
+    const image = gallery[0]?.src || "/placeholder.svg"
     const current = {
       id: product.id,
       slug: product.slug,
@@ -264,7 +264,7 @@ export function ProductDetailView({
       sku: product.sku,
       price: product.price,
       compareAtPrice: product.compareAtPrice,
-      image: gallery[0]?.src || "/placeholder.jpg",
+      image: gallery[0]?.src || "/placeholder.svg",
       stockCount: product.stockCount,
       quantity: safeQty,
     })
@@ -291,7 +291,7 @@ export function ProductDetailView({
       sku: product.sku,
       price: product.price,
       compareAtPrice: product.compareAtPrice,
-      image: gallery[0]?.src || "/placeholder.jpg",
+      image: gallery[0]?.src || "/placeholder.svg",
       stockCount: product.stockCount,
       quantity: safeQty,
     })
@@ -703,7 +703,7 @@ export function ProductDetailView({
                     productId: product.id,
                     slug: product.slug,
                     title: product.title,
-                    image: gallery[0]?.src || "/placeholder.jpg",
+                    image: gallery[0]?.src || "/placeholder.svg",
                     price: product.price,
                   })
                   if (res.added) {
@@ -724,7 +724,7 @@ export function ProductDetailView({
                     productId: product.id,
                     slug: product.slug,
                     title: product.title,
-                    image: gallery[0]?.src || "/placeholder.jpg",
+                    image: gallery[0]?.src || "/placeholder.svg",
                     price: product.price,
                   })
                   if (res.added) {

@@ -75,7 +75,7 @@ export function TopBar() {
     useEffect(() => {
         const fetchMenu = async () => {
             try {
-                const res = await fetch("/api/public/menus/TOP_NAV")
+                const res = await fetch("/api/public/menus/TOP_BAR", { cache: "no-store" })
                 if (res.ok) {
                     const data = await res.json()
                     // The API returns the Menu object with items array
@@ -83,8 +83,8 @@ export function TopBar() {
                         setItems(data.items)
                     }
                 }
-            } catch (error) {
-                console.error("Failed to fetch TOPBAR menu", error)
+            } catch {
+                // Menu fetch failures should not spam runtime logs.
             } finally {
                 setLoading(false)
             }

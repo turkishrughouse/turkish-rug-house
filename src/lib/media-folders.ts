@@ -1,12 +1,43 @@
-import { mkdir, readdir, rename, rm, rmdir, stat } from "fs/promises"
+import { copyFile, mkdir, readdir, rename, rm, rmdir, stat } from "fs/promises"
 import path from "path"
 import { prisma } from "@/lib/db"
-import { ensureMediaRegistryTable } from "@/lib/media-registry"
+import { ensureMediaRegistryTable, upsertMediaAsset } from "@/lib/media-registry"
 import { normalizeProductImageRecords } from "@/lib/product-images"
 import { getStorageProvider } from "@/lib/storage/provider"
 
-const MANAGED_MEDIA_ROOTS = ["categories", "pages", "profile"] as const
+type MediaBackfillSummary = {
+  totalFilesScanned: number
+  filesMoved: number
+  skippedFiles: number
+  potentialConflicts: number
+}
+
+export const CATEGORY_IMAGE_ROOT = "Kategori-Fotoğrafları"
+const MANAGED_MEDIA_ROOTS = ["categories", "pages", "profile", CATEGORY_IMAGE_ROOT] as const
 const LEGACY_MEDIA_ROOTS = ["root", "general", "external", "cache", ".cache", "products", "profiles"] as const
+
+function isMediaBackfillDryRun() {
+  return process.env.MEDIA_BACKFILL_DRY_RUN === "true"
+}
+
+function createBackfillSummary(): MediaBackfillSummary {
+  return {
+    totalFilesScanned: 0,
+    filesMoved: 0,
+    skippedFiles: 0,
+    potentialConflicts: 0,
+  }
+}
+
+function logBackfillSummary(summary: MediaBackfillSummary, context: string) {
+  console.log(`[media-backfill] ${context} summary`, {
+    totalFilesScanned: summary.totalFilesScanned,
+    filesMoved: summary.filesMoved,
+    skippedFiles: summary.skippedFiles,
+    potentialConflicts: summary.potentialConflicts,
+    dryRun: isMediaBackfillDryRun(),
+  })
+}
 
 export function sanitizeFolderPath(input: string) {
   const sanitizeSegment = (segment: string) =>
@@ -85,6 +116,91 @@ export async function ensureCategoryMediaFolders() {
   }
 }
 
+export function getCategoryImageFolderPath(categorySlug: string) {
+  const slug = sanitizeFolderPath(categorySlug)
+  if (!slug) return CATEGORY_IMAGE_ROOT
+  return sanitizeFolderPath(`${CATEGORY_IMAGE_ROOT}/${slug}`)
+}
+
+export async function relocateCategoryImageToFolder(
+  categorySlug: string,
+  imageUrl: string | null | undefined,
+  options?: { dryRun?: boolean; summary?: MediaBackfillSummary; logContext?: string }
+) {
+  if (!imageUrl) return imageUrl || ""
+  const targetFolder = getCategoryImageFolderPath(categorySlug)
+  const currentFolder = extractFolderFromManagedUrl(imageUrl)
+  if (currentFolder === targetFolder) {
+    if (options?.summary) options.summary.skippedFiles += 1
+    return imageUrl
+  }
+  const siblings = await getSiblingUploadAssets(imageUrl)
+  if (siblings.length === 0) return imageUrl
+
+  if (options?.summary) {
+    options.summary.totalFilesScanned += siblings.length
+  }
+
+  const targetDir = path.join(process.cwd(), "public", "uploads", targetFolder)
+  const storage = getStorageProvider()
+  const masterSibling = siblings.find((sibling) => sibling.fileName.includes("-master.")) || siblings[0]
+  const deriveFileName = (candidateBase: string, siblingFileName: string) =>
+    siblingFileName.replace(/^(.*?)(-(thumb|large|master)\.[^.]+)$/i, `${candidateBase}$2`)
+  const sourceBaseName = masterSibling.fileName
+    .replace(/-(thumb|large|master)\.[^.]+$/i, "")
+    .replace(/\.[^.]+$/i, "")
+
+  let candidateBaseName = sourceBaseName
+  let collisionCounter = 2
+  while (true) {
+    const hasConflict = await Promise.all(
+      siblings.map((sibling) =>
+        stat(path.join(targetDir, deriveFileName(candidateBaseName, sibling.fileName)))
+          .then(() => true)
+          .catch(() => false)
+      )
+    ).then((rows) => rows.some(Boolean))
+    if (!hasConflict) break
+    candidateBaseName = `${sourceBaseName}-${collisionCounter}`
+    collisionCounter += 1
+  }
+
+  if (options?.dryRun) {
+    for (const sibling of siblings) {
+      if (options?.summary) options.summary.filesMoved += 1
+      console.log(`[media-backfill] dry-run copy`, {
+        context: options?.logContext || "copy-category-image",
+        from: sibling.absolutePath,
+        to: path.join(targetDir, deriveFileName(candidateBaseName, sibling.fileName)),
+      })
+    }
+    return storage.getPublicUrl(`${targetFolder}/${deriveFileName(candidateBaseName, masterSibling.fileName)}`)
+  }
+
+  await mkdir(targetDir, { recursive: true })
+  await ensureMediaRegistryTable()
+  for (const sibling of siblings) {
+    const nextFileName = deriveFileName(candidateBaseName, sibling.fileName)
+    const targetPath = path.join(targetDir, nextFileName)
+    await copyFile(sibling.absolutePath, targetPath)
+    const nextUrl = storage.getPublicUrl(`${targetFolder}/${nextFileName}`)
+    const fileStats = await stat(targetPath).catch(() => null)
+    await upsertMediaAsset({
+      id: `${targetFolder}:${nextFileName}`,
+      image_url: nextUrl,
+      variant: nextFileName.match(/-(thumb|large|master)\./i)?.[1] || null,
+      is_primary: /-master\./i.test(nextFileName),
+      master_url: storage.getPublicUrl(`${targetFolder}/${deriveFileName(candidateBaseName, masterSibling.fileName)}`),
+      size_bytes: fileStats?.size ?? null,
+      storage_provider: "local",
+      object_key: `${targetFolder}/${nextFileName}`,
+    })
+    if (options?.summary) options.summary.filesMoved += 1
+  }
+
+  return storage.getPublicUrl(`${targetFolder}/${deriveFileName(candidateBaseName, masterSibling.fileName)}`)
+}
+
 export async function ensureProductSkuFolders(categoryIds: string[], sku: string | null | undefined) {
   const targetFolder = await resolveCanonicalProductFolder(categoryIds, sku)
   if (!targetFolder) return
@@ -92,7 +208,10 @@ export async function ensureProductSkuFolders(categoryIds: string[], sku: string
   const uploadRoot = path.join(process.cwd(), "public", "uploads")
   await mkdir(uploadRoot, { recursive: true })
   await ensureCategoryMediaFolders()
-  await mkdir(path.join(uploadRoot, targetFolder), { recursive: true })
+  const targetPath = path.join(uploadRoot, targetFolder)
+  const exists = await stat(targetPath).then(() => true).catch(() => false)
+  if (exists) return
+  await mkdir(targetPath, { recursive: true })
 }
 
 export async function ensureAllProductSkuFolders() {
@@ -127,19 +246,19 @@ async function getOrderedCategoryPaths(categoryIds: string[]) {
   const byId = new Map(categories.map((category) => [category.id, category]))
   const cache = new Map<string, string>()
 
-  const resolvePath = (id: string): string => {
+  const resolveRoot = (id: string): string => {
     if (cache.has(id)) return cache.get(id) || ""
     const current = byId.get(id)
     if (!current) return ""
-    const parentPath = current.parentId ? resolvePath(current.parentId) : ""
-    const currentPath = sanitizeFolderPath(parentPath ? `${parentPath}/${current.slug}` : current.slug)
+    const parentPath = current.parentId ? resolveRoot(current.parentId) : ""
+    const currentPath = sanitizeFolderPath([parentPath, current.slug].filter(Boolean).join("/"))
     cache.set(id, currentPath)
     return currentPath
   }
 
   const folders: string[] = []
   for (const categoryId of categoryIds) {
-    const categoryPath = resolvePath(categoryId)
+    const categoryPath = resolveRoot(categoryId)
     if (categoryPath && !folders.includes(categoryPath)) {
       folders.push(categoryPath)
     }
@@ -173,6 +292,14 @@ async function resolveCanonicalProductFolder(
   const normalizedSku = sanitizeFolderPath(sku || "")
   if (!baseFolder || !normalizedSku) return ""
   return `${baseFolder}/${normalizedSku}`
+}
+
+export async function getCanonicalProductMediaFolder(
+  categoryIds: string[],
+  sku: string | null | undefined,
+  imageUrls: string[] = []
+) {
+  return resolveCanonicalProductFolder(categoryIds, sku, imageUrls)
 }
 
 function replaceManagedUrlFolder(url: string | undefined, targetFolder: string) {
@@ -237,7 +364,63 @@ async function pruneEmptyUploadFolders(folder: string) {
   }
 }
 
-export async function moveManagedAssetGroupToFolder(url: string, targetFolder: string) {
+export async function removeProductMediaFolder(
+  categoryIds: string[],
+  sku: string | null | undefined,
+  imageUrls: string[] = []
+) {
+  const normalizedSku = sanitizeFolderPath(sku || "")
+  if (!normalizedSku) return
+
+  const candidateFolders = new Set<string>()
+  const canonicalFolder = await resolveCanonicalProductFolder(categoryIds, normalizedSku, imageUrls)
+  if (canonicalFolder) candidateFolders.add(canonicalFolder)
+  const categoryRoots = new Set((await getOrderedCategoryPaths(categoryIds)).map((folder) => folder.split("/")[0] || folder))
+
+  for (const imageUrl of imageUrls) {
+    const folder = extractFolderFromManagedUrl(imageUrl)
+    const leaf = folder.split("/").filter(Boolean).pop() || ""
+    if (folder && leaf === normalizedSku) {
+      candidateFolders.add(folder)
+    }
+  }
+
+  const uploadRoot = path.join(process.cwd(), "public", "uploads")
+  for (const folder of candidateFolders) {
+    const remainingProducts = await prisma.product.findMany({
+      where: {
+        sku: normalizedSku,
+      },
+      select: {
+        id: true,
+        categories: { select: { id: true } },
+      },
+    })
+    const stillLinked = await Promise.all(
+      remainingProducts.map(async (product) => {
+        const roots = new Set((await getOrderedCategoryPaths(product.categories.map((category) => category.id))).map((item) => item.split("/")[0] || item))
+        return Array.from(roots).some((root) => categoryRoots.has(root))
+      })
+    ).then((rows) => rows.some(Boolean))
+    if (stillLinked) {
+      console.warn(`[media-folders] skip folder delete; another product is still linked`, {
+        folder,
+        sku: normalizedSku,
+      })
+      continue
+    }
+
+    const absolutePath = path.join(uploadRoot, folder)
+    if (!absolutePath.startsWith(uploadRoot)) continue
+    await rm(absolutePath, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
+export async function moveManagedAssetGroupToFolder(
+  url: string,
+  targetFolder: string,
+  options?: { dryRun?: boolean; summary?: MediaBackfillSummary; logContext?: string }
+) {
   const siblings = await getSiblingUploadAssets(url)
   if (siblings.length === 0) return url
 
@@ -245,8 +428,13 @@ export async function moveManagedAssetGroupToFolder(url: string, targetFolder: s
   const safeTargetFolder = sanitizeFolderPath(targetFolder)
   if (!safeTargetFolder || sourceFolder === safeTargetFolder) return url
 
+  if (options?.summary) {
+    options.summary.totalFilesScanned += siblings.length
+  }
   const targetDir = path.join(process.cwd(), "public", "uploads", safeTargetFolder)
-  await mkdir(targetDir, { recursive: true })
+  if (!options?.dryRun) {
+    await mkdir(targetDir, { recursive: true })
+  }
 
   const storage = getStorageProvider()
   const masterSibling = siblings.find((sibling) => sibling.fileName.includes("-master.")) || siblings[0]
@@ -254,32 +442,56 @@ export async function moveManagedAssetGroupToFolder(url: string, targetFolder: s
     const targetPath = path.join(targetDir, sibling.fileName)
     const exists = await stat(targetPath).then(() => true).catch(() => false)
     if (exists) {
+      if (options?.summary) options.summary.potentialConflicts += 1
+      console.warn(`[media-backfill] conflict`, {
+        context: options?.logContext || "move",
+        source: sibling.absolutePath,
+        target: targetPath,
+        dryRun: Boolean(options?.dryRun),
+      })
       return storage.getPublicUrl(`${safeTargetFolder}/${masterSibling.fileName}`)
     }
   }
 
   let nextPrimaryUrl = url
+  if (options?.dryRun) {
+    for (const sibling of siblings) {
+      if (options?.summary) options.summary.filesMoved += 1
+      console.log(`[media-backfill] dry-run move`, {
+        context: options?.logContext || "move",
+        from: sibling.absolutePath,
+        to: path.join(targetDir, sibling.fileName),
+      })
+    }
+    return storage.getPublicUrl(`${safeTargetFolder}/${masterSibling.fileName}`)
+  }
+
   await ensureMediaRegistryTable()
   for (const sibling of siblings) {
     const targetPath = path.join(targetDir, sibling.fileName)
     await rename(sibling.absolutePath, targetPath)
     const nextUrl = storage.getPublicUrl(`${safeTargetFolder}/${sibling.fileName}`)
-    await prisma.$executeRawUnsafe(
-      `UPDATE "MediaAsset" SET "image_url" = ?, "object_key" = ? WHERE "image_url" = ?`,
-      nextUrl,
-      `${safeTargetFolder}/${sibling.fileName}`,
-      sibling.url
-    )
+    await prisma.$executeRaw`
+      UPDATE "MediaAsset"
+      SET "image_url" = ${nextUrl}, "object_key" = ${`${safeTargetFolder}/${sibling.fileName}`}
+      WHERE "image_url" = ${sibling.url}
+    `
     if (sibling.fileName.endsWith("-master.webp")) {
       nextPrimaryUrl = nextUrl
     }
+    if (options?.summary) options.summary.filesMoved += 1
   }
 
   await pruneEmptyUploadFolders(sourceFolder)
   return nextPrimaryUrl
 }
 
-export async function relocateProductImagesToSkuFolders(imageUrls: string[], categoryIds: string[], sku: string | null | undefined) {
+export async function relocateProductImagesToSkuFolders(
+  imageUrls: string[],
+  categoryIds: string[],
+  sku: string | null | undefined,
+  options?: { dryRun?: boolean; summary?: MediaBackfillSummary; logContext?: string }
+) {
   const targetFolder = await resolveCanonicalProductFolder(categoryIds, sku, imageUrls)
   if (!targetFolder || imageUrls.length === 0) {
     return imageUrls
@@ -289,11 +501,14 @@ export async function relocateProductImagesToSkuFolders(imageUrls: string[], cat
   for (const url of imageUrls) {
     const currentFolder = extractFolderFromManagedUrl(url)
     if (currentFolder === targetFolder) {
+      if (options?.summary) options.summary.skippedFiles += 1
       nextUrls.push(url)
       continue
     }
-    await mkdir(path.join(process.cwd(), "public", "uploads", targetFolder), { recursive: true })
-    const movedUrl = await moveManagedAssetGroupToFolder(url, targetFolder)
+    if (!options?.dryRun) {
+      await mkdir(path.join(process.cwd(), "public", "uploads", targetFolder), { recursive: true })
+    }
+    const movedUrl = await moveManagedAssetGroupToFolder(url, targetFolder, options)
     nextUrls.push(movedUrl)
   }
 
@@ -301,6 +516,7 @@ export async function relocateProductImagesToSkuFolders(imageUrls: string[], cat
 }
 
 export async function migrateAllProductsToCanonicalMediaFolders() {
+  const summary = createBackfillSummary()
   const products = await prisma.product.findMany({
     select: {
       id: true,
@@ -321,7 +537,11 @@ export async function migrateAllProductsToCanonicalMediaFolders() {
     if (currentImages.length === 0) continue
 
     const currentUrls = currentImages.map((image) => image.image_url)
-    const nextUrls = await relocateProductImagesToSkuFolders(currentUrls, categoryIds, sku)
+    const nextUrls = await relocateProductImagesToSkuFolders(currentUrls, categoryIds, sku, {
+      dryRun: isMediaBackfillDryRun(),
+      summary,
+      logContext: `product:${product.id}`,
+    })
     const didChange = nextUrls.some((url, index) => url !== currentUrls[index])
     if (!didChange) continue
 
@@ -338,6 +558,16 @@ export async function migrateAllProductsToCanonicalMediaFolders() {
       },
     }))
 
+    if (isMediaBackfillDryRun()) {
+      console.log(`[media-backfill] dry-run product image rewrite`, {
+        productId: product.id,
+        targetFolder,
+        currentUrls,
+        nextUrls,
+      })
+      continue
+    }
+
     await prisma.product.update({
       where: { id: product.id },
       data: {
@@ -345,4 +575,6 @@ export async function migrateAllProductsToCanonicalMediaFolders() {
       },
     })
   }
+
+  logBackfillSummary(summary, "migrateAllProductsToCanonicalMediaFolders")
 }

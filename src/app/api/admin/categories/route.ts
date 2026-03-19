@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { z } from "zod"
 import { notifyNewCategory } from "@/lib/customer-messaging"
-import { ensureCategoryMediaFolders } from "@/lib/media-folders"
+import { ensureCategoryMediaFolders, relocateCategoryImageToFolder } from "@/lib/media-folders"
 import { parseProductImages } from "@/lib/product-images"
 
 const categorySchema = z.object({
@@ -150,7 +150,7 @@ export async function POST(request: Request) {
         slug = uniqueSlug
         // -------------------------------
 
-        const category = await prisma.category.create({
+        let category = await prisma.category.create({
             data: {
                 title,
                 slug,
@@ -159,6 +159,15 @@ export async function POST(request: Request) {
                 image: result.data.image || null
             }
         })
+        if (category.image) {
+            const nextImage = await relocateCategoryImageToFolder(category.slug, category.image)
+            if (nextImage && nextImage !== category.image) {
+                category = await prisma.category.update({
+                    where: { id: category.id },
+                    data: { image: nextImage },
+                })
+            }
+        }
         await notifyNewCategory({
             id: category.id,
             title: category.title,

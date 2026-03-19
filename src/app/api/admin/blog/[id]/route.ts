@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
-import { revalidatePath } from "next/cache"
+import { revalidatePath, revalidateTag } from "next/cache"
 import { z } from "zod"
 import { prisma } from "@/lib/db"
 import { BLOG_STATUSES, buildPublishedAt, ensureUniqueBlogSlug } from "@/lib/blog"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { isAdminRole } from "@/lib/rbac"
 
 const blogUpdateSchema = z.object({
@@ -19,6 +19,7 @@ const blogUpdateSchema = z.object({
 })
 
 function revalidateBlogPaths(slug?: string | null) {
+  revalidateTag("blog-posts", "default")
   revalidatePath("/")
   revalidatePath("/blog")
   if (slug) revalidatePath(`/blog/${slug}`)

@@ -19,6 +19,16 @@ function escapeXml(value: string) {
     .replace(/'/g, "&apos;")
 }
 
+function shouldExcludeFromSitemap(loc: string) {
+  return (
+    loc.includes("/inventory") ||
+    loc.includes("/dealer") ||
+    loc.includes("/api/inventory/") ||
+    loc.includes("inventory.turkishrughouse.com") ||
+    loc.includes("dealer.turkishrughouse.com")
+  )
+}
+
 function slugToLabel(slug: string) {
   return slug.replace(/-/g, " ").trim().toLowerCase()
 }
@@ -179,6 +189,7 @@ export async function GET() {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n` +
     urls
+      .filter((entry) => !shouldExcludeFromSitemap(entry.loc))
       .map((entry) => {
         const images = "images" in entry && Array.isArray(entry.images)
           ? entry.images

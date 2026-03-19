@@ -1,22 +1,15 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 import { isAdminRole } from "@/lib/rbac"
+import { dbBooleanLiteral, ensureTableColumns } from "@/lib/db-compat"
 
 async function ensureProductAnalyticsColumns() {
-  const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
-  const hasDeletedAt = columns.some((column) => column.name === "deletedAt")
-  const hasCreatorId = columns.some((column) => column.name === "createdById")
-  const hasCreatorName = columns.some((column) => column.name === "createdByName")
-  if (!hasDeletedAt) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "deletedAt" DATETIME`)
-  }
-  if (!hasCreatorId) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "createdById" TEXT`)
-  }
-  if (!hasCreatorName) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "createdByName" TEXT`)
-  }
+  await ensureTableColumns("Product", [
+    { name: "deletedAt", postgresType: "TIMESTAMP(3)", sqliteType: "DATETIME" },
+    { name: "createdById", postgresType: "TEXT" },
+    { name: "createdByName", postgresType: "TEXT" },
+  ])
 }
 
 const COUNTRY_CODE_TO_NAME: Record<string, string> = {
@@ -73,7 +66,7 @@ export async function GET() {
         },
       }),
       prisma.$queryRawUnsafe<Array<{ count: number }>>(
-        `SELECT COUNT(*) as count FROM "Product" WHERE "deletedAt" IS NULL AND "isPublished" = 1`
+        `SELECT COUNT(*) as count FROM "Product" WHERE "deletedAt" IS NULL AND "isPublished" = ${dbBooleanLiteral(true)}`
       ),
       prisma.$queryRawUnsafe<Array<{ createdAt: Date | string; createdByName: string | null }>>(
         `SELECT "createdAt", "createdByName"

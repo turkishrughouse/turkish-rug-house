@@ -2,12 +2,10 @@
 
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { ChevronDown, X, Check } from "lucide-react"
+import { ChevronDown, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
-import { Slider } from "@/components/ui/slider"
 
 // Types
 interface Option {
@@ -26,6 +24,65 @@ interface FilterOptions {
 
 interface CategoryFilterBarProps {
     options: FilterOptions
+}
+
+function FilterButton({
+    label,
+    id,
+    activeCount,
+    openFilter,
+    setOpenFilter,
+}: {
+    label: string
+    id: string
+    activeCount: number
+    openFilter: string | null
+    setOpenFilter: (value: string | null) => void
+}) {
+    return (
+        <button
+            onClick={() => setOpenFilter(openFilter === id ? null : id)}
+            className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-medium transition-all",
+                openFilter === id ? "border-slate-900 bg-slate-900 text-white" :
+                    activeCount > 0 ? "border-slate-900 bg-slate-50 text-slate-900" : "border-slate-200 hover:border-slate-300 text-slate-700 bg-white"
+            )}
+        >
+            {label}
+            {activeCount > 0 && (
+                <span className={cn(
+                    "flex items-center justify-center w-5 h-5 rounded-full text-[10px]",
+                    openFilter === id ? "bg-white text-slate-900" : "bg-slate-900 text-white"
+                )}>
+                    {activeCount}
+                </span>
+            )}
+            <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", openFilter === id && "rotate-180")} />
+        </button>
+    )
+}
+
+function Dropdown({
+    id,
+    openFilter,
+    setOpenFilter,
+    children
+}: {
+    id: string
+    openFilter: string | null
+    setOpenFilter: (value: string | null) => void
+    children: React.ReactNode
+}) {
+    if (openFilter !== id) return null
+    return (
+        <div className="absolute top-full mt-2 left-0 w-full max-w-7xl mx-auto px-6 z-40">
+            <div className="bg-white rounded-xl shadow-xl border border-slate-100 p-6 animate-in slide-in-from-top-2 fade-in duration-200">
+                {children}
+            </div>
+            {/* Backdrop to close */}
+            <div className="fixed inset-0 z-[-1]" onClick={() => setOpenFilter(null)} />
+        </div>
+    )
 }
 
 export function CategoryFilterBar({ options }: CategoryFilterBarProps) {
@@ -69,41 +126,6 @@ export function CategoryFilterBar({ options }: CategoryFilterBarProps) {
         router.push(window.location.pathname)
     }
 
-    const FilterButton = ({ label, id, activeCount }: { label: string, id: string, activeCount: number }) => (
-        <button
-            onClick={() => setOpenFilter(openFilter === id ? null : id)}
-            className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-medium transition-all",
-                openFilter === id ? "border-slate-900 bg-slate-900 text-white" :
-                    activeCount > 0 ? "border-slate-900 bg-slate-50 text-slate-900" : "border-slate-200 hover:border-slate-300 text-slate-700 bg-white"
-            )}
-        >
-            {label}
-            {activeCount > 0 && (
-                <span className={cn(
-                    "flex items-center justify-center w-5 h-5 rounded-full text-[10px]",
-                    openFilter === id ? "bg-white text-slate-900" : "bg-slate-900 text-white"
-                )}>
-                    {activeCount}
-                </span>
-            )}
-            <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", openFilter === id && "rotate-180")} />
-        </button>
-    )
-
-    const Dropdown = ({ id, children }: { id: string, children: React.ReactNode }) => {
-        if (openFilter !== id) return null
-        return (
-            <div className="absolute top-full mt-2 left-0 w-full max-w-7xl mx-auto px-6 z-40">
-                <div className="bg-white rounded-xl shadow-xl border border-slate-100 p-6 animate-in slide-in-from-top-2 fade-in duration-200">
-                    {children}
-                </div>
-                {/* Backdrop to close */}
-                <div className="fixed inset-0 z-[-1]" onClick={() => setOpenFilter(null)} />
-            </div>
-        )
-    }
-
     // Active Filters List (Chips)
     const activeFilters = [
         ...options.types.filter(o => hasValue('type', o.slug)).map(o => ({ key: 'type', ...o })),
@@ -118,12 +140,12 @@ export function CategoryFilterBar({ options }: CategoryFilterBarProps) {
         <div className="relative mb-8">
             {/* Filter Bar */}
             <div className="flex flex-wrap items-center gap-3 pb-4">
-                <FilterButton label="Type" id="type" activeCount={getValues('type').length} />
-                <FilterButton label="Size" id="size" activeCount={getValues('size').length} />
-                <FilterButton label="Age" id="age" activeCount={getValues('age').length} />
-                <FilterButton label="Price" id="price" activeCount={0} /> {/* Todo: Price count */}
-                <FilterButton label="Style" id="style" activeCount={getValues('style').length} />
-                <FilterButton label="Color" id="color" activeCount={getValues('color').length} />
+                <FilterButton label="Type" id="type" activeCount={getValues('type').length} openFilter={openFilter} setOpenFilter={setOpenFilter} />
+                <FilterButton label="Size" id="size" activeCount={getValues('size').length} openFilter={openFilter} setOpenFilter={setOpenFilter} />
+                <FilterButton label="Age" id="age" activeCount={getValues('age').length} openFilter={openFilter} setOpenFilter={setOpenFilter} />
+                <FilterButton label="Price" id="price" activeCount={0} openFilter={openFilter} setOpenFilter={setOpenFilter} /> {/* Todo: Price count */}
+                <FilterButton label="Style" id="style" activeCount={getValues('style').length} openFilter={openFilter} setOpenFilter={setOpenFilter} />
+                <FilterButton label="Color" id="color" activeCount={getValues('color').length} openFilter={openFilter} setOpenFilter={setOpenFilter} />
 
                 <div className="h-6 w-px bg-slate-200 mx-2" />
 
@@ -143,7 +165,7 @@ export function CategoryFilterBar({ options }: CategoryFilterBarProps) {
             </div>
 
             {/* Dropdowns */}
-            <Dropdown id="type">
+            <Dropdown id="type" openFilter={openFilter} setOpenFilter={setOpenFilter}>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {options.types.map(opt => (
                         <label key={opt.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-2 rounded transition-colors">
@@ -154,7 +176,7 @@ export function CategoryFilterBar({ options }: CategoryFilterBarProps) {
                 </div>
             </Dropdown>
 
-            <Dropdown id="size">
+            <Dropdown id="size" openFilter={openFilter} setOpenFilter={setOpenFilter}>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {options.sizes.map(opt => (
                         <label key={opt.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-2 rounded transition-colors">
@@ -165,7 +187,7 @@ export function CategoryFilterBar({ options }: CategoryFilterBarProps) {
                 </div>
             </Dropdown>
 
-            <Dropdown id="age">
+            <Dropdown id="age" openFilter={openFilter} setOpenFilter={setOpenFilter}>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {options.ages.map(opt => (
                         <label key={opt.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-2 rounded transition-colors">
@@ -176,7 +198,7 @@ export function CategoryFilterBar({ options }: CategoryFilterBarProps) {
                 </div>
             </Dropdown>
 
-            <Dropdown id="style">
+            <Dropdown id="style" openFilter={openFilter} setOpenFilter={setOpenFilter}>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {options.styles.map(opt => (
                         <label key={opt.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-2 rounded transition-colors">
@@ -187,7 +209,7 @@ export function CategoryFilterBar({ options }: CategoryFilterBarProps) {
                 </div>
             </Dropdown>
 
-            <Dropdown id="color">
+            <Dropdown id="color" openFilter={openFilter} setOpenFilter={setOpenFilter}>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {options.colors.map(opt => (
                         <label key={opt.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-2 rounded transition-colors">
@@ -201,7 +223,7 @@ export function CategoryFilterBar({ options }: CategoryFilterBarProps) {
                 </div>
             </Dropdown>
 
-            <Dropdown id="price">
+            <Dropdown id="price" openFilter={openFilter} setOpenFilter={setOpenFilter}>
                 <div className="max-w-md">
                     <p className="text-sm text-slate-500 mb-4">Price range filter coming soon.</p>
                 </div>

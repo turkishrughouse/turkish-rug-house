@@ -54,6 +54,17 @@ export async function GET(
             }
         })
 
+        const sortRecursive = (nodes: any[]) => {
+            nodes.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+            nodes.forEach((node) => {
+                if (Array.isArray(node.children) && node.children.length > 0) {
+                    sortRecursive(node.children)
+                }
+            })
+        }
+
+        sortRecursive(rootItems)
+
         return NextResponse.json({ ...menu, items: rootItems })
 
     } catch (error) {

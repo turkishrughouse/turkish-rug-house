@@ -140,9 +140,9 @@ export function AdminProfileMenu({
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link href="/dashboard/profile" className="cursor-pointer">
+          <Link href="/dashboard/settings" className="cursor-pointer">
             <UserCog className="mr-2 h-4 w-4" />
-            Edit Profile
+            Settings
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem onClick={logout} className="cursor-pointer text-red-600 focus:text-red-600">

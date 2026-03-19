@@ -1,7 +1,8 @@
 
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
-import { buildCategoryPathMap } from "@/lib/category-paths"
+import { buildCategoryPathMap, fetchCategoryPathRows } from "@/lib/category-paths"
+import { resolvePublicPageHref } from "@/lib/public-page-routes"
 
 export const revalidate = 300
 
@@ -46,12 +47,14 @@ export async function GET(req: Request, { params }: Params) {
         const catIds = menu.items.filter(i => i.type === 'CATEGORY' && i.referenceId).map(i => i.referenceId!)
         const pageIds = menu.items.filter(i => i.type === 'PAGE' && i.referenceId).map(i => i.referenceId!)
 
-        const [categories, pages] = await Promise.all([
+        const [categoryRows, , pages] = await Promise.all([
+            fetchCategoryPathRows(),
             catIds.length ? prisma.category.findMany({ where: { id: { in: catIds } }, select: { id: true, slug: true, title: true, parentId: true } }) : [],
             pageIds.length ? prisma.page.findMany({ where: { id: { in: pageIds } }, select: { id: true, slug: true, status: true } }) : []
         ])
 
-        const { pathById } = buildCategoryPathMap(categories)
+        // Use the full category tree so nested category URLs are correct.
+        const { pathById } = buildCategoryPathMap(categoryRows)
         // Only map published pages? Or all and let frontend decide?
         // Better to check published status here.
         const pageMap = new Map(pages.filter(p => p.status === 'PUBLISHED').map(p => [p.id, p.slug]))
@@ -69,7 +72,9 @@ export async function GET(req: Request, { params }: Params) {
                 }
             } else if (item.type === 'PAGE') {
                 if (item.referenceId && pageMap.has(item.referenceId)) {
-                    url = `/${pageMap.get(item.referenceId)}` // Root URL for Pages
+                    url = item.url && item.url.trim().length > 0
+                        ? item.url
+                        : resolvePublicPageHref(pageMap.get(item.referenceId))
                 } else {
                     if (item.referenceId) isMissing = true // Only mark missing if it had a ref
                 }
@@ -81,6 +86,7 @@ export async function GET(req: Request, { params }: Params) {
                 label: item.label,
                 url,
                 type: item.type,
+                sortOrder: item.sortOrder || 0,
                 children: [] as any[],
                 _missing: isMissing
             }
@@ -98,6 +104,17 @@ export async function GET(req: Request, { params }: Params) {
                 roots.push(i)
             }
         })
+
+        const sortRecursive = (nodes: Array<{ sortOrder?: number; children?: any[] }>) => {
+            nodes.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+            nodes.forEach((node) => {
+                if (Array.isArray(node.children) && node.children.length > 0) {
+                    sortRecursive(node.children)
+                }
+            })
+        }
+
+        sortRecursive(roots)
 
         return NextResponse.json({
             id: menu.id,

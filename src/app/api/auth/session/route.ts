@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getSessionUser, type SessionPortal } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
+import type { SessionPortal } from "@/lib/auth"
 
 export async function GET(req: NextRequest) {
   try {
     const portalParam = req.nextUrl.searchParams.get("portal")
-    const portal: SessionPortal = portalParam === "admin" ? "admin" : "customer"
+    const portal: SessionPortal =
+      portalParam === "admin" || portalParam === "inventory" || portalParam === "dealer"
+        ? portalParam
+        : "customer"
     const user = await getSessionUser(portal)
     if (!user) {
       return NextResponse.json({ authenticated: false })

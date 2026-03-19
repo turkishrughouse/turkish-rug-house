@@ -1,13 +1,11 @@
 import { createHmac, timingSafeEqual } from "crypto"
-import { cookies } from "next/headers"
-import { prisma } from "@/lib/db"
 
-const LEGACY_AUTH_COOKIE_NAME = "rughouse_admin_session"
-const ADMIN_AUTH_COOKIE_NAME = "rughouse_admin_session_admin"
-const CUSTOMER_AUTH_COOKIE_NAME = "rughouse_customer_session"
+export const LEGACY_AUTH_COOKIE_NAME = "rughouse_admin_session"
+export const ADMIN_AUTH_COOKIE_NAME = "rughouse_admin_session_admin"
+export const CUSTOMER_AUTH_COOKIE_NAME = "rughouse_customer_session"
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 365
 
-type SessionPayload = {
+export type SessionPayload = {
   id: string
   email: string
   name: string | null
@@ -15,7 +13,7 @@ type SessionPayload = {
   exp: number
 }
 
-type SessionUser = {
+export type SessionUser = {
   id: string
   email: string
   name: string | null
@@ -88,44 +86,12 @@ export function verifySessionToken(token: string): SessionPayload | null {
   }
 }
 
-export type SessionPortal = "admin" | "customer"
-
-function getCookieNamesForPortal(portal: SessionPortal) {
-  if (portal === "admin") {
-    return [ADMIN_AUTH_COOKIE_NAME, LEGACY_AUTH_COOKIE_NAME]
-  }
-  return [CUSTOMER_AUTH_COOKIE_NAME]
-}
-
-export async function getSessionUser(portal: SessionPortal = "customer"): Promise<SessionUser | null> {
-  const store = await cookies()
-
-  for (const cookieName of getCookieNamesForPortal(portal)) {
-    const raw = store.get(cookieName)?.value
-    if (!raw) continue
-
-    const payload = verifySessionToken(raw)
-    if (!payload) continue
-
-    let user: { id: string; email: string; name: string | null; role: string } | null = null
-    try {
-      user = await prisma.user.findUnique({
-        where: { id: payload.id },
-        select: { id: true, email: true, name: true, role: true },
-      })
-    } catch (error) {
-      console.error("[auth] failed to resolve session user", error)
-      continue
-    }
-
-    if (user) return user
-  }
-
-  return null
-}
+export type SessionPortal = "admin" | "inventory" | "dealer" | "customer"
 
 export function getAuthCookieName(portal: SessionPortal = "customer") {
-  return portal === "admin" ? ADMIN_AUTH_COOKIE_NAME : CUSTOMER_AUTH_COOKIE_NAME
+  return portal === "admin" || portal === "inventory" || portal === "dealer"
+    ? ADMIN_AUTH_COOKIE_NAME
+    : CUSTOMER_AUTH_COOKIE_NAME
 }
 
 export function getLegacyAuthCookieName() {

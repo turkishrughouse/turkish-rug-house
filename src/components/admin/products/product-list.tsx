@@ -690,6 +690,7 @@ export function ProductList({
                                             <div className="space-y-1.5">
                                                 <Link
                                                     href={`/dashboard/products/${product.id}`}
+                                                    prefetch={false}
                                                     className="inline-flex font-semibold text-slate-900 transition-colors hover:text-[#135e96] hover:underline hover:underline-offset-2"
                                                 >
                                                     {product.title}
@@ -705,6 +706,7 @@ export function ProductList({
                                                         <div className="flex flex-wrap items-center gap-x-4">
                                                             <Link
                                                                 href={`/dashboard/products/${product.id}`}
+                                                                prefetch={false}
                                                                 className="font-medium text-[#2271b1] hover:text-[#135e96]"
                                                             >
                                                                 {tx("Edit", "Düzenle")}

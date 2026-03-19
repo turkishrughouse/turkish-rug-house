@@ -16,6 +16,7 @@ export type SourceItemFunc = (items: { type: "PAGE" | "CATEGORY" | "CUSTOM", lab
 
 import { CreatePageModal } from "@/components/admin/pages/create-page-modal"
 import type { FooterSocialLink } from "@/lib/site-settings"
+import { resolvePublicPageHref } from "@/lib/public-page-routes"
 
 interface MenuSourcesPanelProps {
     disabled: boolean
@@ -111,7 +112,7 @@ function PageList({ onAdd, disabled }: { onAdd: SourceItemFunc, disabled: boolea
             .map(p => ({
                 type: "PAGE" as const,
                 label: p.title,
-                url: `/info/${p.slug}`,
+                url: resolvePublicPageHref(p.slug),
                 referenceId: p.id
             }))
 

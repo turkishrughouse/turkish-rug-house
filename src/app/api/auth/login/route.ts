@@ -79,9 +79,16 @@ export async function POST(req: NextRequest) {
     }
 
     const adminRoles = new Set(["SUPER_USER", "ADMIN", "EDITOR", "MANAGER", "STAFF"])
-    if (portal === "admin") {
+    const isAdminPortal = portal === "admin" || portal === "inventory" || portal === "dealer"
+    if (isAdminPortal) {
       if (!adminRoles.has(user.role)) {
-        return NextResponse.json({ error: "This account has no admin access." }, { status: 403 })
+        const errorMessage =
+          portal === "inventory"
+            ? "This account has no inventory access."
+            : portal === "dealer"
+              ? "This account has no dealer access."
+              : "This account has no admin access."
+        return NextResponse.json({ error: errorMessage }, { status: 403 })
       }
     } else if (user.role !== "CUSTOMER") {
       return NextResponse.json({ error: "Please use the admin login page for this account." }, { status: 403 })
@@ -111,10 +118,20 @@ export async function POST(req: NextRequest) {
         name: user.name,
         role: user.role,
       },
-      redirectTo: portal === "admin" ? "/dashboard" : "/account",
+      redirectTo:
+        portal === "admin"
+          ? (user.role === "SUPER_USER" ? "/superuser" : "/admin")
+          : portal === "inventory"
+            ? "/inventory"
+            : portal === "dealer"
+              ? "/dealer"
+              : "/account",
     })
 
-    const targetPortal = portal === "admin" ? "admin" : "customer"
+    const targetPortal =
+      portal === "admin" || portal === "inventory" || portal === "dealer"
+        ? portal
+        : "customer"
     res.cookies.set(getAuthCookieName(targetPortal), token, {
       httpOnly: true,
       sameSite: "lax",

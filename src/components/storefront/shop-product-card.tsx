@@ -31,7 +31,7 @@ export function ShopProductCard({
   currencySettings?: CurrencySettings
 }) {
   const images = parseProductImageRecords(product.images)
-  const mainImage = getProductImageUrl(images[0], "large") || "/placeholder.jpg"
+  const mainImage = getProductImageUrl(images[0], "large") || "/placeholder.svg"
   const mainImageAlt = buildProductImageAlt({ title: product.title, fallbackAlt: images[0]?.alt })
   const stockCount = Math.max(0, product.stockCount ?? 999)
   const canBuy = !catalogMode && (product.isStock ?? true) && stockCount > 0

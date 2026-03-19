@@ -2,11 +2,11 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useMemo, useState } from "react"
-import { Heart, ChevronLeft, ChevronRight, Facebook, Linkedin, Send } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { createPortal } from "react-dom"
+import { Heart, ChevronLeft, ChevronRight, Facebook, Linkedin, Send, X } from "lucide-react"
 import { toast } from "sonner"
 
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { addToCart } from "@/lib/storefront/cart"
 import { addEngagementItem } from "@/lib/storefront/engagement"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
@@ -16,6 +16,7 @@ type ProductCardData = {
   id: string
   slug: string
   title: string
+  shortDescription?: string | null
   description?: string | null
   price: number
   compareAtPrice?: number | null
@@ -43,10 +44,12 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
 
   const gallery = useMemo(() => {
     const arr = parseImages(product.images)
-    return arr.length ? arr : [{ image_url: "/placeholder.jpg", variants: { thumb: "/placeholder.jpg", large: "/placeholder.jpg", master: "/placeholder.jpg" } }]
+    return arr.length
+      ? arr
+      : [{ image_url: "/placeholder.svg", variants: { thumb: "/placeholder.svg", large: "/placeholder.svg", master: "/placeholder.svg" } }]
   }, [product.images])
 
-  const mainImage = getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
+  const mainImage = getProductImageUrl(gallery[0], "large") || "/placeholder.svg"
   const mainImageAlt = buildProductImageAlt({
     title: product.title,
     fallbackAlt: gallery[0]?.alt,
@@ -60,10 +63,11 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
   const discountPercent = hasDiscount
     ? Math.round((((product.compareAtPrice as number) - product.price) / (product.compareAtPrice as number)) * 100)
     : 0
+  const summaryDescription = stripHtml(product.shortDescription) || stripHtml(product.description)
   const shortDescription = (
-    stripHtml(product.description) || "Premium handcrafted product with quality materials and authentic details."
+    summaryDescription || "Premium handcrafted product with quality materials and authentic details."
   ).slice(0, 140)
-  const fullDescription = stripHtml(product.description) || "Premium handcrafted product with quality materials and authentic details."
+  const fullDescription = stripHtml(product.description) || summaryDescription || "Premium handcrafted product with quality materials and authentic details."
   const categoryText = product.categories?.slice(0, 2).map((c) => c.title).join(", ") || "Rug House"
 
   const nextImage = () => {
@@ -110,6 +114,25 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
     setQuickViewOpen(false)
     router.push("/basket")
   }
+
+  useEffect(() => {
+    if (!quickViewOpen || typeof document === "undefined") return
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setQuickViewOpen(false)
+      }
+    }
+
+    document.addEventListener("keydown", handleEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener("keydown", handleEscape)
+    }
+  }, [quickViewOpen])
 
   return (
     <>
@@ -186,136 +209,158 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
         </div>
       </div>
 
-      <Dialog open={quickViewOpen} onOpenChange={setQuickViewOpen}>
-        <DialogContent className="w-[min(97vw,1280px)] max-w-[1280px] max-h-[88vh] overflow-hidden border-[#dce3ed] bg-white p-0">
-          <DialogTitle className="sr-only">Quick View - {product.title}</DialogTitle>
-          <div className="grid max-h-[88vh] grid-cols-1 md:grid-cols-[1fr_1.3fr]">
-            <div className="relative border-r border-slate-200 p-6">
-              <div className="group/quick relative aspect-[4/5] overflow-hidden rounded-md bg-slate-50">
-                <img
-                  src={getProductImageUrl(gallery[activeImageIndex], "large") || mainImage}
-                  alt={buildProductImageAlt({
-                    title: product.title,
-                    fallbackAlt: gallery[activeImageIndex]?.alt,
-                    categories: product.categories,
-                    index: activeImageIndex,
-                  })}
-                  loading="lazy"
-                  decoding="async"
-                  className="h-full w-full object-cover"
-                />
-
-                <Link
-                  href={`/product/${product.slug}`}
-                  className="absolute inset-x-4 bottom-4 inline-flex h-10 items-center justify-center rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white opacity-0 transition-opacity duration-200 hover:bg-emerald-800 group-hover/quick:opacity-100"
-                  onClick={() => setQuickViewOpen(false)}
+      {quickViewOpen && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-[2px]"
+              onClick={() => setQuickViewOpen(false)}
+              aria-hidden="true"
+            >
+              <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-6">
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={`Quick View - ${product.title}`}
+                  className="relative grid w-[min(97vw,1280px)] max-w-[1280px] max-h-[90dvh] grid-cols-1 overflow-hidden rounded-2xl border border-[#dce3ed] bg-white shadow-[0_24px_80px_rgba(15,23,42,0.3)] md:grid-cols-[1fr_1.3fr]"
+                  onClick={(event) => event.stopPropagation()}
                 >
-                  View Details
-                </Link>
+                  <button
+                    type="button"
+                    className="absolute right-3 top-3 z-20 inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-lg backdrop-blur transition hover:bg-white hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+                    aria-label="Close quick view"
+                    onClick={() => setQuickViewOpen(false)}
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
 
-                {gallery.length > 1 ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={prevImage}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 text-slate-800 shadow hover:bg-white"
-                      aria-label="Previous image"
-                    >
-                      <ChevronLeft className="h-5 w-5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={nextImage}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 text-slate-800 shadow hover:bg-white"
-                      aria-label="Next image"
-                    >
-                      <ChevronRight className="h-5 w-5" />
-                    </button>
-                  </>
-                ) : null}
-              </div>
+                  <div className="relative border-r border-slate-200 p-6">
+                    <div className="group/quick relative aspect-[4/5] overflow-hidden rounded-md bg-slate-50">
+                      <img
+                        src={getProductImageUrl(gallery[activeImageIndex], "large") || mainImage}
+                        alt={buildProductImageAlt({
+                          title: product.title,
+                          fallbackAlt: gallery[activeImageIndex]?.alt,
+                          categories: product.categories,
+                          index: activeImageIndex,
+                        })}
+                        loading="lazy"
+                        decoding="async"
+                        className="h-full w-full object-cover"
+                      />
 
-            </div>
-
-            <div className="max-h-[88vh] overflow-y-auto p-4 sm:p-6">
-              <h3 className="text-3xl leading-[1.1] font-bold text-slate-900 sm:text-[42px]">{product.title}</h3>
-              <p className="mt-3 text-3xl font-bold text-emerald-700 sm:text-4xl">{formatUsd(product.price)}</p>
-
-              <p className="mt-4 line-clamp-5 text-slate-600 leading-7">
-                {fullDescription}
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Full description is available on <span className="font-semibold">Select / View Details</span>.
-              </p>
-
-              <div className="mt-5 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  className="h-11 w-11 rounded border border-slate-200 bg-white text-xl text-slate-700 hover:bg-slate-50"
-                  onClick={() => setQty((prev) => Math.max(1, prev - 1))}
-                >
-                  -
-                </button>
-                <input
-                  className="h-11 w-14 rounded border border-slate-200 text-center text-base text-slate-900"
-                  value={qty}
-                  onChange={(e) => setQty(Math.max(1, Number(e.target.value || 1)))}
-                />
-                <button
-                  type="button"
-                  className="h-11 w-11 rounded border border-slate-200 bg-white text-xl text-slate-700 hover:bg-slate-50"
-                  onClick={() => setQty((prev) => Math.min(stockCount, prev + 1))}
-                >
-                  +
-                </button>
-                <button
-                  type="button"
-                  className="h-11 min-w-[120px] flex-1 whitespace-nowrap rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60 sm:ml-2 sm:min-w-[140px] sm:flex-none sm:px-6"
-                  disabled={!canBuy}
-                  onClick={() => addBasket(qty)}
-                >
-                  Add to Cart
-                </button>
-                <button
-                  type="button"
-                  className="h-11 min-w-[120px] flex-1 whitespace-nowrap rounded-md border border-slate-900 bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none sm:px-5"
-                  disabled={!canBuy}
-                  onClick={handleBuyNow}
-                >
-                  Buy Now
-                </button>
-              </div>
-
-              <div className="mt-5 border-t border-slate-200 pt-4 text-sm text-slate-700">
-                <span className="font-semibold text-slate-900">Categories:</span>{" "}
-                {product.categories?.length
-                  ? product.categories.map((cat, i) => (
-                    <span key={cat.id}>
-                      <Link href={`/category/${cat.slug}`} className="hover:underline" onClick={() => setQuickViewOpen(false)}>
-                        {cat.title}
+                      <Link
+                        href={`/product/${product.slug}`}
+                        className="absolute inset-x-4 bottom-4 inline-flex h-10 items-center justify-center rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white opacity-0 transition-opacity duration-200 hover:bg-emerald-800 group-hover/quick:opacity-100"
+                        onClick={() => setQuickViewOpen(false)}
+                      >
+                        View Details
                       </Link>
-                      {i < product.categories!.length - 1 ? ", " : ""}
-                    </span>
-                  ))
-                  : "Uncategorized"}
-              </div>
 
-              <div className="mt-4 flex items-center gap-3">
-                <span className="text-sm font-semibold text-slate-900">Share:</span>
-                <button type="button" onClick={() => openShare(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`)} className="text-[#1877F2] hover:scale-105 transition-transform">
-                  <Facebook className="h-4 w-4" />
-                </button>
-                <button type="button" onClick={() => openShare(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`)} className="text-[#0A66C2] hover:scale-105 transition-transform">
-                  <Linkedin className="h-4 w-4" />
-                </button>
-                <button type="button" onClick={() => openShare(`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(product.title)}`)} className="text-[#0088cc] hover:scale-105 transition-transform">
-                  <Send className="h-4 w-4" />
-                </button>
+                      {gallery.length > 1 ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={prevImage}
+                            className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 text-slate-800 shadow hover:bg-white"
+                            aria-label="Previous image"
+                          >
+                            <ChevronLeft className="h-5 w-5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={nextImage}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 text-slate-800 shadow hover:bg-white"
+                            aria-label="Next image"
+                          >
+                            <ChevronRight className="h-5 w-5" />
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
+                    <h3 className="text-3xl leading-[1.1] font-bold text-slate-900 sm:text-[42px]">{product.title}</h3>
+                    <p className="mt-3 text-3xl font-bold text-emerald-700 sm:text-4xl">{formatUsd(product.price)}</p>
+
+                    <p className="mt-4 line-clamp-5 text-slate-600 leading-7">
+                      {fullDescription}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Full description is available on <span className="font-semibold">Select / View Details</span>.
+                    </p>
+
+                    <div className="mt-5 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        className="h-11 w-11 rounded border border-slate-200 bg-white text-xl text-slate-700 hover:bg-slate-50"
+                        onClick={() => setQty((prev) => Math.max(1, prev - 1))}
+                      >
+                        -
+                      </button>
+                      <input
+                        className="h-11 w-14 rounded border border-slate-200 text-center text-base text-slate-900"
+                        value={qty}
+                        onChange={(e) => setQty(Math.max(1, Number(e.target.value || 1)))}
+                      />
+                      <button
+                        type="button"
+                        className="h-11 w-11 rounded border border-slate-200 bg-white text-xl text-slate-700 hover:bg-slate-50"
+                        onClick={() => setQty((prev) => Math.min(stockCount, prev + 1))}
+                      >
+                        +
+                      </button>
+                      <button
+                        type="button"
+                        className="h-11 min-w-[120px] flex-1 whitespace-nowrap rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60 sm:ml-2 sm:min-w-[140px] sm:flex-none sm:px-6"
+                        disabled={!canBuy}
+                        onClick={() => addBasket(qty)}
+                      >
+                        Add to Cart
+                      </button>
+                      <button
+                        type="button"
+                        className="h-11 min-w-[120px] flex-1 whitespace-nowrap rounded-md border border-slate-900 bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none sm:px-5"
+                        disabled={!canBuy}
+                        onClick={handleBuyNow}
+                      >
+                        Buy Now
+                      </button>
+                    </div>
+
+                    <div className="mt-5 border-t border-slate-200 pt-4 text-sm text-slate-700">
+                      <span className="font-semibold text-slate-900">Categories:</span>{" "}
+                      {product.categories?.length
+                        ? product.categories.map((cat, i) => (
+                          <span key={cat.id}>
+                            <Link href={`/category/${cat.slug}`} className="hover:underline" onClick={() => setQuickViewOpen(false)}>
+                              {cat.title}
+                            </Link>
+                            {i < product.categories!.length - 1 ? ", " : ""}
+                          </span>
+                        ))
+                        : "Uncategorized"}
+                    </div>
+
+                    <div className="mt-4 flex items-center gap-3">
+                      <span className="text-sm font-semibold text-slate-900">Share:</span>
+                      <button type="button" onClick={() => openShare(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`)} className="text-[#1877F2] hover:scale-105 transition-transform">
+                        <Facebook className="h-4 w-4" />
+                      </button>
+                      <button type="button" onClick={() => openShare(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`)} className="text-[#0A66C2] hover:scale-105 transition-transform">
+                        <Linkedin className="h-4 w-4" />
+                      </button>
+                      <button type="button" onClick={() => openShare(`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(product.title)}`)} className="text-[#0088cc] hover:scale-105 transition-transform">
+                        <Send className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+            </div>,
+            document.body
+          )
+        : null}
     </>
   )
 }

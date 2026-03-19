@@ -11,6 +11,7 @@
     "lint": "eslint",
     "rebuild:draft-products": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/rebuild-draft-products-from-uploads.ts",
     "recover:products": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/recover-products-from-uploads.ts",
+    "test:admin-media-smoke": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' tests/admin-media-smoke.ts",
     "test:currency": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' tests/currency-hardening.test.ts",
     "postinstall": "prisma generate"
   },

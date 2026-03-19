@@ -9,6 +9,7 @@ import { formatCurrency } from "@/lib/storefront/currency"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
 import { CategoryHoverProductCard } from "@/components/storefront/category-hover-product-card"
 import { fetchCategoryPathRows, getCategoryPathById, resolveCategoryByPath } from "@/lib/category-paths"
+import { getImageUrl } from "@/lib/storage/url"
 
 type SearchParams = { [key: string]: string | string[] | undefined }
 
@@ -139,6 +140,7 @@ export async function renderCategoryPage({
     return Array.isArray(val) ? (val[0] ?? "") : val
   }
 
+  const selectedTypes = getParam("type")
   const selectedColors = getParam("color")
   const selectedStyles = getParam("style")
   const selectedSizes = getParam("size")
@@ -302,39 +304,11 @@ export async function renderCategoryPage({
     categoryIds: categoryScopeIds,
   })
 
-  const colorCountWhere = {
+  const buildFacetWhere = (facet: "types" | "styles" | "sizes" | "ages" | "colors" | "materials") => ({
     isPublished: true,
     categories: { some: { id: { in: categoryScopeIds } } },
     OR: query ? [{ title: { contains: query } }, { slug: { contains: query } }] : undefined,
-    types: baseFilters.types.length ? { some: { slug: { in: baseFilters.types } } } : undefined,
-    styles: baseFilters.styles.length ? { some: { slug: { in: baseFilters.styles } } } : undefined,
-    sizes: baseFilters.sizes.length ? { some: { slug: { in: baseFilters.sizes } } } : undefined,
-    ages: baseFilters.ages.length ? { some: { slug: { in: baseFilters.ages } } } : undefined,
-    materials: baseFilters.materials.length ? { some: { slug: { in: baseFilters.materials } } } : undefined,
-    isStock: inStockOnly ? true : undefined,
-    price: hasPriceFilter ? { gte: priceMin, lte: priceMaxRaw } : undefined,
-  } as const
-
-  const colorCounters = await prisma.color.findMany({
-    select: {
-      id: true,
-      slug: true,
-      _count: {
-        select: {
-          products: {
-            where: colorCountWhere,
-          },
-        },
-      },
-    },
-  })
-  const colorCountMap = new Map(colorCounters.map((entry) => [entry.slug, entry._count.products]))
-
-  const buildFacetWhere = (facet: "styles" | "sizes" | "ages" | "colors" | "materials") => ({
-    isPublished: true,
-    categories: { some: { id: { in: categoryScopeIds } } },
-    OR: query ? [{ title: { contains: query } }, { slug: { contains: query } }] : undefined,
-    types: baseFilters.types.length ? { some: { slug: { in: baseFilters.types } } } : undefined,
+    types: facet === "types" || baseFilters.types.length === 0 ? undefined : { some: { slug: { in: baseFilters.types } } },
     styles: facet === "styles" || baseFilters.styles.length === 0 ? undefined : { some: { slug: { in: baseFilters.styles } } },
     sizes: facet === "sizes" || baseFilters.sizes.length === 0 ? undefined : { some: { slug: { in: baseFilters.sizes } } },
     ages: facet === "ages" || baseFilters.ages.length === 0 ? undefined : { some: { slug: { in: baseFilters.ages } } },
@@ -344,6 +318,37 @@ export async function renderCategoryPage({
     price: hasPriceFilter ? { gte: priceMin, lte: priceMaxRaw } : undefined,
     id: topRatedOnly && topRatedIds.length > 0 ? { in: topRatedIds } : undefined,
   })
+
+  const typeCounters = await prisma.type.findMany({
+    select: {
+      id: true,
+      slug: true,
+      _count: {
+        select: {
+          products: {
+            where: buildFacetWhere("types"),
+          },
+        },
+      },
+    },
+  })
+  const typeCountMap = new Map(typeCounters.map((entry) => [entry.slug, entry._count.products]))
+
+  const colorCounters = await prisma.color.findMany({
+    select: {
+      id: true,
+      slug: true,
+      _count: {
+        select: {
+          products: {
+            where: buildFacetWhere("colors"),
+          },
+        },
+      },
+    },
+  })
+  const colorCountMap = new Map(colorCounters.map((entry) => [entry.slug, entry._count.products]))
+  const normalizedSelectedColors = new Set(selectedColors.map((slug) => slug.trim().toLowerCase()).filter(Boolean))
 
   const materialDelegate = getMaterialDelegate()
   const [styleCounters, sizeCounters, ageCounters, materialCounters] = await Promise.all([
@@ -408,11 +413,47 @@ export async function renderCategoryPage({
   const sizeCountMap = new Map(sizeCounters.map((entry) => [entry.slug, entry._count.products]))
   const ageCountMap = new Map(ageCounters.map((entry) => [entry.slug, entry._count.products]))
   const materialCountMap = new Map(materialCounters.map((entry) => [entry.slug, entry._count.products]))
+  const normalizedSelectedTypes = new Set(selectedTypes.map((slug) => slug.trim().toLowerCase()).filter(Boolean))
+  const normalizedSelectedStyles = new Set(selectedStyles.map((slug) => slug.trim().toLowerCase()).filter(Boolean))
+  const normalizedSelectedSizes = new Set(selectedSizes.map((slug) => slug.trim().toLowerCase()).filter(Boolean))
+  const normalizedSelectedAges = new Set(selectedAges.map((slug) => slug.trim().toLowerCase()).filter(Boolean))
+  const normalizedSelectedMaterials = new Set(selectedMaterials.map((slug) => slug.trim().toLowerCase()).filter(Boolean))
+  const visibleTypes = options.types.filter((type) => {
+    const count = typeCountMap.get(type.slug) || 0
+    return count > 0
+  })
+  const visibleColors = options.colors.filter((color) => {
+    const count = colorCountMap.get(color.slug) || 0
+    return count > 0
+  })
+  const visibleStyles = options.styles.filter((style) => {
+    const count = styleCountMap.get(style.slug) || 0
+    return count > 0
+  })
+  const visibleSizes = options.sizes.filter((size) => {
+    const count = sizeCountMap.get(size.slug) || 0
+    return count > 0
+  })
+  const visibleAges = options.ages.filter((age) => {
+    const count = ageCountMap.get(age.slug) || 0
+    return count > 0
+  })
+  const visibleMaterials = options.materials.filter((material) => {
+    const count = materialCountMap.get(material.slug) || 0
+    return count > 0
+  })
+  const hasTypeFacet = visibleTypes.length > 0
+  const hasColorFacet = visibleColors.length > 0
+  const hasStyleFacet = visibleStyles.length > 0
+  const hasSizeFacet = visibleSizes.length > 0
+  const hasAgeFacet = visibleAges.length > 0
+  const hasMaterialFacet = visibleMaterials.length > 0
 
   const childCounts = await Promise.all(
     category.children.map(async (child) => ({
       ...child,
       path: getCategoryPathById(rows, child.id),
+      imageSrc: child.image ? getImageUrl(child.image) : "/placeholder.jpg",
       productCount: await prisma.product.count({
         where: {
           isPublished: true,
@@ -462,6 +503,7 @@ export async function renderCategoryPage({
   const categoryMetaDescription = buildCategoryMetaDescription(category.title, category.description)
   const categoryCanonicalUrl = `${getSiteUrl()}${categoryPath}`
   const facetNameBySlug = {
+    type: new Map(options.types.map((item) => [item.slug, item.name])),
     color: new Map(options.colors.map((item) => [item.slug, item.name])),
     style: new Map(options.styles.map((item) => [item.slug, item.name])),
     size: new Map(options.sizes.map((item) => [item.slug, item.name])),
@@ -469,6 +511,15 @@ export async function renderCategoryPage({
     material: new Map(options.materials.map((item) => [item.slug, item.name])),
   }
   const activeFilterChips = [
+    ...selectedTypes.map((slug) => ({
+      key: `type-${slug}`,
+      label: `Type: ${facetNameBySlug.type.get(slug) || slug}`,
+      href: `${categoryPath}${buildQuery((p) => {
+        const next = p.getAll("type").filter((item) => item !== slug)
+        p.delete("type")
+        next.forEach((item) => p.append("type", item))
+      })}`,
+    })),
     ...selectedColors.map((slug) => ({
       key: `color-${slug}`,
       label: `Color: ${facetNameBySlug.color.get(slug) || slug}`,
@@ -589,7 +640,9 @@ export async function renderCategoryPage({
             <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {childCounts.map((child) => (
                 <Link key={child.id} href={child.path} className="flex items-center gap-3 rounded-xl border border-white/25 bg-white/10 px-3 py-3 backdrop-blur-sm hover:bg-white/20">
-                  <div className="h-11 w-11 overflow-hidden rounded-md bg-white/10 border border-white/30 shrink-0">{child.image ? <img src={child.image} alt={`${child.title} collection preview`} loading="lazy" decoding="async" className="h-full w-full object-cover" /> : null}</div>
+                  <div className="h-11 w-11 overflow-hidden rounded-md bg-white/10 border border-white/30 shrink-0">
+                    <img src={child.imageSrc} alt={`${child.title} collection preview`} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                  </div>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-white">{child.title}</p>
                     <p className="text-xs text-white/80">{child.productCount} products</p>
@@ -605,11 +658,42 @@ export async function renderCategoryPage({
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           <aside className="lg:col-span-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-6">
+              {hasTypeFacet ? (
               <div>
+                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Type</h3>
+                <div className="mt-4 space-y-1.5">
+                  {visibleTypes.map((type) => {
+                    const active = normalizedSelectedTypes.has(type.slug.trim().toLowerCase())
+                    const count = typeCountMap.get(type.slug) || 0
+                    return (
+                      <Link
+                        key={type.id}
+                        href={`${categoryPath}${buildQuery((p) => {
+                          const existing = p.getAll("type")
+                          p.delete("type")
+                          if (existing.includes(type.slug)) existing.filter((item) => item !== type.slug).forEach((item) => p.append("type", item))
+                          else {
+                            existing.forEach((item) => p.append("type", item))
+                            p.append("type", type.slug)
+                          }
+                        })}`}
+                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
+                      >
+                        <span>{type.name}</span>
+                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+              ) : null}
+
+              {hasColorFacet ? (
+              <div className={hasTypeFacet ? "border-t border-slate-200 pt-5" : ""}>
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Color</h3>
                 <div className="mt-4 space-y-1.5">
-                  {options.colors.map((color) => {
-                    const active = selectedColors.includes(color.slug)
+                  {visibleColors.map((color) => {
+                    const active = normalizedSelectedColors.has(color.slug.trim().toLowerCase())
                     const count = colorCountMap.get(color.slug) || 0
                     return (
                       <Link
@@ -632,12 +716,14 @@ export async function renderCategoryPage({
                   })}
                 </div>
               </div>
+              ) : null}
 
-              <div className="border-t border-slate-200 pt-5">
+              {hasStyleFacet ? (
+              <div className={hasTypeFacet || hasColorFacet ? "border-t border-slate-200 pt-5" : ""}>
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Style</h3>
                 <div className="mt-4 space-y-1.5">
-                  {options.styles.map((style) => {
-                    const active = selectedStyles.includes(style.slug)
+                  {visibleStyles.map((style) => {
+                    const active = normalizedSelectedStyles.has(style.slug.trim().toLowerCase())
                     const count = styleCountMap.get(style.slug) || 0
                     return (
                       <Link
@@ -660,12 +746,14 @@ export async function renderCategoryPage({
                   })}
                 </div>
               </div>
+              ) : null}
 
-              <div className="border-t border-slate-200 pt-5">
+              {hasSizeFacet ? (
+              <div className={hasTypeFacet || hasColorFacet || hasStyleFacet ? "border-t border-slate-200 pt-5" : ""}>
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Size</h3>
                 <div className="mt-4 space-y-1.5">
-                  {options.sizes.map((size) => {
-                    const active = selectedSizes.includes(size.slug)
+                  {visibleSizes.map((size) => {
+                    const active = normalizedSelectedSizes.has(size.slug.trim().toLowerCase())
                     const count = sizeCountMap.get(size.slug) || 0
                     return (
                       <Link
@@ -688,12 +776,14 @@ export async function renderCategoryPage({
                   })}
                 </div>
               </div>
+              ) : null}
 
-              <div className="border-t border-slate-200 pt-5">
+              {hasAgeFacet ? (
+              <div className={hasTypeFacet || hasColorFacet || hasStyleFacet || hasSizeFacet ? "border-t border-slate-200 pt-5" : ""}>
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Age</h3>
                 <div className="mt-4 space-y-1.5">
-                  {options.ages.map((age) => {
-                    const active = selectedAges.includes(age.slug)
+                  {visibleAges.map((age) => {
+                    const active = normalizedSelectedAges.has(age.slug.trim().toLowerCase())
                     const count = ageCountMap.get(age.slug) || 0
                     return (
                       <Link
@@ -716,12 +806,14 @@ export async function renderCategoryPage({
                   })}
                 </div>
               </div>
+              ) : null}
 
-              <div className="border-t border-slate-200 pt-5">
+              {hasMaterialFacet ? (
+              <div className={hasTypeFacet || hasColorFacet || hasStyleFacet || hasSizeFacet || hasAgeFacet ? "border-t border-slate-200 pt-5" : ""}>
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Material</h3>
                 <div className="mt-4 space-y-1.5">
-                  {options.materials.map((material) => {
-                    const active = selectedMaterials.includes(material.slug)
+                  {visibleMaterials.map((material) => {
+                    const active = normalizedSelectedMaterials.has(material.slug.trim().toLowerCase())
                     const count = materialCountMap.get(material.slug) || 0
                     return (
                       <Link
@@ -744,6 +836,7 @@ export async function renderCategoryPage({
                   })}
                 </div>
               </div>
+              ) : null}
 
               <div className="border-t border-slate-200 pt-5">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Price</h3>
@@ -763,7 +856,7 @@ export async function renderCategoryPage({
                 <div className="mt-4 space-y-3">
                   {sidebarProducts.length === 0 ? <p className="text-sm text-slate-500">No products found in this category.</p> : sidebarProducts.map((product) => {
                     const parsedImages = parseProductImageRecords(product.images)
-                    const image = getProductImageUrl(parsedImages[0], "thumb") || "/placeholder.jpg"
+                    const image = getProductImageUrl(parsedImages[0], "thumb") || "/placeholder.svg"
                     return (
                       <Link key={product.id} href={`/product/${product.slug}`} className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-slate-50">
                         <img src={image} alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt, categories: product.categories })} loading="lazy" decoding="async" className="h-12 w-12 rounded-md border border-slate-200 object-cover" />
@@ -872,7 +965,7 @@ export async function renderCategoryPage({
                   {products.map((product) => {
                     const parsedImages = parseProductImageRecords(product.images)
                     if (viewMode === "list") {
-                      const image = getProductImageUrl(parsedImages[0], "large") || "/placeholder.jpg"
+                      const image = getProductImageUrl(parsedImages[0], "large") || "/placeholder.svg"
                       return (
                         <Link key={product.id} href={`/product/${product.slug}`} className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 hover:bg-slate-50 sm:flex-row">
                           <div className="h-40 w-full overflow-hidden rounded-md border border-slate-200 sm:h-36 sm:w-36 sm:shrink-0"><img src={image} alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt, categories: product.categories })} loading="lazy" decoding="async" className="h-full w-full object-cover transition-transform duration-300 hover:scale-105" /></div>
@@ -880,7 +973,7 @@ export async function renderCategoryPage({
                             <p className="truncate text-2xl font-serif font-bold text-slate-900">{product.title}</p>
                             <p className="mt-1 text-sm text-slate-500">{product.categories?.map((c) => c.title).slice(0, 2).join(", ") || "Rug House Collection"}</p>
                             <div className="mt-3 flex items-center gap-2"><span className="text-2xl font-bold text-slate-900">{formatCurrency(product.price, currencySettings)}</span>{product.compareAtPrice && product.compareAtPrice > product.price ? <span className="text-base text-slate-400 line-through">{formatCurrency(product.compareAtPrice, currencySettings)}</span> : null}</div>
-                            <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">{product.description || "Premium hand-crafted rug with authentic weaving details and durable natural fibers."}</p>
+                            <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">{stripHtml(product.shortDescription) || stripHtml(product.description) || "Premium hand-crafted rug with authentic weaving details and durable natural fibers."}</p>
                           </div>
                         </Link>
                       )

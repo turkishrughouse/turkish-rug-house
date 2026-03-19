@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/db"
 import { hashPassword } from "@/lib/password"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 
 const roleSchema = z.enum(["SUPER_USER", "ADMIN", "EDITOR"])
 

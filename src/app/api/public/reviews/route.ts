@@ -4,7 +4,7 @@ import { messageEvents } from "@/lib/message-events"
 import { Prisma } from "@prisma/client"
 import { randomUUID } from "crypto"
 import { isSenderBlocked } from "@/lib/message-blocklist"
-import { getSessionUser } from "@/lib/auth"
+import { getSessionUser } from "@/lib/auth-server"
 
 const PURCHASE_REQUIRED_MESSAGE = "You should buy a product to write a review"
 

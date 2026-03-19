@@ -51,7 +51,11 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
   const showInput = Number(getSingle(resolved, "show") || 24)
   const showValue = [8, 16, 24, 36].includes(showInput) ? showInput : 24
   const inStockOnly = resolved["inStock"] === "true"
+  const selectedTypes = getParam(resolved, "type")
+  const selectedStyles = getParam(resolved, "style")
   const selectedColors = getParam(resolved, "color")
+  const selectedSizes = getParam(resolved, "size")
+  const selectedAges = getParam(resolved, "age")
   const selectedMaterials = getParam(resolved, "material")
   const priceMin = Number(getSingle(resolved, "priceMin") || 0)
   const priceMaxRaw = Number(getSingle(resolved, "priceMax") || 0)
@@ -69,11 +73,38 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
     priceMax: hasPriceFilter ? priceMaxRaw : undefined,
   }
 
+  const buildFacetWhere = (facet: "types" | "styles" | "sizes" | "ages" | "colors" | "materials") => ({
+    isPublished: true,
+    OR: query ? [{ title: { contains: query } }, { slug: { contains: query } }] : undefined,
+    types: facet === "types" || filters.types.length === 0 ? undefined : { some: { slug: { in: filters.types } } },
+    styles: facet === "styles" || filters.styles.length === 0 ? undefined : { some: { slug: { in: filters.styles } } },
+    colors: facet === "colors" || filters.colors.length === 0 ? undefined : { some: { slug: { in: filters.colors } } },
+    sizes: facet === "sizes" || filters.sizes.length === 0 ? undefined : { some: { slug: { in: filters.sizes } } },
+    ages: facet === "ages" || filters.ages.length === 0 ? undefined : { some: { slug: { in: filters.ages } } },
+    materials: facet === "materials" || filters.materials.length === 0 ? undefined : { some: { slug: { in: filters.materials } } },
+    isStock: inStockOnly ? true : undefined,
+    price: hasPriceFilter ? { gte: priceMin, lte: priceMaxRaw } : undefined,
+  })
+
   const materialDelegate = getMaterialDelegate()
-  const [{ products }, options, siteSettings, colorCounters, materialCounters] = await Promise.all([
+  const [{ products }, options, siteSettings, typeCounters, styleCounters, colorCounters, sizeCounters, ageCounters, materialCounters] = await Promise.all([
     getProducts(1, showValue, query, "published", sort, undefined, filters),
     getProductOptions(),
     getSiteSettings(),
+    prisma.type.findMany({
+      select: {
+        id: true,
+        slug: true,
+        _count: { select: { products: { where: buildFacetWhere("types") } } },
+      },
+    }),
+    prisma.style.findMany({
+      select: {
+        id: true,
+        slug: true,
+        _count: { select: { products: { where: buildFacetWhere("styles") } } },
+      },
+    }),
     prisma.color.findMany({
       select: {
         id: true,
@@ -81,20 +112,24 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
         _count: {
           select: {
             products: {
-              where: {
-                isPublished: true,
-                OR: query ? [{ title: { contains: query } }, { slug: { contains: query } }] : undefined,
-                types: filters.types.length ? { some: { slug: { in: filters.types } } } : undefined,
-                styles: filters.styles.length ? { some: { slug: { in: filters.styles } } } : undefined,
-                sizes: filters.sizes.length ? { some: { slug: { in: filters.sizes } } } : undefined,
-                ages: filters.ages.length ? { some: { slug: { in: filters.ages } } } : undefined,
-                materials: filters.materials.length ? { some: { slug: { in: filters.materials } } } : undefined,
-                isStock: inStockOnly ? true : undefined,
-                price: hasPriceFilter ? { gte: priceMin, lte: priceMaxRaw } : undefined,
-              },
+              where: buildFacetWhere("colors"),
             },
           },
         },
+      },
+    }),
+    prisma.size.findMany({
+      select: {
+        id: true,
+        slug: true,
+        _count: { select: { products: { where: buildFacetWhere("sizes") } } },
+      },
+    }),
+    prisma.age.findMany({
+      select: {
+        id: true,
+        slug: true,
+        _count: { select: { products: { where: buildFacetWhere("ages") } } },
       },
     }),
     materialDelegate?.findMany
@@ -106,17 +141,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
             _count: {
               select: {
                 products: {
-                  where: {
-                    isPublished: true,
-                    OR: query ? [{ title: { contains: query } }, { slug: { contains: query } }] : undefined,
-                    types: filters.types.length ? { some: { slug: { in: filters.types } } } : undefined,
-                    styles: filters.styles.length ? { some: { slug: { in: filters.styles } } } : undefined,
-                    colors: filters.colors.length ? { some: { slug: { in: filters.colors } } } : undefined,
-                    sizes: filters.sizes.length ? { some: { slug: { in: filters.sizes } } } : undefined,
-                    ages: filters.ages.length ? { some: { slug: { in: filters.ages } } } : undefined,
-                    isStock: inStockOnly ? true : undefined,
-                    price: hasPriceFilter ? { gte: priceMin, lte: priceMaxRaw } : undefined,
-                  },
+                  where: buildFacetWhere("materials"),
                 },
               },
             },
@@ -129,7 +154,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
     ? products.filter((product) => (product.isStock ?? true) && (product.stockCount ?? 0) > 0)
     : products
 
-  const heroImage = getProductImageUrl(parseProductImageRecords(visibleProducts[0]?.images || "")[0], "large") || "/placeholder.jpg"
+  const heroImage = getProductImageUrl(parseProductImageRecords(visibleProducts[0]?.images || "")[0], "large") || "/placeholder.svg"
 
   const categoryMap = new Map<string, { title: string; slug: string; count: number }>()
   visibleProducts.forEach((product) => {
@@ -144,8 +169,36 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
   })
   const heroCategories = Array.from(categoryMap.values()).slice(0, 6)
 
+  const typeCountMap = new Map(typeCounters.map((entry) => [entry.slug, entry._count.products]))
+  const styleCountMap = new Map(styleCounters.map((entry) => [entry.slug, entry._count.products]))
   const colorCountMap = new Map(colorCounters.map((entry) => [entry.slug, entry._count.products]))
+  const sizeCountMap = new Map(sizeCounters.map((entry) => [entry.slug, entry._count.products]))
+  const ageCountMap = new Map(ageCounters.map((entry) => [entry.slug, entry._count.products]))
   const materialCountMap = new Map(materialCounters.map((entry) => [entry.slug, entry._count.products]))
+  const normalizedSelectedTypes = new Set(selectedTypes.map((slug) => slug.trim().toLowerCase()).filter(Boolean))
+  const normalizedSelectedStyles = new Set(selectedStyles.map((slug) => slug.trim().toLowerCase()).filter(Boolean))
+  const normalizedSelectedColors = new Set(selectedColors.map((slug) => slug.trim().toLowerCase()).filter(Boolean))
+  const normalizedSelectedSizes = new Set(selectedSizes.map((slug) => slug.trim().toLowerCase()).filter(Boolean))
+  const normalizedSelectedAges = new Set(selectedAges.map((slug) => slug.trim().toLowerCase()).filter(Boolean))
+  const normalizedSelectedMaterials = new Set(selectedMaterials.map((slug) => slug.trim().toLowerCase()).filter(Boolean))
+  const visibleTypes = options.types.filter((type) => (typeCountMap.get(type.slug) || 0) > 0)
+  const visibleStyles = options.styles.filter((style) => (styleCountMap.get(style.slug) || 0) > 0)
+  const visibleColors = options.colors.filter((color) => {
+    const count = colorCountMap.get(color.slug) || 0
+    return count > 0
+  })
+  const visibleSizes = options.sizes.filter((size) => (sizeCountMap.get(size.slug) || 0) > 0)
+  const visibleAges = options.ages.filter((age) => (ageCountMap.get(age.slug) || 0) > 0)
+  const visibleMaterials = options.materials.filter((material) => {
+    const count = materialCountMap.get(material.slug) || 0
+    return count > 0
+  })
+  const hasTypeFacet = visibleTypes.length > 0
+  const hasStyleFacet = visibleStyles.length > 0
+  const hasColorFacet = visibleColors.length > 0
+  const hasSizeFacet = visibleSizes.length > 0
+  const hasAgeFacet = visibleAges.length > 0
+  const hasMaterialFacet = visibleMaterials.length > 0
 
   const maxShopPrice = visibleProducts.reduce((max, product) => Math.max(max, Number(product.price || 0)), 0)
   const pricePresets = [
@@ -262,11 +315,74 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                 </div>
               </div>
 
+              {hasTypeFacet ? (
+              <div className="border-t border-slate-200 pt-5">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Type</h3>
+                <div className="mt-4 space-y-1.5">
+                  {visibleTypes.map((type) => {
+                    const active = normalizedSelectedTypes.has(type.slug.trim().toLowerCase())
+                    const count = typeCountMap.get(type.slug) || 0
+                    return (
+                      <Link
+                        key={type.id}
+                        href={`/shop${buildQuery((p) => {
+                          const existing = p.getAll("type")
+                          p.delete("type")
+                          if (existing.includes(type.slug)) {
+                            existing.filter((item) => item !== type.slug).forEach((item) => p.append("type", item))
+                          } else {
+                            existing.forEach((item) => p.append("type", item))
+                            p.append("type", type.slug)
+                          }
+                        })}`}
+                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
+                      >
+                        <span>{type.name}</span>
+                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+              ) : null}
+
+              {hasStyleFacet ? (
+              <div className="border-t border-slate-200 pt-5">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Style</h3>
+                <div className="mt-4 space-y-1.5">
+                  {visibleStyles.map((style) => {
+                    const active = normalizedSelectedStyles.has(style.slug.trim().toLowerCase())
+                    const count = styleCountMap.get(style.slug) || 0
+                    return (
+                      <Link
+                        key={style.id}
+                        href={`/shop${buildQuery((p) => {
+                          const existing = p.getAll("style")
+                          p.delete("style")
+                          if (existing.includes(style.slug)) {
+                            existing.filter((item) => item !== style.slug).forEach((item) => p.append("style", item))
+                          } else {
+                            existing.forEach((item) => p.append("style", item))
+                            p.append("style", style.slug)
+                          }
+                        })}`}
+                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
+                      >
+                        <span>{style.name}</span>
+                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+              ) : null}
+
+              {hasColorFacet ? (
               <div className="border-t border-slate-200 pt-5">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Color</h3>
                 <div className="mt-4 space-y-1.5">
-                  {options.colors.map((color) => {
-                    const active = selectedColors.includes(color.slug)
+                  {visibleColors.map((color) => {
+                    const active = normalizedSelectedColors.has(color.slug.trim().toLowerCase())
                     const count = colorCountMap.get(color.slug) || 0
                     return (
                       <Link
@@ -293,6 +409,69 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                   })}
                 </div>
               </div>
+              ) : null}
+
+              {hasSizeFacet ? (
+              <div className="border-t border-slate-200 pt-5">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Size</h3>
+                <div className="mt-4 space-y-1.5">
+                  {visibleSizes.map((size) => {
+                    const active = normalizedSelectedSizes.has(size.slug.trim().toLowerCase())
+                    const count = sizeCountMap.get(size.slug) || 0
+                    return (
+                      <Link
+                        key={size.id}
+                        href={`/shop${buildQuery((p) => {
+                          const existing = p.getAll("size")
+                          p.delete("size")
+                          if (existing.includes(size.slug)) {
+                            existing.filter((item) => item !== size.slug).forEach((item) => p.append("size", item))
+                          } else {
+                            existing.forEach((item) => p.append("size", item))
+                            p.append("size", size.slug)
+                          }
+                        })}`}
+                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
+                      >
+                        <span>{size.name}</span>
+                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+              ) : null}
+
+              {hasAgeFacet ? (
+              <div className="border-t border-slate-200 pt-5">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Age</h3>
+                <div className="mt-4 space-y-1.5">
+                  {visibleAges.map((age) => {
+                    const active = normalizedSelectedAges.has(age.slug.trim().toLowerCase())
+                    const count = ageCountMap.get(age.slug) || 0
+                    return (
+                      <Link
+                        key={age.id}
+                        href={`/shop${buildQuery((p) => {
+                          const existing = p.getAll("age")
+                          p.delete("age")
+                          if (existing.includes(age.slug)) {
+                            existing.filter((item) => item !== age.slug).forEach((item) => p.append("age", item))
+                          } else {
+                            existing.forEach((item) => p.append("age", item))
+                            p.append("age", age.slug)
+                          }
+                        })}`}
+                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
+                      >
+                        <span>{age.name}</span>
+                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+              ) : null}
 
               <div className="border-t border-slate-200 pt-5">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Price</h3>
@@ -316,11 +495,12 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                 </div>
               </div>
 
+              {hasMaterialFacet ? (
               <div className="border-t border-slate-200 pt-5">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Material</h3>
                 <div className="mt-4 space-y-1.5">
-                  {options.materials.map((material) => {
-                    const active = selectedMaterials.includes(material.slug)
+                  {visibleMaterials.map((material) => {
+                    const active = normalizedSelectedMaterials.has(material.slug.trim().toLowerCase())
                     const count = materialCountMap.get(material.slug) || 0
                     return (
                       <Link
@@ -344,6 +524,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                   })}
                 </div>
               </div>
+              ) : null}
 
               <div className="border-t border-slate-200 pt-5">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Category Products</h3>
@@ -352,7 +533,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                     <p className="text-sm text-slate-500">No products found.</p>
                   ) : sidebarProducts.map((product) => {
                     const parsedImages = parseProductImageRecords(product.images)
-                    const image = getProductImageUrl(parsedImages[0], "thumb") || "/placeholder.jpg"
+                    const image = getProductImageUrl(parsedImages[0], "thumb") || "/placeholder.svg"
                     return (
                       <Link key={product.id} href={`/product/${product.slug}`} className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-slate-50">
                         <ResponsiveImage

@@ -69,7 +69,7 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
             }
             setInfoLoading(true)
             try {
-                const menuRes = await fetch("/api/public/menus/location/HEADER_INFORMATION", { cache: "no-store" })
+                const menuRes = await fetch("/api/public/menus/HEADER_INFORMATION", { cache: "no-store" })
                 if (menuRes.ok) {
                     const menuData = await menuRes.json()
                     setInfoItems(menuData && menuData.items ? (menuData.items as MenuNode[]) : [])
@@ -78,7 +78,6 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
                 }
                 infoLoadedRef.current = true
             } catch (err) {
-                console.error("[SharedMegaPanel] Failed to fetch Information menu", err)
                 setInfoItems([])
             } finally {
                 setInfoLoading(false)

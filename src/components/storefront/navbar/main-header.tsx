@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 import { ChevronDown, ChevronRight, Heart, House, Menu, Search, Shuffle, ShoppingBag, UserCircle2, X } from "lucide-react"
-import { getCartSummary, getCartUpdateEventName, readCart } from "@/lib/storefront/cart"
+import { getCartSummary, getCartUpdateEventName, readCart, removeCartItem } from "@/lib/storefront/cart"
 import { toast } from "sonner"
 import { ResponsiveImage } from "@/components/ui/responsive-image"
 
@@ -150,19 +150,19 @@ export function MainHeader() {
         const loadMobileMenus = async () => {
             try {
                 const [categoriesRes, pagesRes] = await Promise.all([
-                    fetch("/api/public/menus/PRIMARY_HEADER", { cache: "force-cache" }),
-                    fetch("/api/public/menus/HEADER_INFORMATION", { cache: "force-cache" }),
+                    fetch("/api/public/menus/PRIMARY_HEADER", { cache: "no-store" }),
+                    fetch("/api/public/menus/HEADER_INFORMATION", { cache: "no-store" }),
                 ])
 
                 const categoriesJson = categoriesRes.ok ? await categoriesRes.json() : null
                 let pagesJson = pagesRes.ok ? await pagesRes.json() : null
                 if (!pagesJson?.items || pagesJson.items.length === 0) {
-                    const footerPagesRes = await fetch("/api/public/menus/INFORMATION_FOOTER", { cache: "force-cache" })
+                    const footerPagesRes = await fetch("/api/public/menus/INFORMATION_FOOTER", { cache: "no-store" })
                     pagesJson = footerPagesRes.ok ? await footerPagesRes.json() : null
                 }
                 let nextCategories = mapMenuTree(categoriesJson?.items)
                 if (nextCategories.length === 0) {
-                    const categoriesTreeRes = await fetch("/api/categories?tree=true", { cache: "force-cache" })
+                    const categoriesTreeRes = await fetch("/api/categories?tree=true", { cache: "no-store" })
                     const categoriesTreeJson = categoriesTreeRes.ok ? await categoriesTreeRes.json() : null
                     nextCategories = mapCategoryTreeToMenu(categoriesTreeJson)
                 }
@@ -195,8 +195,34 @@ export function MainHeader() {
     }
 
     const closeCartPreview = () => {
-        if (cartPreviewTimeoutRef.current) clearTimeout(cartPreviewTimeoutRef.current)
+        if (cartPreviewTimeoutRef.current) {
+            clearTimeout(cartPreviewTimeoutRef.current)
+            cartPreviewTimeoutRef.current = null
+        }
         cartPreviewTimeoutRef.current = setTimeout(() => setCartPreviewOpen(false), 400)
+    }
+
+    const cancelCartPreviewClose = () => {
+        if (cartPreviewTimeoutRef.current) {
+            clearTimeout(cartPreviewTimeoutRef.current)
+            cartPreviewTimeoutRef.current = null
+        }
+    }
+
+    const handleMiniCartRemove = (event: React.MouseEvent<HTMLButtonElement>, productId: string) => {
+        event.preventDefault()
+        event.stopPropagation()
+        cancelCartPreviewClose()
+        removeCartItem(productId)
+        refreshCart()
+    }
+
+    const handleMiniCartNavigate = (event: React.MouseEvent<HTMLAnchorElement>, target: "/basket" | "/checkout") => {
+        event.preventDefault()
+        event.stopPropagation()
+        cancelCartPreviewClose()
+        setCartPreviewOpen(false)
+        router.push(target)
     }
 
     useEffect(() => {
@@ -350,8 +376,8 @@ export function MainHeader() {
     }
 
     return (
-        <div className="bg-white border-b border-slate-100 shadow-sm relative z-40">
-            <div className="container mx-auto px-3 sm:px-4 lg:px-6">
+        <div className="bg-white border-b border-slate-100 shadow-[0_1px_8px_rgba(15,23,42,0.05)] relative z-40">
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8">
                 {maintenanceMode && (
                     <div className="pt-3">
                         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
@@ -396,102 +422,120 @@ export function MainHeader() {
 
                 <div className="hidden md:flex h-20 items-center justify-between">
                     <Link href="/" className="flex flex-col shrink-0 group">
-                        <span className="font-serif text-3xl font-bold text-slate-900 tracking-tight leading-none group-hover:text-teal-900 transition-colors">
+                        <span className="font-serif text-[1.7rem] font-bold text-slate-900 tracking-tight leading-none group-hover:text-teal-900 transition-colors">
                             {brandPrimary}
                         </span>
-                        <span className="font-serif text-3xl font-bold text-teal-700 tracking-tight leading-none -mt-1 group-hover:text-teal-800 transition-colors">
+                        <span className="font-serif text-[1.7rem] font-bold text-[#0f766e] tracking-tight leading-none -mt-1 group-hover:text-teal-700 transition-colors">
                             {brandSecondary}
                         </span>
                     </Link>
 
-                    <div className="relative flex items-center gap-4">
-                        <Link href="/wishlist" className="relative inline-flex h-9 items-center text-slate-700 hover:text-slate-900">
-                            <Heart className="h-5 w-5" />
-                            <span className="absolute -right-2 -top-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-lime-500 px-1 text-[10px] font-bold text-white">
-                                {wishlistCount}
-                            </span>
+                    <div className="relative flex items-center gap-3">
+                        <Link href="/wishlist" className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900">
+                            <Heart className="h-5 w-5" strokeWidth={1.75} />
+                            {wishlistCount > 0 && (
+                                <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[#0f766e] px-1 text-[10px] font-bold text-white">
+                                    {wishlistCount}
+                                </span>
+                            )}
                         </Link>
-                        <Link href="/compare" className="relative inline-flex h-9 items-center text-slate-700 hover:text-slate-900">
-                            <Shuffle className="h-5 w-5" />
-                            <span className="absolute -right-2 -top-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-lime-500 px-1 text-[10px] font-bold text-white">
-                                {compareCount}
-                            </span>
+                        <Link href="/compare" className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900">
+                            <Shuffle className="h-5 w-5" strokeWidth={1.75} />
+                            {compareCount > 0 && (
+                                <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[#0f766e] px-1 text-[10px] font-bold text-white">
+                                    {compareCount}
+                                </span>
+                            )}
                         </Link>
 
                         <div className="relative" onMouseEnter={openCartPreview} onMouseLeave={closeCartPreview}>
                             <button
                                 type="button"
                                 onClick={() => router.push("/basket")}
-                                className="group flex h-9 items-center gap-2 rounded-md px-1 hover:bg-slate-50 transition-colors"
+                                className="group flex h-9 items-center gap-2 rounded-lg px-2 hover:bg-slate-50 transition-colors"
                             >
                                 <div className="relative text-slate-500">
-                                    <ShoppingBag className="h-6 w-6" strokeWidth={1.8} />
-                                    <span className="absolute -right-2 -top-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-lime-500 px-1 text-[10px] font-bold text-white">
+                                    <ShoppingBag className="h-5 w-5" strokeWidth={1.75} />
+                                    <span className="absolute -right-2 -top-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[#0f766e] px-1 text-[10px] font-bold text-white">
                                         {cartCount}
                                     </span>
                                 </div>
                                 <div className="leading-none">
-                                    <p className="text-base font-semibold text-slate-800">{formatCurrency(cartTotal, getCurrencySettings())}</p>
+                                    <p className="text-sm font-semibold text-slate-800">{formatCurrency(cartTotal, getCurrencySettings())}</p>
                                 </div>
                             </button>
 
                             {cartPreviewOpen ? (
-                                <div className="absolute right-0 top-[calc(100%+8px)] z-[120] w-[min(92vw,360px)] rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
-                                    <div className="mb-2 flex items-center justify-between">
+                                <div
+                                    className="absolute right-0 top-[calc(100%+8px)] z-[120] w-[min(92vw,360px)] overflow-hidden rounded-xl border border-slate-200/80 bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+                                    onMouseEnter={cancelCartPreviewClose}
+                                    onMouseLeave={closeCartPreview}
+                                >
+                                    <div className="mb-3 flex items-center justify-between">
                                         <p className="text-sm font-semibold text-slate-900">Basket</p>
                                         <span className="text-xs text-slate-500">{cartCount} item(s)</span>
                                     </div>
                                     {cartItems.length === 0 ? (
-                                        <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-5 text-center text-sm text-slate-500">
+                                        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-5 text-center text-sm text-slate-500">
                                             Your basket is empty.
                                         </div>
                                     ) : (
                                         <div className="max-h-[260px] space-y-2 overflow-auto pr-1">
                                             {cartItems.slice(0, 4).map((item) => (
-                                                <div key={item.productId} className="flex items-center gap-2 rounded-md border border-slate-200 p-2">
-                                                    <Link href={`/product/${item.slug}`} className="h-12 w-12 shrink-0 overflow-hidden rounded border border-slate-200">
+                                                <div key={item.productId} className="relative flex items-start gap-3 rounded-xl border border-slate-100 p-3 pr-11 transition-colors hover:border-slate-200 hover:bg-slate-50/70">
+                                                    <button
+                                                        type="button"
+                                                        onClick={(event) => handleMiniCartRemove(event, item.productId)}
+                                                        className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]/25 focus-visible:ring-offset-1"
+                                                        aria-label={`Remove ${item.title} from basket`}
+                                                    >
+                                                        <X className="h-3.5 w-3.5" strokeWidth={2} />
+                                                    </button>
+                                                    <Link href={`/product/${item.slug}`} className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-slate-100 bg-slate-50">
                                                         <ResponsiveImage
                                                           src={item.image || "/placeholder.jpg"}
                                                           alt={item.title}
-                                                          width={48}
-                                                          height={48}
-                                                          sizes="48px"
+                                                          width={56}
+                                                          height={56}
+                                                          sizes="56px"
                                                           className="h-full w-full object-cover"
                                                         />
                                                     </Link>
-                                                    <div className="min-w-0 flex-1">
-                                                        <p className="truncate text-xs font-medium text-slate-900">{item.title}</p>
-                                                        <p className="text-xs text-slate-500">
+                                                    <div className="min-w-0 flex-1 pr-2">
+                                                        <p className="truncate text-sm font-medium text-slate-900">{item.title}</p>
+                                                        <p className="mt-1 text-xs text-slate-500">
                                                             {item.quantity} x {formatCurrency(item.price, getCurrencySettings())}
                                                         </p>
+                                                        <p className="mt-1 text-xs font-semibold text-[#0f766e]">
+                                                            {formatCurrency(item.price * item.quantity, getCurrencySettings())}
+                                                        </p>
                                                     </div>
-                                                    <p className="text-xs font-semibold text-emerald-700">
-                                                        {formatCurrency(item.price * item.quantity, getCurrencySettings())}
-                                                    </p>
                                                 </div>
                                             ))}
                                         </div>
                                     )}
-                                    <div className="mt-3 border-t border-slate-200 pt-3">
-                                        <div className="mb-2 flex items-center justify-between text-sm">
-                                            <span className="text-slate-700">Subtotal</span>
+                                    <div className="mt-3 border-t border-slate-100 pt-3">
+                                        <div className="mb-3 flex items-center justify-between text-sm">
+                                            <span className="text-slate-600">Subtotal</span>
                                             <span className="font-semibold text-slate-900">{formatCurrency(cartTotal, getCurrencySettings())}</span>
                                         </div>
                                         <div className="grid grid-cols-2 gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => window.location.assign("/basket")}
-                                                className="inline-flex h-9 cursor-pointer items-center justify-center rounded-md border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                            <Link
+                                                href="/basket"
+                                                onClick={(event) => handleMiniCartNavigate(event, "/basket")}
+                                                onMouseDown={cancelCartPreviewClose}
+                                                className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                                             >
                                                 View Basket
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => window.location.assign("/checkout")}
-                                                className="inline-flex h-9 cursor-pointer items-center justify-center rounded-md bg-emerald-700 text-xs font-semibold text-white hover:bg-emerald-800"
+                                            </Link>
+                                            <Link
+                                                href="/checkout"
+                                                onClick={(event) => handleMiniCartNavigate(event, "/checkout")}
+                                                onMouseDown={cancelCartPreviewClose}
+                                                className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[#0f766e] text-xs font-semibold text-white hover:bg-[#0b5c56]"
                                             >
                                                 Checkout
-                                            </button>
+                                            </Link>
                                         </div>
                                     </div>
                                 </div>

@@ -19,7 +19,7 @@ function rotateByOffset<T>(items: T[], offset: number) {
 }
 
 function parseMainImage(images: string) {
-  return parseProductImages(images)[0] || "/placeholder.jpg"
+  return parseProductImages(images)[0] || "/placeholder.svg"
 }
 
 function normalizeImagePath(value: string | null | undefined) {
@@ -122,6 +122,7 @@ export default async function HomePage() {
       slug: string
       price: number
       images: string
+      shortDescription?: string | null
       description?: string | null
       compareAtPrice?: number | null
       stockCount?: number
@@ -140,6 +141,7 @@ export default async function HomePage() {
       slug: string
       price: number
       images: string
+      shortDescription?: string | null
       description?: string | null
       compareAtPrice?: number | null
       stockCount?: number
@@ -158,6 +160,7 @@ export default async function HomePage() {
           slug: string
           price: number
           images: string
+          shortDescription?: string | null
           description?: string | null
           compareAtPrice?: number | null
           stockCount?: number
@@ -176,6 +179,7 @@ export default async function HomePage() {
             slug: item.slug,
             price: Number(item.price),
             images: item.images,
+            shortDescription: item.shortDescription,
             description: item.description,
             compareAtPrice: item.compareAtPrice ?? null,
             stockCount: item.stockCount,
@@ -216,6 +220,7 @@ export default async function HomePage() {
           slug: string
           price: number
           images: string
+          shortDescription?: string | null
           description?: string | null
           compareAtPrice?: number | null
           stockCount?: number
@@ -234,6 +239,7 @@ export default async function HomePage() {
             slug: item.slug,
             price: Number(item.price),
             images: item.images,
+            shortDescription: item.shortDescription,
             description: item.description,
             compareAtPrice: item.compareAtPrice ?? null,
             stockCount: item.stockCount,
@@ -280,6 +286,7 @@ export default async function HomePage() {
     slug: item.slug,
     price: Number(item.price),
     images: item.images,
+    shortDescription: item.shortDescription,
     description: item.description,
     compareAtPrice: item.compareAtPrice ?? null,
     stockCount: item.stockCount,

@@ -4,7 +4,7 @@ import path from "path"
 import { v4 as uuidv4 } from "uuid"
 import { getEnv } from "@/lib/env"
 import { logger } from "@/lib/logger"
-import { sanitizeFolderPath, getManagedMediaRoots } from "@/lib/media-folders"
+import { CATEGORY_IMAGE_ROOT, sanitizeFolderPath, getManagedMediaRoots } from "@/lib/media-folders"
 import { prisma } from "@/lib/db"
 import { getStorageProvider } from "@/lib/storage/provider"
 import { processUploadImage } from "@/lib/storage/image-pipeline"
@@ -24,7 +24,15 @@ function normalizeFolderFromObjectKey(value: string | null | undefined) {
 }
 
 async function resolveBaseName(folder: string, requestedBaseName: string | null, fallbackName: string) {
-    const baseSlug = sanitizeFolderPath(requestedBaseName || "").split("/").pop() || sanitizeFolderPath(fallbackName) || uuidv4()
+    const folderParts = sanitizeFolderPath(folder).split("/").filter(Boolean)
+    const categorySlug =
+      folderParts[0] === sanitizeFolderPath(CATEGORY_IMAGE_ROOT)
+        ? folderParts[folderParts.length - 1] || folderParts[0] || ""
+        : folderParts.length > 1
+          ? folderParts[folderParts.length - 2] || folderParts[0] || ""
+          : folderParts[0] || ""
+    const rawBaseSlug = sanitizeFolderPath(requestedBaseName || "").split("/").pop() || sanitizeFolderPath(fallbackName) || uuidv4()
+    const baseSlug = categorySlug && !rawBaseSlug.startsWith(`${categorySlug}-`) ? `${categorySlug}-${rawBaseSlug}` : rawBaseSlug
     const uploadRoot = path.join(process.cwd(), "public", "uploads")
 
     let candidate = baseSlug
@@ -116,7 +124,7 @@ export async function POST(req: NextRequest) {
                     existingInFolderWithFiles.push(item)
                     continue
                 }
-                await prisma.$executeRawUnsafe(`DELETE FROM "MediaAsset" WHERE "image_url" = ?`, item.image_url)
+                await prisma.$executeRaw`DELETE FROM "MediaAsset" WHERE "image_url" = ${item.image_url}`
             }
             if (existingInFolderWithFiles.length > 0) {
                 const primary = existingInFolderWithFiles.find((item) => item.is_primary === 1) || existingInFolderWithFiles[0]

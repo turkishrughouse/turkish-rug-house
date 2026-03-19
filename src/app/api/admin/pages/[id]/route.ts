@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { z } from "zod"
+import { revalidatePath } from "next/cache"
 
 const pageUpdateSchema = z.object({
     title: z.string().min(1, "Title is required").optional(),
@@ -13,6 +14,18 @@ const pageUpdateSchema = z.object({
     metaTitle: z.string().optional().nullable(),
     metaDescription: z.string().optional().nullable(),
 })
+
+function normalizeOptionalText(value: string | null | undefined) {
+    const trimmed = (value ?? "").trim()
+    return trimmed.length > 0 ? trimmed : null
+}
+
+function revalidatePagePaths(slug: string | null | undefined) {
+    const safeSlug = String(slug || "").trim()
+    if (!safeSlug) return
+    revalidatePath(`/${safeSlug}`)
+    revalidatePath(`/info/${safeSlug}`)
+}
 
 // GET /api/admin/pages/[id]
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -48,6 +61,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         }
 
         const data = result.data
+        const before = await prisma.page.findUnique({
+            where: { id },
+            select: { slug: true },
+        })
 
         // If slug is changing, check uniqueness
         if (data.slug) {
@@ -66,17 +83,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         const updatedPage = await prisma.page.update({
             where: { id },
             data: {
-                title: data.title,
-                slug: data.slug,
-                content: data.content,
-                featuredImage: data.featuredImage,
+                title: data.title === undefined ? undefined : data.title.trim(),
+                slug: data.slug === undefined ? undefined : data.slug.trim(),
+                content: data.content === undefined ? undefined : (data.content ?? null),
+                featuredImage: data.featuredImage === undefined ? undefined : normalizeOptionalText(data.featuredImage),
                 status: data.status,
-                excerpt: data.excerpt,
-                metaTitle: data.metaTitle,
-                metaDescription: data.metaDescription
+                excerpt: data.excerpt === undefined ? undefined : normalizeOptionalText(data.excerpt),
+                metaTitle: data.metaTitle === undefined ? undefined : normalizeOptionalText(data.metaTitle),
+                metaDescription: data.metaDescription === undefined ? undefined : normalizeOptionalText(data.metaDescription),
             }
         })
 
+        revalidatePagePaths(before?.slug)
+        revalidatePagePaths(updatedPage.slug)
         return NextResponse.json(updatedPage)
     } catch (error) {
         console.error("Error updating page:", error)
@@ -88,11 +107,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params
+        const before = await prisma.page.findUnique({
+            where: { id },
+            select: { slug: true },
+        })
         // Hard Delete
         await prisma.page.delete({
             where: { id }
         })
 
+        revalidatePagePaths(before?.slug)
         return NextResponse.json({ success: true })
     } catch (error) {
         console.error("Error deleting page:", error)

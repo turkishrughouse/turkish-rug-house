@@ -154,14 +154,14 @@ export function SearchBar() {
                     if (query.trim().length >= 1) setOpen(true)
                 }}
                 onKeyDown={handleEnter}
-                className="pl-10 md:pl-14 pr-14 md:pr-28 h-full bg-transparent border-none shadow-none focus-visible:ring-0 rounded-none text-sm md:text-base placeholder:text-slate-400 w-full"
+                className="pl-10 md:pl-14 pr-14 md:pr-24 h-full bg-transparent border-none shadow-none focus-visible:ring-0 rounded-none text-sm md:text-sm placeholder:text-slate-400/70 placeholder:font-normal w-full"
             />
             <button
                 type="button"
                 onClick={handleSearchClick}
-                className="absolute right-2 top-1/2 inline-flex h-9 md:h-12 -translate-y-1/2 items-center gap-1.5 rounded-md border border-[#93b1aa] bg-[#a6c2bb] px-2 md:px-4 text-xs md:text-sm font-semibold text-slate-900 transition-colors hover:bg-[#93b1aa]"
+                className="absolute right-2 top-1/2 inline-flex h-8 md:h-9 -translate-y-1/2 items-center gap-1.5 rounded-lg bg-slate-900 px-2.5 md:px-4 text-xs font-semibold text-white transition-colors hover:bg-[#0f766e]"
             >
-                <Search className="h-4 w-4" />
+                <Search className="h-3.5 w-3.5" />
                 <span className="hidden md:inline">Search</span>
             </button>
 

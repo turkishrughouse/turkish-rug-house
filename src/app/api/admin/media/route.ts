@@ -4,12 +4,15 @@ import path from "path"
 import { z } from "zod"
 import { prisma } from "@/lib/db"
 import {
+  CATEGORY_IMAGE_ROOT,
   sanitizeFolderPath,
   ensureCategoryMediaFolders,
   ensureAllProductSkuFolders,
   ensureManagedMediaFolders,
   cleanupLegacyMediaFolders,
   getManagedMediaRoots,
+  getCategoryImageFolderPath,
+  relocateCategoryImageToFolder,
 } from "@/lib/media-folders"
 import { logger } from "@/lib/logger"
 import { getStorageProvider } from "@/lib/storage/provider"
@@ -33,6 +36,28 @@ type MediaAsset = {
 type FolderInfo = {
   name: string
   path: string
+}
+
+type CategoryFolderMeta = {
+  path: string
+  label: string
+  count: number
+  productCount: number
+}
+
+type ProductFolderMeta = {
+  path: string
+  categoryPath: string
+  sku: string
+  productId: string
+  count: number
+}
+
+type MediaBackfillSummary = {
+  totalFilesScanned: number
+  filesMoved: number
+  skippedFiles: number
+  potentialConflicts: number
 }
 
 type UploadCandidate = {
@@ -69,7 +94,7 @@ type SiblingUploadAsset = {
 
 const createFolderSchema = z.object({
   name: z.string().min(1, "Folder name is required"),
-  parentFolder: z.string().min(1, "Parent folder is required"),
+  parentFolder: z.string().optional().nullable(),
 })
 const deleteAssetSchema = z.object({
   url: z.string().min(1),
@@ -80,8 +105,29 @@ const moveAssetSchema = z.object({
 })
 
 const OPTIMIZED_ROOT = "_optimized"
-const SKU_FOLDER_ROOTS = new Set(["by-type", "cushion-covers", "by-age", "by-area"])
 
+function isMediaBackfillDryRun() {
+  return process.env.MEDIA_BACKFILL_DRY_RUN === "true"
+}
+
+function createBackfillSummary(): MediaBackfillSummary {
+  return {
+    totalFilesScanned: 0,
+    filesMoved: 0,
+    skippedFiles: 0,
+    potentialConflicts: 0,
+  }
+}
+
+function logBackfillSummary(summary: MediaBackfillSummary, context: string) {
+  console.log(`[media-backfill] ${context} summary`, {
+    totalFilesScanned: summary.totalFilesScanned,
+    filesMoved: summary.filesMoved,
+    skippedFiles: summary.skippedFiles,
+    potentialConflicts: summary.potentialConflicts,
+    dryRun: isMediaBackfillDryRun(),
+  })
+}
 function normalizeUploadRelativePath(relativePath: string) {
   return (relativePath || "")
     .replace(/\\/g, "/")
@@ -169,10 +215,9 @@ function topFolderName(folder: string) {
   return clean.split("/")[0] || clean
 }
 
-function shouldUseSkuFolder(folder: string) {
-  const clean = sanitizeFolderPath(folder)
-  const parts = clean.split("/").filter(Boolean)
-  return parts.length >= 2 && SKU_FOLDER_ROOTS.has(parts[0] || "")
+function looksLikeSkuFolderName(value: string) {
+  const clean = sanitizeFolderPath(value)
+  return /[0-9]/.test(clean) && /^[A-Z0-9-]{6,}$/i.test(clean)
 }
 
 function normalizeAssetUrl(
@@ -253,7 +298,16 @@ async function getAllowedFolderRoots() {
     select: { slug: true },
   })
   const categoryRoots = topCategories.map((item) => sanitizeFolderPath(item.slug)).filter(Boolean)
-  return new Set([...managed, ...categoryRoots])
+  const uploadRoot = path.join(process.cwd(), "public", "uploads")
+  const diskRoots = await readdir(uploadRoot, { withFileTypes: true })
+    .catch(() => [])
+    .then((entries) =>
+      entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => sanitizeFolderPath(entry.name))
+        .filter(Boolean)
+    )
+  return new Set([...managed, ...categoryRoots, ...diskRoots])
 }
 
 async function replaceUrlReferences(oldUrl: string, nextUrl: string | null) {
@@ -497,25 +551,71 @@ async function pruneEmptyUploadFolders(folder: string) {
   }
 }
 
-async function moveUploadedAssetToFolder(url: string, targetFolder: string) {
+async function moveUploadedAssetToFolder(
+  url: string,
+  targetFolder: string,
+  options: {
+    dryRun?: boolean
+    summary?: MediaBackfillSummary
+    logContext?: string
+  } = {}
+) {
   const siblings = await getSiblingUploadAssets(url)
   if (siblings.length === 0) return null
 
+  if (options.summary) {
+    options.summary.totalFilesScanned += siblings.length
+  }
+
   const sourceFolder = extractFolderFromUrl(url)
-  if (sourceFolder === targetFolder) return url
+  if (sourceFolder === targetFolder) {
+    if (options.summary) {
+      options.summary.skippedFiles += siblings.length
+    }
+    return url
+  }
 
   const targetDir = path.join(process.cwd(), "public", "uploads", targetFolder)
-  await mkdir(targetDir, { recursive: true })
+  if (!options.dryRun) {
+    await mkdir(targetDir, { recursive: true })
+  }
 
   for (const sibling of siblings) {
     const targetPath = path.join(targetDir, sibling.fileName)
     const exists = await stat(targetPath).then(() => true).catch(() => false)
     if (exists) {
+      if (options.summary) {
+        options.summary.potentialConflicts += 1
+      }
+      if (options.dryRun) {
+        console.warn("[media-backfill] DRY_RUN conflict", {
+          url: sibling.url,
+          targetFolder,
+          targetPath,
+          context: options.logContext || "backfill",
+        })
+      }
       return null
     }
   }
 
   const storage = getStorageProvider()
+  if (options.dryRun) {
+    for (const sibling of siblings) {
+      console.log("[media-backfill] DRY_RUN move", {
+        from: sibling.relativePath,
+        to: `${targetFolder}/${sibling.fileName}`,
+        context: options.logContext || "backfill",
+      })
+    }
+    if (options.summary) {
+      options.summary.filesMoved += siblings.length
+    }
+    const preferredSibling =
+      siblings.find((sibling) => sibling.fileName.endsWith("-master.webp")) || siblings[0]
+    return preferredSibling ? storage.getPublicUrl(`${targetFolder}/${preferredSibling.fileName}`) : url
+  }
+
   let nextPrimaryUrl = ""
   await ensureMediaRegistryTable()
   for (const sibling of siblings) {
@@ -523,12 +623,11 @@ async function moveUploadedAssetToFolder(url: string, targetFolder: string) {
     await rename(sibling.absolutePath, targetPath)
     const nextUrl = storage.getPublicUrl(`${targetFolder}/${sibling.fileName}`)
     await replaceUrlReferences(sibling.url, nextUrl)
-    await prisma.$executeRawUnsafe(
-      `UPDATE "MediaAsset" SET "image_url" = ?, "object_key" = ? WHERE "image_url" = ?`,
-      nextUrl,
-      `${targetFolder}/${sibling.fileName}`,
-      sibling.url
-    )
+    await prisma.$executeRaw`
+      UPDATE "MediaAsset"
+      SET "image_url" = ${nextUrl}, "object_key" = ${`${targetFolder}/${sibling.fileName}`}
+      WHERE "image_url" = ${sibling.url}
+    `
     if (sibling.fileName.endsWith("-master.webp") || !nextPrimaryUrl) {
       nextPrimaryUrl = nextUrl
     }
@@ -538,35 +637,55 @@ async function moveUploadedAssetToFolder(url: string, targetFolder: string) {
 }
 
 async function backfillProductSkuFolders(
-  products: Array<{ id: string; title: string; images: string; categories: Array<{ id: string; slug: string; parentId: string | null }> }>,
-  categoryPathMap: Map<string, string>
+  products: Array<{ id: string; sku: string | null; title: string; images: string; categories: Array<{ id: string; slug: string; parentId: string | null }> }>,
+  categoryPathMap: Map<string, string>,
+  options: {
+    dryRun?: boolean
+    summary?: MediaBackfillSummary
+  } = {}
 ) {
   for (const product of products) {
-    const skuRows = await prisma.$queryRawUnsafe<Array<{ sku: string | null }>>(
-      `SELECT "sku" FROM "Product" WHERE "id" = ? LIMIT 1`,
-      product.id
-    )
-    const sku = sanitizeFolderPath(skuRows[0]?.sku || "")
+    const sku = sanitizeFolderPath(product.sku || "")
     if (!sku) continue
 
-    const targetCategoryFolders = product.categories
-      .map((category) => categoryPathMap.get(category.id) || "")
-      .filter((folder) => shouldUseSkuFolder(folder))
+    const productImages = parseProductImages(product.images)
+    const targetCategoryFolders = Array.from(
+      new Set(
+        product.categories
+          .map((category) => topFolderName(categoryPathMap.get(category.id) || category.slug))
+          .filter(Boolean)
+      )
+    )
 
     if (targetCategoryFolders.length === 0) continue
 
-    const productImages = parseProductImages(product.images)
-    for (const baseCategoryFolder of targetCategoryFolders) {
-      const targetFolder = `${baseCategoryFolder}/${sku}`
-      await mkdir(path.join(process.cwd(), "public", "uploads", targetFolder), { recursive: true })
+    for (const categoryFolder of targetCategoryFolders) {
+      const targetFolder = `${categoryFolder}/${sku}`
+      if (!options.dryRun) {
+        await mkdir(path.join(process.cwd(), "public", "uploads", targetFolder), { recursive: true })
+      }
     }
 
     for (const imageUrl of productImages) {
       const currentFolder = extractFolderFromUrl(imageUrl)
-      const matchedCategoryFolder = targetCategoryFolders.find((folder) => currentFolder === folder)
+      const matchedCategoryFolder = targetCategoryFolders.find((folder) => {
+        if (!currentFolder || currentFolder === "root") return false
+        const currentTopFolder = topFolderName(currentFolder)
+        return currentTopFolder === folder
+      })
       if (!matchedCategoryFolder) continue
       const targetFolder = `${matchedCategoryFolder}/${sku}`
-      await moveUploadedAssetToFolder(imageUrl, targetFolder).catch(() => null)
+      if (currentFolder === targetFolder) {
+        if (options.summary) {
+          options.summary.skippedFiles += 1
+        }
+        continue
+      }
+      await moveUploadedAssetToFolder(imageUrl, targetFolder, {
+        dryRun: options.dryRun,
+        summary: options.summary,
+        logContext: `product:${product.id}`,
+      }).catch(() => null)
     }
   }
 }
@@ -584,6 +703,7 @@ export async function GET() {
       prisma.product.findMany({
         select: {
           id: true,
+          sku: true,
           title: true,
           images: true,
           categories: { select: { id: true, slug: true, parentId: true } },
@@ -597,7 +717,30 @@ export async function GET() {
     const categoryPathMap = buildCategoryPathMap(
       categories.map((category) => ({ id: category.id, slug: category.slug, parentId: category.parentId }))
     )
-    await backfillProductSkuFolders(products, categoryPathMap)
+    const backfillSummary = createBackfillSummary()
+    const backfillDryRun = isMediaBackfillDryRun()
+    await backfillProductSkuFolders(products, categoryPathMap, {
+      dryRun: backfillDryRun,
+      summary: backfillSummary,
+    })
+    for (const category of categories) {
+      if (!category.image) continue
+      const nextImage = await relocateCategoryImageToFolder(category.slug, category.image, {
+        dryRun: backfillDryRun,
+        summary: backfillSummary,
+        logContext: `category:${category.id}`,
+      })
+      if (!backfillDryRun && nextImage && nextImage !== category.image) {
+        await prisma.category.update({
+          where: { id: category.id },
+          data: { image: nextImage },
+        })
+        category.image = nextImage
+      }
+    }
+    if (backfillSummary.totalFilesScanned > 0 || backfillSummary.skippedFiles > 0 || backfillSummary.potentialConflicts > 0) {
+      logBackfillSummary(backfillSummary, "api-admin-media-backfill")
+    }
 
     const [uploadFolders, uploadedFiles] = await Promise.all([
       listUploadFolders(uploadRoot),
@@ -627,6 +770,17 @@ export async function GET() {
 
       for (const folder of folderCandidates) {
         const normalizedFeaturedImage = normalizeAssetUrl(featuredImage, folder, uploadLookup)
+        const relativeFeaturedImage = getStorageProvider().toRelativePath(normalizedFeaturedImage)
+        if (relativeFeaturedImage) {
+          const exists = uploadedFiles.some((file) => file.url === normalizedFeaturedImage)
+          if (!exists) {
+            console.warn("[media-integrity] product image reference missing on disk", {
+              productId: product.id,
+              productTitle: product.title,
+              imageUrl: normalizedFeaturedImage,
+            })
+          }
+        }
         assets.push({
           id: `product:${product.id}:${folder}:${normalizedFeaturedImage}`,
           url: normalizedFeaturedImage,
@@ -641,7 +795,7 @@ export async function GET() {
 
     for (const category of categories) {
       if (!category.image) continue
-      const categoryFolder = categoryPathMap.get(category.id) || "categories"
+      const categoryFolder = getCategoryImageFolderPath(category.slug) || CATEGORY_IMAGE_ROOT
       const normalizedCategoryImage = normalizeAssetUrl(category.image, categoryFolder, uploadLookup)
       assets.push({
         id: `category:${category.id}:${normalizedCategoryImage}`,
@@ -745,6 +899,66 @@ export async function GET() {
       sizeBytes: asset.sizeBytes,
     }))
 
+    const assetCountByFolder = new Map<string, number>()
+    for (const asset of uniqueAssets) {
+      assetCountByFolder.set(asset.folder, (assetCountByFolder.get(asset.folder) || 0) + 1)
+    }
+
+    const categoryFolders: CategoryFolderMeta[] = categories
+      .filter((category) => !category.parentId)
+      .map((category) => {
+        const path = sanitizeFolderPath(category.slug)
+        return {
+          path,
+          label: category.title || path,
+          count: 0,
+          productCount: 0,
+        }
+      })
+      .filter((folder) => folder.path)
+      .sort((a, b) => a.label.localeCompare(b.label))
+
+    const categoryRootSet = new Set(categoryFolders.map((folder) => folder.path))
+
+    const productFolderMap = new Map<string, ProductFolderMeta>()
+    for (const product of products) {
+      const sku = sanitizeFolderPath(product.sku || "")
+      if (!sku) continue
+      const categoryRoot = product.categories
+        .map((category) => topFolderName(categoryPathMap.get(category.id) || category.slug))
+        .find((folder) => categoryRootSet.has(folder))
+      if (!categoryRoot) continue
+
+      const path = `${categoryRoot}/${sku}`
+      productFolderMap.set(path, {
+        path,
+        categoryPath: categoryRoot,
+        sku,
+        productId: product.id,
+        count: assetCountByFolder.get(path) || 0,
+      })
+    }
+
+    const productFolders = Array.from(productFolderMap.values()).sort((a, b) => {
+      if (a.categoryPath !== b.categoryPath) return a.categoryPath.localeCompare(b.categoryPath)
+      return a.sku.localeCompare(b.sku)
+    })
+
+    const productFolderCountByCategory = new Map<string, number>()
+    for (const folder of productFolders) {
+      productFolderCountByCategory.set(
+        folder.categoryPath,
+        (productFolderCountByCategory.get(folder.categoryPath) || 0) + 1
+      )
+    }
+
+    const categoryFoldersWithCounts = categoryFolders.map((folder) => ({
+      ...folder,
+      productCount: productFolderCountByCategory.get(folder.path) || 0,
+    }))
+
+    const validProductFolderSet = new Set(productFolders.map((folder) => folder.path))
+
     const folderSet = new Map<string, number>()
     for (const asset of uniqueAssets) {
       folderSet.set(asset.folder, (folderSet.get(asset.folder) || 0) + 1)
@@ -756,6 +970,21 @@ export async function GET() {
       if (!folderSet.has(folderPath)) folderSet.set(folderPath, 0)
     }
 
+    for (const folder of uploadFolders) {
+      const folderPath = sanitizeFolderPath(folder.path || folder.name)
+      const parts = folderPath.split("/").filter(Boolean)
+      const leaf = parts[parts.length - 1] || ""
+      if (parts.length < 2 || !categoryRootSet.has(parts[0] || "") || validProductFolderSet.has(folderPath)) continue
+      if (!looksLikeSkuFolderName(leaf)) continue
+      if ((folderSet.get(folderPath) || 0) > 0) continue
+
+      const absolutePath = path.join(uploadRoot, folderPath)
+      const entries = await readdir(absolutePath).catch(() => null)
+      if (!entries || entries.length > 0) continue
+      await rmdir(absolutePath).catch(() => undefined)
+      folderSet.delete(folderPath)
+    }
+
     const folders = Array.from(folderSet.entries())
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -763,6 +992,8 @@ export async function GET() {
     return NextResponse.json({
       folders,
       assets: uniqueAssets.sort((a, b) => b.createdAt - a.createdAt || a.name.localeCompare(b.name)),
+      categoryFolders: categoryFoldersWithCounts,
+      productFolders,
     })
   } catch (error) {
     logger.error("Error fetching media", { error: error instanceof Error ? error.message : String(error) }, "admin-media-api")
@@ -782,25 +1013,25 @@ export async function POST(req: NextRequest) {
     }
 
     const slug = sanitizeFolderPath(parsed.data.name)
-    const parentFolder = sanitizeFolderPath(parsed.data.parentFolder)
+    const parentFolder = sanitizeFolderPath(parsed.data.parentFolder || "")
     if (!slug) {
       return NextResponse.json({ error: "Invalid folder name" }, { status: 400 })
     }
-    if (!parentFolder) {
-      return NextResponse.json({ error: "Parent folder is required" }, { status: 400 })
-    }
-    const parentTop = topFolderName(parentFolder)
-    const allowedRoots = await getAllowedFolderRoots()
-    if (!allowedRoots.has(parentTop)) {
-      return NextResponse.json({ error: "Folder must be under allowed main folders" }, { status: 400 })
+    if (parentFolder) {
+      const parentTop = topFolderName(parentFolder)
+      const allowedRoots = await getAllowedFolderRoots()
+      if (!allowedRoots.has(parentTop)) {
+        return NextResponse.json({ error: "Folder must be under allowed main folders" }, { status: 400 })
+      }
     }
 
     const uploadRoot = path.join(process.cwd(), "public", "uploads")
     await mkdir(uploadRoot, { recursive: true })
-    const folderPath = path.join(uploadRoot, parentFolder, slug)
+    const relativeFolder = parentFolder ? `${parentFolder}/${slug}` : slug
+    const folderPath = path.join(uploadRoot, relativeFolder)
     await mkdir(folderPath, { recursive: true })
 
-    return NextResponse.json({ success: true, folder: `${parentFolder}/${slug}` }, { status: 201 })
+    return NextResponse.json({ success: true, folder: relativeFolder }, { status: 201 })
   } catch (error) {
     if ((error as NodeJS.ErrnoException)?.code === "EEXIST") {
       return NextResponse.json({ error: "Folder already exists" }, { status: 409 })
@@ -859,12 +1090,11 @@ export async function PATCH(req: NextRequest) {
       await rename(sibling.absolutePath, targetPath)
       const nextUrl = storage.getPublicUrl(`${targetFolder}/${sibling.fileName}`)
       await replaceUrlReferences(sibling.url, nextUrl)
-      await prisma.$executeRawUnsafe(
-        `UPDATE "MediaAsset" SET "image_url" = ?, "object_key" = ? WHERE "image_url" = ?`,
-        nextUrl,
-        `${targetFolder}/${sibling.fileName}`,
-        sibling.url
-      )
+      await prisma.$executeRaw`
+        UPDATE "MediaAsset"
+        SET "image_url" = ${nextUrl}, "object_key" = ${`${targetFolder}/${sibling.fileName}`}
+        WHERE "image_url" = ${sibling.url}
+      `
       if (sibling.fileName.endsWith("-master.webp") || !nextPrimaryUrl) {
         nextPrimaryUrl = nextUrl
       }
@@ -893,6 +1123,25 @@ export async function DELETE(req: NextRequest) {
     }
 
     const relatedUrls = await getSiblingUploadUrls(parsed.data.url)
+    const productsUsingAsset = await prisma.product.findMany({
+      select: { id: true, title: true, images: true },
+    }).then((products) =>
+      products.filter((product) => {
+        const imageUrls = parseProductImages(product.images)
+        return relatedUrls.some((url) => imageUrls.includes(url))
+      })
+    )
+    if (productsUsingAsset.length > 0) {
+      return NextResponse.json(
+        {
+          error: "This image is used by one or more products and cannot be deleted.",
+          productIds: productsUsingAsset.map((product) => product.id),
+          productTitles: productsUsingAsset.map((product) => product.title),
+        },
+        { status: 409 }
+      )
+    }
+
     await ensureMediaRegistryTable()
     for (const url of relatedUrls) {
       await replaceUrlReferences(url, null)
@@ -903,10 +1152,9 @@ export async function DELETE(req: NextRequest) {
         })
       }
     }
-    await prisma.$executeRawUnsafe(
-      `DELETE FROM "MediaAsset" WHERE "image_url" IN (${relatedUrls.map(() => "?").join(", ")})`,
-      ...relatedUrls
-    )
+    for (const url of relatedUrls) {
+      await prisma.$executeRaw`DELETE FROM "MediaAsset" WHERE "image_url" = ${url}`
+    }
     return NextResponse.json({ success: true })
   } catch (error) {
     logger.error("Error deleting media asset", { error: error instanceof Error ? error.message : String(error) }, "admin-media-api")

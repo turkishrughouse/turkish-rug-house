@@ -9,8 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { shouldUseProductSkuFolder } from "@/lib/media-sku-roots"
-import { getImageUrl, isManagedUploadUrl } from "@/lib/storage/url"
+import { getImageUrl } from "@/lib/storage/url"
 
 type Folder = { name: string; count: number }
 type Asset = {
@@ -22,6 +21,29 @@ type Asset = {
   usedIn: string
   createdAt?: number
   sizeBytes?: number
+}
+
+type CategoryFolderMeta = {
+  path: string
+  label: string
+  count: number
+  productCount: number
+}
+
+type ProductFolderMeta = {
+  path: string
+  categoryPath: string
+  sku: string
+  productId: string
+  count: number
+}
+
+type MediaResponse = {
+  folders?: Folder[]
+  assets?: Asset[]
+  categoryFolders?: CategoryFolderMeta[]
+  productFolders?: ProductFolderMeta[]
+  error?: string
 }
 
 type TabKey = "upload" | "library"
@@ -40,9 +62,16 @@ type MediaPickerDialogProps = {
   }
 }
 
+type NavigationSnapshot = {
+  activeFolder: string
+  activeSubfolder: string
+  selectedChildFolder: string
+}
+
 const FOLDER_COLOR_KEY = "media-picker-folder-colors"
 const ASSET_LABEL_KEY = "media-picker-asset-labels"
 const FOLDER_COLOR_OPTIONS = ["#f59e0b", "#ef4444", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899", "#64748b"]
+const SPECIAL_ROOT_FOLDERS = ["Kategori-Fotoğrafları"] as const
 
 function formatFolderLabel(value: string) {
   return value
@@ -117,8 +146,24 @@ function isSkuFolderPath(value: string) {
   return looksLikeSkuFolderSegment(leaf)
 }
 
+function getImmediateChildFolders(folderNames: string[], parentPath: string) {
+  const prefix = `${parentPath}/`
+  return Array.from(
+    new Set(
+      folderNames
+        .filter((folder) => folder.startsWith(prefix))
+        .map((folder) => {
+          const remainder = folder.slice(prefix.length)
+          const child = remainder.split("/").filter(Boolean)[0] || ""
+          return child ? `${parentPath}/${child}` : ""
+        })
+        .filter(Boolean)
+    )
+  ).sort((a, b) => a.localeCompare(b))
+}
+
 function resolveProductUploadFolder(baseFolder: string, sku: string) {
-  const cleanFolder = (baseFolder || "").trim().replace(/^\/+|\/+$/g, "")
+  const cleanFolder = ((baseFolder || "").trim().replace(/^\/+|\/+$/g, "").split("/").filter(Boolean)[0] || "")
   const cleanSku = (sku || "").trim().replace(/^\/+|\/+$/g, "")
   if (!cleanFolder) return cleanSku ? cleanSku : ""
   if (!cleanSku) return cleanFolder
@@ -147,9 +192,10 @@ export function MediaPickerDialog({
   const [searchTerm, setSearchTerm] = useState("")
   const [uploadFolder, setUploadFolder] = useState("categories")
   const [folders, setFolders] = useState<Folder[]>([])
+  const [categoryFolders, setCategoryFolders] = useState<CategoryFolderMeta[]>([])
+  const [productFolders, setProductFolders] = useState<ProductFolderMeta[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
   const [selectedUrls, setSelectedUrls] = useState<string[]>([])
-  const [didAutoPickFolder, setDidAutoPickFolder] = useState(false)
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [moving, setMoving] = useState(false)
   const [folderMenu, setFolderMenu] = useState<{ folder: string; x: number; y: number } | null>(null)
@@ -158,13 +204,13 @@ export function MediaPickerDialog({
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
   const [selectedRightFolders, setSelectedRightFolders] = useState<string[]>([])
+  const [navigationHistory, setNavigationHistory] = useState<NavigationSnapshot[]>([])
   const [draggingUrls, setDraggingUrls] = useState<string[]>([])
   const [dragTargetFolder, setDragTargetFolder] = useState<string | null>(null)
   const [hiddenDeletedUrls, setHiddenDeletedUrls] = useState<string[]>([])
   const [selectedAssetDimensions, setSelectedAssetDimensions] = useState<{ width: number; height: number } | null>(null)
   const dialogContentRef = useRef<HTMLDivElement | null>(null)
   const libraryScrollRef = useRef<HTMLDivElement | null>(null)
-  const deleteTimeoutsRef = useRef<Record<string, number>>({})
 
   const preferredUploadFolder = useMemo(() => {
     const sku = (productMeta?.sku || "").trim()
@@ -179,16 +225,20 @@ export function MediaPickerDialog({
     setLoading(true)
     try {
       const res = await fetch("/api/admin/media", { cache: "no-store" })
-      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[]; assets?: Asset[] })
+      const json = await res.json().catch(() => null as null | MediaResponse)
       if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
       const nextFolders: Folder[] = json?.folders ?? []
+      const nextCategoryFolders: CategoryFolderMeta[] = json?.categoryFolders ?? []
+      const nextProductFolders: ProductFolderMeta[] = json?.productFolders ?? []
       const nextAssets: Asset[] = (json?.assets ?? []).map((asset: Asset) => ({
         ...asset,
         url: normalizePickerAssetUrl(asset.url),
       }))
       setFolders(nextFolders)
+      setCategoryFolders(nextCategoryFolders)
+      setProductFolders(nextProductFolders)
       setAssets(nextAssets)
-      return { folders: nextFolders, assets: nextAssets }
+      return { folders: nextFolders, assets: nextAssets, categoryFolders: nextCategoryFolders, productFolders: nextProductFolders }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to fetch media")
       return null
@@ -246,11 +296,11 @@ export function MediaPickerDialog({
       setActiveSubfolder("all")
       setSelectedChildFolder("")
       setSearchTerm("")
-      setDidAutoPickFolder(false)
       setFolderMenu(null)
       setShowColorPicker(false)
       setSelectedFolder(null)
       setSelectedRightFolders([])
+      setNavigationHistory([])
       setDraggingUrls([])
       setDragTargetFolder(null)
       setHiddenDeletedUrls([])
@@ -258,17 +308,20 @@ export function MediaPickerDialog({
   }, [open])
 
   const directSubfolders = useMemo(() => {
-    if (activeFolder === "all") return [] as string[]
-    const prefix = `${activeFolder}/`
-    return folders
-      .map((folder) => folder.name)
-      .filter((name) => name.startsWith(prefix))
-      .map((name) => name.slice(prefix.length))
-      .filter((rest) => rest.length > 0 && !rest.includes("/"))
-      .filter((leaf) => !looksLikeSkuFolderSegment(leaf))
-      .map((leaf) => `${activeFolder}/${leaf}`)
-      .sort((a, b) => a.localeCompare(b))
-  }, [activeFolder, folders])
+    if (activeFolder === "all") {
+      const categoryRoots = categoryFolders.map((folder) => folder.path)
+      const specialRoots = SPECIAL_ROOT_FOLDERS.filter((path) =>
+        folders.some((folder) => folder.name === path || folder.name.startsWith(`${path}/`))
+      )
+      return [...categoryRoots, ...specialRoots]
+        .sort((a, b) => a.localeCompare(b))
+    }
+
+    return getImmediateChildFolders(
+      folders.map((folder) => folder.name),
+      activeFolder
+    )
+  }, [activeFolder, categoryFolders, folders, productFolders])
 
   const currentPath = useMemo(() => {
     if (selectedChildFolder) return selectedChildFolder
@@ -296,72 +349,46 @@ export function MediaPickerDialog({
   }, [hiddenDeletedUrls, uniqueAssets])
 
   const topFolders = useMemo(() => {
-    const names = new Set<string>()
-    for (const folder of folders) {
-      const top = folder.name.split("/")[0] || folder.name
-      if (top) names.add(top)
-    }
-    const normalFolders = Array.from(names).map((name) => ({ name, count: 0 })).sort((a, b) => a.name.localeCompare(b.name))
-    return [{ name: "all", count: imageAssets.length }, ...normalFolders]
-  }, [folders, imageAssets.length])
+    const specialRoots = SPECIAL_ROOT_FOLDERS.filter((path) =>
+      folders.some((folder) => folder.name === path || folder.name.startsWith(`${path}/`))
+    ).sort((a, b) => a.localeCompare(b))
 
-  useEffect(() => {
-    if (!open) return
-    if (activeFolder !== "all") return
-    if (didAutoPickFolder) return
-    if (topFolders.length === 0) return
-    setActiveFolder(topFolders[0].name)
-    setActiveSubfolder("all")
-    setUploadFolder(topFolders[1]?.name || "categories")
-    setDidAutoPickFolder(true)
-  }, [open, activeFolder, didAutoPickFolder, topFolders])
+    const normalFolders = [
+      ...categoryFolders.map((folder) => ({
+        name: folder.path,
+        count: folder.productCount,
+      })),
+      ...specialRoots.map((folder) => ({
+        name: folder,
+        count: folders.filter((item) => item.name === folder || item.name.startsWith(`${folder}/`)).length,
+      })),
+    ]
+      .sort((a, b) => a.name.localeCompare(b.name))
+    return [{ name: "all", count: imageAssets.length }, ...normalFolders]
+  }, [categoryFolders, folders, imageAssets.length])
 
   const childFolders = useMemo(() => {
     if (activeSubfolder === "all") return [] as string[]
-    const prefix = `${activeSubfolder}/`
-    return folders
-      .map((folder) => folder.name)
-      .filter((name) => name.startsWith(prefix))
-      .map((name) => name.slice(prefix.length))
-      .filter((rest) => rest.length > 0 && !rest.includes("/"))
-      .map((leaf) => `${activeSubfolder}/${leaf}`)
-      .sort((a, b) => a.localeCompare(b))
+    return getImmediateChildFolders(
+      folders.map((folder) => folder.name),
+      activeSubfolder
+    )
   }, [activeSubfolder, folders])
 
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
 
   const currentLevelFolders = useMemo(() => {
-    if (selectedChildFolder) return [] as string[]
+    if (selectedChildFolder) {
+      return getImmediateChildFolders(
+        folders.map((folder) => folder.name),
+        selectedChildFolder
+      )
+    }
     if (activeSubfolder !== "all") return childFolders
     return directSubfolders
-  }, [activeSubfolder, childFolders, directSubfolders, selectedChildFolder])
+  }, [activeSubfolder, childFolders, directSubfolders, folders, selectedChildFolder])
 
-  const searchableFolders = useMemo(() => {
-    const allFolderNames = folders.map((folder) => folder.name)
-
-    if (selectedChildFolder) {
-      const prefix = `${selectedChildFolder}/`
-      return allFolderNames
-        .filter((name) => name.startsWith(prefix))
-        .sort((a, b) => a.localeCompare(b))
-    }
-
-    if (activeSubfolder !== "all") {
-      const prefix = `${activeSubfolder}/`
-      return allFolderNames
-        .filter((name) => name.startsWith(prefix))
-        .sort((a, b) => a.localeCompare(b))
-    }
-
-    if (activeFolder !== "all") {
-      const prefix = `${activeFolder}/`
-      return allFolderNames
-        .filter((name) => name.startsWith(prefix))
-        .sort((a, b) => a.localeCompare(b))
-    }
-
-    return allFolderNames.sort((a, b) => a.localeCompare(b))
-  }, [activeFolder, activeSubfolder, folders, selectedChildFolder])
+  const searchableFolders = useMemo(() => currentLevelFolders, [currentLevelFolders])
 
   const visibleCurrentLevelFolders = useMemo(() => {
     if (!normalizedSearchTerm) return currentLevelFolders
@@ -371,33 +398,25 @@ export function MediaPickerDialog({
     })
   }, [currentLevelFolders, normalizedSearchTerm, searchableFolders])
 
-  const usesSkuFolders = useMemo(() => {
-    if (activeSubfolder === "all") return false
-    return shouldUseProductSkuFolder(activeSubfolder)
-  }, [activeSubfolder])
-
   const getAssetLabelGroup = useCallback((asset: Asset) => {
     const folderLeaf = asset.folder.split("/").filter(Boolean).pop() || asset.folder
     return folderLeaf || (productMeta?.sku?.trim() || "")
   }, [productMeta?.sku])
 
+  const activeAssetFolder = useMemo(() => {
+    if (selectedChildFolder) return currentLevelFolders.length === 0 ? selectedChildFolder : ""
+    if (activeSubfolder !== "all") return currentLevelFolders.length === 0 ? activeSubfolder : ""
+    if (activeFolder !== "all") return currentLevelFolders.length === 0 ? activeFolder : ""
+    return ""
+  }, [activeFolder, activeSubfolder, currentLevelFolders.length, selectedChildFolder])
+
   const filteredAssets = useMemo(() => {
     return imageAssets.filter((asset) => {
-      if (selectedChildFolder) {
-        const inFolder = asset.folder === selectedChildFolder || asset.folder.startsWith(`${selectedChildFolder}/`)
-        if (!inFolder) return false
-      } else if (activeFolder === "all") {
-        // keep all assets
-      } else if (activeSubfolder === "all") {
-        const inTopFolder =
-          asset.folder === activeFolder ||
-          (normalizedSearchTerm.length > 0 && asset.folder.startsWith(`${activeFolder}/`))
-        if (!inTopFolder) return false
-      } else if (usesSkuFolders) {
-        return false
-      } else if (asset.folder !== activeSubfolder && !asset.folder.startsWith(`${activeSubfolder}/`)) {
+      if (!activeAssetFolder) {
         return false
       }
+      const inFolder = asset.folder === activeAssetFolder || asset.folder.startsWith(`${activeAssetFolder}/`)
+      if (!inFolder) return false
 
       if (!normalizedSearchTerm) return true
 
@@ -411,7 +430,7 @@ export function MediaPickerDialog({
         displayLabel.includes(normalizedSearchTerm)
       )
     })
-  }, [activeFolder, activeSubfolder, assetLabels, getAssetLabelGroup, imageAssets, normalizedSearchTerm, selectedChildFolder, usesSkuFolders])
+  }, [activeAssetFolder, assetLabels, getAssetLabelGroup, imageAssets, normalizedSearchTerm])
 
   const sortedFilteredAssets = useMemo(() => {
     return [...filteredAssets].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
@@ -419,8 +438,13 @@ export function MediaPickerDialog({
 
   const selectedAsset = useMemo(() => {
     if (selectedUrls.length === 0) return null
-    return imageAssets.find((asset) => asset.url === selectedUrls[0]) || null
-  }, [imageAssets, selectedUrls])
+    return filteredAssets.find((asset) => asset.url === selectedUrls[0]) || null
+  }, [filteredAssets, selectedUrls])
+
+  useEffect(() => {
+    const visibleUrls = new Set(filteredAssets.map((asset) => asset.url))
+    setSelectedUrls((prev) => prev.filter((url) => visibleUrls.has(url)))
+  }, [filteredAssets])
 
   useEffect(() => {
     if (!selectedAsset?.url) {
@@ -471,14 +495,104 @@ export function MediaPickerDialog({
 
   const selectedAssetDisplayLabel = useMemo(() => {
     if (!selectedAsset) return ""
-    const productTitle = productMeta?.title?.trim()
-    if (productTitle) return productTitle
-    return assetLabels[selectedAssetLabelGroup] || selectedAsset.name
-  }, [assetLabels, productMeta?.title, selectedAsset, selectedAssetLabelGroup])
+    return assetLabels[selectedAssetLabelGroup] || prettifyPickerAssetName(selectedAsset)
+  }, [assetLabels, selectedAsset, selectedAssetLabelGroup])
+
+  const selectedAssetSku = useMemo(() => {
+    if (!selectedAsset) return ""
+    const leaf = selectedAsset.folder.split("/").filter(Boolean).pop() || ""
+    return looksLikeSkuFolderSegment(leaf) ? leaf : ""
+  }, [selectedAsset])
+
+  const selectedAssetDescription = useMemo(() => {
+    if (!selectedAsset) return ""
+    const usage = (selectedAsset.usedIn || "").trim()
+    if (!usage || usage.toLowerCase() === "uploaded media") return ""
+    return usage
+  }, [selectedAsset])
+
+  const categoryLabelByPath = useMemo(() => {
+    return new Map(categoryFolders.map((folder) => [folder.path, folder.label || formatFolderLabel(folder.path)]))
+  }, [categoryFolders])
+
+  const productFolderByPath = useMemo(() => {
+    return new Map(productFolders.map((folder) => [folder.path, folder]))
+  }, [productFolders])
 
   const effectiveSelectedFolderCount = selectedRightFolders.length
 
   const totalSelectedCount = selectedUrls.length + effectiveSelectedFolderCount
+
+  const pushNavigationSnapshot = useCallback(() => {
+    setNavigationHistory((prev) => [
+      ...prev,
+      {
+        activeFolder,
+        activeSubfolder,
+        selectedChildFolder,
+      },
+    ])
+  }, [activeFolder, activeSubfolder, selectedChildFolder])
+
+  const canGoBack = navigationHistory.length > 0 || selectedChildFolder !== "" || activeSubfolder !== "all" || activeFolder !== "all"
+
+  const handleNavigateBack = useCallback(() => {
+    setSelectedUrls([])
+    setSelectedFolder(null)
+    setSelectedRightFolders([])
+    setSearchTerm("")
+    setFolderMenu(null)
+    setShowColorPicker(false)
+
+    setNavigationHistory((prev) => {
+      const last = prev[prev.length - 1]
+      if (last) {
+        setActiveFolder(last.activeFolder)
+        setActiveSubfolder(last.activeSubfolder)
+        setSelectedChildFolder(last.selectedChildFolder)
+        const nextPath = last.selectedChildFolder || (last.activeSubfolder !== "all" ? last.activeSubfolder : last.activeFolder !== "all" ? last.activeFolder : preferredUploadFolder || "categories")
+        setUploadFolder(nextPath || preferredUploadFolder || "categories")
+        return prev.slice(0, -1)
+      }
+
+      if (selectedChildFolder) {
+        setSelectedChildFolder("")
+        setUploadFolder(activeSubfolder !== "all" ? activeSubfolder : activeFolder !== "all" ? activeFolder : preferredUploadFolder || "categories")
+        return prev
+      }
+
+      if (activeSubfolder !== "all") {
+        setActiveSubfolder("all")
+        setUploadFolder(activeFolder !== "all" ? activeFolder : preferredUploadFolder || "categories")
+        return prev
+      }
+
+      if (activeFolder !== "all") {
+        setActiveFolder("all")
+        setActiveSubfolder("all")
+        setUploadFolder(preferredUploadFolder || "categories")
+      }
+
+      return prev
+    })
+  }, [activeFolder, activeSubfolder, preferredUploadFolder, selectedChildFolder])
+
+  const navigateIntoFolder = useCallback((folder: string) => {
+    pushNavigationSnapshot()
+    setSelectedFolder(folder)
+    setSelectedRightFolders([folder])
+    setSelectedChildFolder("")
+
+    if (activeFolder === "all") {
+      setActiveFolder(folder)
+      setActiveSubfolder("all")
+      setUploadFolder(folder)
+      return
+    }
+
+    setActiveSubfolder(folder)
+    setUploadFolder(folder)
+  }, [activeFolder, pushNavigationSnapshot])
 
   const toggleAssetWithModifier = (url: string, withMultiSelect: boolean) => {
     if (!multiple && !withMultiSelect && selectedUrls.includes(url)) {
@@ -528,54 +642,43 @@ export function MediaPickerDialog({
     onOpenChange(false)
   }
 
-  const queueDeleteAssets = (urls: string[], label: string) => {
+  const deleteSelectedAssets = async (urls: string[]) => {
     const uniqueUrls = Array.from(new Set(urls.filter(Boolean)))
     if (uniqueUrls.length === 0) {
       toast.error("Silinecek medya yok")
       return
     }
 
-    const deleteId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const ok = window.confirm("Seçili görseller silinecek. Devam etmek istiyor musunuz?")
+    if (!ok) return
+
+    const previousSelection = selectedUrls
     setHiddenDeletedUrls((prev) => Array.from(new Set([...prev, ...uniqueUrls])))
     setSelectedUrls((prev) => prev.filter((url) => !uniqueUrls.includes(url)))
+    setSelectedFolder(null)
+    setSelectedRightFolders([])
 
-    deleteTimeoutsRef.current[deleteId] = window.setTimeout(async () => {
-      try {
-        for (const url of uniqueUrls) {
-          const res = await fetch("/api/admin/media", {
-            method: "DELETE",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url }),
-          })
-          const json = await res.json().catch(() => null as null | { error?: string })
-          if (!res.ok) {
-            throw new Error(json?.error || "Failed to delete media")
-          }
+    try {
+      for (const url of uniqueUrls) {
+        const res = await fetch("/api/admin/media", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        })
+        const json = await res.json().catch(() => null as null | { error?: string })
+        if (!res.ok) {
+          throw new Error(json?.error || "Failed to delete media")
         }
-        setHiddenDeletedUrls((prev) => prev.filter((url) => !uniqueUrls.includes(url)))
-        delete deleteTimeoutsRef.current[deleteId]
-        await loadMedia()
-      } catch (error) {
-        setHiddenDeletedUrls((prev) => prev.filter((url) => !uniqueUrls.includes(url)))
-        delete deleteTimeoutsRef.current[deleteId]
-        toast.error(error instanceof Error ? error.message : "Failed to delete media", { position: "bottom-right" })
       }
-    }, 5000)
-
-    toast.success(label, {
-      position: "bottom-right",
-      duration: 5000,
-      action: {
-        label: "Undo",
-        onClick: () => {
-          const timeoutId = deleteTimeoutsRef.current[deleteId]
-          if (timeoutId) window.clearTimeout(timeoutId)
-          delete deleteTimeoutsRef.current[deleteId]
-          setHiddenDeletedUrls((prev) => prev.filter((url) => !uniqueUrls.includes(url)))
-          toast.success("Silme geri alındı", { position: "bottom-right" })
-        },
-      },
-    })
+      toast.success(`${uniqueUrls.length} görsel silindi`, { position: "bottom-right" })
+      setHiddenDeletedUrls((prev) => prev.filter((url) => !uniqueUrls.includes(url)))
+      await loadMedia()
+    } catch (error) {
+      setHiddenDeletedUrls((prev) => prev.filter((url) => !uniqueUrls.includes(url)))
+      setSelectedUrls(previousSelection)
+      await loadMedia()
+      toast.error(error instanceof Error ? error.message : "Failed to delete media", { position: "bottom-right" })
+    }
   }
 
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -655,17 +758,13 @@ export function MediaPickerDialog({
       toast.error("Folder name is required")
       return
     }
-    if (activeFolder === "all" && !parentOverride) {
-      toast.error("Select a category folder first")
-      return
-    }
-    const parentFolder = parentOverride || currentPath
+    const parentFolder = (parentOverride ?? currentPath).trim()
     setCreatingFolder(true)
     try {
       const res = await fetch("/api/admin/media", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parentFolder, name: trimmed }),
+        body: JSON.stringify(parentFolder ? { parentFolder, name: trimmed } : { name: trimmed }),
       })
       const json = await res.json().catch(() => null as null | { error?: string; folder?: string })
       if (!res.ok || !json?.folder) {
@@ -673,9 +772,24 @@ export function MediaPickerDialog({
       }
       const createdFolder = json.folder
       toast.success("Folder created")
+      await loadMedia()
       setSelectedFolder(createdFolder)
       setSelectedRightFolders([createdFolder])
-      await loadMedia()
+      if (!createdFolder.includes("/")) {
+        setActiveFolder(createdFolder)
+        setActiveSubfolder("all")
+        setSelectedChildFolder("")
+        setUploadFolder(createdFolder)
+      } else {
+        const topFolder = createdFolder.split("/")[0] || createdFolder
+        if (activeFolder === "all") {
+          setActiveFolder(topFolder)
+          setActiveSubfolder(createdFolder)
+        } else if (currentPath === (createdFolder.split("/").slice(0, -1).join("/"))) {
+          setActiveSubfolder(createdFolder)
+        }
+        setUploadFolder(createdFolder)
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create folder")
     } finally {
@@ -734,21 +848,6 @@ export function MediaPickerDialog({
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to delete folder")
     }
-  }
-
-  const deleteAllAssets = async () => {
-    const allVisibleUrls = Array.from(new Set(imageAssets.map((asset) => asset.url)))
-    if (allVisibleUrls.length === 0) {
-      toast.error("Silinecek medya yok", { position: "bottom-right" })
-      return
-    }
-
-    const ok = window.confirm(`Tüm medya silinsin mi?\n${allVisibleUrls.length} dosya silinecek.`)
-    if (!ok) return
-
-    setSelectedFolder(null)
-    setSelectedRightFolders([])
-    queueDeleteAssets(allVisibleUrls, "Tüm medya silinmek üzere işaretlendi")
   }
 
   const cloneFolder = async (folderPath: string) => {
@@ -894,26 +993,24 @@ export function MediaPickerDialog({
                 >
                   {creatingFolder ? "Ekleniyor..." : "Klasör Ekle"}
                 </Button>
-                {selectedUrls.length > 0 || selectedFolder || activeFolder === "all" ? (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => {
-                      if (selectedUrls.length > 0) {
-                        queueDeleteAssets(
-                          selectedUrls,
-                          `${selectedUrls.length} medya silinmek üzere işaretlendi`
-                        )
-                        return
-                      }
-                      void (selectedFolder ? deleteFolder(selectedFolder) : deleteAllAssets())
-                    }}
-                    disabled={moving}
-                  >
-                    Sil
-                  </Button>
-                ) : null}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleNavigateBack}
+                  disabled={!canGoBack}
+                >
+                  Geri
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => void deleteSelectedAssets(selectedUrls)}
+                  disabled={moving || selectedUrls.length === 0}
+                >
+                  Sil
+                </Button>
               </>
             ) : null}
           </div>
@@ -974,7 +1071,7 @@ export function MediaPickerDialog({
                           }}
                         >
                           <SelectTrigger className="h-12 border-[#cfd9e4] bg-white text-[15px]">
-                            <SelectValue placeholder="All media items" />
+                          <SelectValue placeholder="All root folders" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="all">All media items</SelectItem>
@@ -982,7 +1079,7 @@ export function MediaPickerDialog({
                               .filter((folder) => folder.name !== "all")
                               .map((folder) => (
                                 <SelectItem key={folder.name} value={folder.name}>
-                                  {formatFolderLabel(folder.name)}
+                                  {categoryLabelByPath.get(folder.name) || formatFolderLabel(folder.name)}
                                 </SelectItem>
                               ))}
                           </SelectContent>
@@ -1004,10 +1101,10 @@ export function MediaPickerDialog({
                             <SelectValue placeholder="All subcategories" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="all">All subcategories</SelectItem>
+                            <SelectItem value="all">All SKU folders</SelectItem>
                             {directSubfolders.map((folder) => (
                               <SelectItem key={folder} value={folder}>
-                                {formatFolderLabel(folder.split("/").pop() || folder)}
+                                {productFolderByPath.get(folder)?.sku || categoryLabelByPath.get(folder) || formatFolderLabel(folder.split("/").pop() || folder)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -1029,22 +1126,6 @@ export function MediaPickerDialog({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 xl:ml-0">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          if (selectedUrls.length > 0) {
-                            queueDeleteAssets(selectedUrls, `${selectedUrls.length} medya silinmek üzere işaretlendi`)
-                            return
-                          }
-                          void (selectedFolder ? deleteFolder(selectedFolder) : deleteAllAssets())
-                        }}
-                        disabled={moving || (selectedUrls.length === 0 && !selectedFolder && activeFolder !== "all")}
-                      >
-                        Sil
-                      </Button>
-                    </div>
                   </div>
                 </div>
 
@@ -1057,12 +1138,15 @@ export function MediaPickerDialog({
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Loading media...
                     </div>
-                  ) : !selectedChildFolder && visibleCurrentLevelFolders.length > 0 ? (
+                  ) : !activeAssetFolder && visibleCurrentLevelFolders.length > 0 ? (
                     <div className="space-y-6">
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                         {visibleCurrentLevelFolders.map((folder) => {
                           const selected = selectedFolder === folder
-                          const folderLeaf = folder.split("/").pop() || folder
+                          const folderLabel =
+                            activeFolder === "all"
+                              ? categoryLabelByPath.get(folder) || formatFolderLabel(folder)
+                              : productFolderByPath.get(folder)?.sku || categoryLabelByPath.get(folder) || (folder.split("/").pop() || folder)
                           return (
                             <div
                               key={folder}
@@ -1074,18 +1158,12 @@ export function MediaPickerDialog({
                                 setSelectedChildFolder("")
                               }}
                               onDoubleClick={() => {
-                                setSelectedFolder(folder)
-                                setSelectedRightFolders([folder])
-                                setSelectedChildFolder(folder)
-                                setUploadFolder(folder)
+                                navigateIntoFolder(folder)
                               }}
                               onKeyDown={(event) => {
                                 if (event.key === "Enter" || event.key === " ") {
                                   event.preventDefault()
-                                  setSelectedFolder(folder)
-                                  setSelectedRightFolders([folder])
-                                  setSelectedChildFolder(folder)
-                                  setUploadFolder(folder)
+                                  navigateIntoFolder(folder)
                                 }
                               }}
                               className={`rounded-[28px] border bg-white p-6 text-left shadow-[0_8px_24px_rgba(15,23,42,0.05)] transition ${selected ? "border-teal-500 ring-2 ring-teal-200" : "border-[#dce3ed]"}`}
@@ -1094,19 +1172,20 @@ export function MediaPickerDialog({
                                 <FolderIcon className="h-9 w-9" />
                               </div>
                               <div>
-                                <div className="text-[18px] font-semibold text-slate-900">{folderLeaf}</div>
+                                <div className="text-[18px] font-semibold text-slate-900">{folderLabel}</div>
                               </div>
                             </div>
                           )
                         })}
                       </div>
                     </div>
-                  ) : sortedFilteredAssets.length === 0 ? (
-                    <div className="flex h-[520px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
-                      <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
-                      No images found
-                    </div>
-                  ) : (
+                  ) : activeAssetFolder ? (
+                    sortedFilteredAssets.length === 0 ? (
+                      <div className="flex h-[520px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
+                        <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
+                        No images found
+                      </div>
+                    ) : (
                     <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                       {sortedFilteredAssets.map((asset) => {
                         const selected = selectedUrls.includes(asset.url)
@@ -1153,6 +1232,12 @@ export function MediaPickerDialog({
                         )
                       })}
                     </div>
+                    )
+                  ) : (
+                    <div className="flex h-[520px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
+                      <FolderIcon className="mb-3 h-10 w-10 text-slate-300" />
+                      {activeFolder === "all" ? "No category folders found" : "No SKU folders found"}
+                    </div>
                   )}
                 </div>
               </div>
@@ -1175,17 +1260,10 @@ export function MediaPickerDialog({
                             </p>
                           ) : null}
                           <p className="text-xs text-slate-500">{selectedAsset.folder.split("/").map(formatFolderLabel).join(" / ")}</p>
-                          <button
-                            type="button"
-                            className="text-sm font-medium text-red-600 hover:text-red-700"
-                            onClick={() => queueDeleteAssets([selectedAsset.url], "1 medya silinmek üzere işaretlendi")}
-                          >
-                            Delete
-                          </button>
                           <div className="pt-2">
                             <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">SKU</Label>
                             <div className="mt-1 min-h-[40px] rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
-                              {productMeta?.sku?.trim() || "SKU girildiğinde burada görünür"}
+                              {selectedAssetSku || "No SKU"}
                             </div>
                           </div>
                         </div>
@@ -1201,14 +1279,14 @@ export function MediaPickerDialog({
                     <div className="space-y-1">
                       <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Title</Label>
                       <div className="min-h-[44px] rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
-                        {productMeta?.title?.trim() || "Ürün başlığı girildiğinde burada görünür"}
+                        {selectedAsset ? selectedAssetDisplayLabel : "No asset selected"}
                       </div>
                     </div>
 
                     <div className="space-y-1">
                       <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Description</Label>
                       <div className="min-h-[160px] whitespace-pre-wrap rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
-                        {productMeta?.description?.trim() || "Ürün açıklaması yazıldığında burada görünür"}
+                        {selectedAsset ? (selectedAssetDescription || "No description") : "Select an asset to view metadata"}
                       </div>
                     </div>
                   </div>

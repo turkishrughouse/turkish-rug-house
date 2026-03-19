@@ -1,11 +1,12 @@
 import { notFound } from "next/navigation"
 import type { Metadata } from "next"
 import type { Prisma } from "@prisma/client"
-import { cache } from "react"
 import { prisma } from "@/lib/db"
 import { ProductDetailView } from "@/components/storefront/product-detail-view"
 import { fetchCategoryPathRows, getCategoryPathById, type CategoryPathRow } from "@/lib/category-paths"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
+import { getProductShortDescriptionById, getProductShortDescriptionMap } from "@/lib/product-short-description"
+import { stripHtmlForSeo } from "@/lib/rich-text"
 
 type Props = {
   params: Promise<{ slug: string }>
@@ -23,6 +24,7 @@ type RelatedProductCard = {
   id: string
   slug: string
   title: string
+  shortDescription?: string | null
   description?: string | null
   price: number
   compareAtPrice: number | null
@@ -54,7 +56,7 @@ type ProductRecord = Prisma.ProductGetPayload<{
   }
 }>
 
-const getPublishedProductBySlug = cache(async (slug: string) => {
+async function getPublishedProductBySlug(slug: string) {
   return prisma.product.findUnique({
     where: { slug, isPublished: true },
     include: {
@@ -77,20 +79,20 @@ const getPublishedProductBySlug = cache(async (slug: string) => {
       },
     },
   }) as Promise<ProductRecord | null>
-})
-
-function stripHtml(input: string | null | undefined) {
-  if (!input) return ""
-  return input.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
 }
 
-function buildProductMetaDescription(title: string, description: string | null | undefined) {
-  const plainDescription = stripHtml(description)
-  if (plainDescription) {
-    return plainDescription.slice(0, 160)
-  }
+function buildProductMetaDescription(input: {
+  title: string
+  seoDescription?: string | null
+  description?: string | null
+}) {
+  const manualMeta = stripHtmlForSeo(input.seoDescription)
+  if (manualMeta) return manualMeta
 
-  return `${title}. Handmade Turkish rug crafted using traditional Anatolian techniques.`.slice(0, 160)
+  const mainMeta = stripHtmlForSeo(input.description)
+  if (mainMeta) return mainMeta
+
+  return `${input.title}. Handmade Turkish rug crafted using traditional Anatolian techniques.`.slice(0, 160)
 }
 
 function getCategoryAncestors(rows: CategoryPathRow[], categoryId: string) {
@@ -186,6 +188,7 @@ async function fetchRelatedProducts(input: {
       where: {
         id: { not: input.productId },
         isPublished: true,
+        deletedAt: null,
         categories: { some: { id: { in: input.categoryFamilyIds } } },
       },
       take: 8,
@@ -199,6 +202,7 @@ async function fetchRelatedProducts(input: {
       where: {
         id: { notIn: [input.productId, ...collected.keys()] },
         isPublished: true,
+        deletedAt: null,
         colors: { some: { id: { in: input.colorIds } } },
       },
       take: 8 - collected.size,
@@ -212,6 +216,7 @@ async function fetchRelatedProducts(input: {
       where: {
         id: { notIn: [input.productId, ...collected.keys()] },
         isPublished: true,
+        deletedAt: null,
         sizes: { some: { id: { in: input.sizeIds } } },
       },
       take: 8 - collected.size,
@@ -220,7 +225,12 @@ async function fetchRelatedProducts(input: {
     appendBatch(sameSize)
   }
 
-  return Array.from(collected.values())
+  const relatedProducts = Array.from(collected.values())
+  const shortDescriptionMap = await getProductShortDescriptionMap(relatedProducts.map((item) => item.id))
+  return relatedProducts.map((item) => ({
+    ...item,
+    shortDescription: shortDescriptionMap.get(item.id) ?? null,
+  }))
 }
 
 function getSiteUrl() {
@@ -260,6 +270,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const product = await getPublishedProductBySlug(slug)
 
   if (!product) return { title: "Product Not Found" }
+  const shortDescription = await getProductShortDescriptionById(product.id)
 
   const imageRecords = parseProductImageRecords(product.images)
   const primaryImage = getProductImageUrl(imageRecords[0], "large")
@@ -268,7 +279,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     fallbackAlt: imageRecords[0]?.alt,
     categories: product.categories,
   })
-  const metaDescription = buildProductMetaDescription(product.title, product.description)
+  const metaDescription = buildProductMetaDescription({
+    title: product.title,
+    seoDescription: product.seoDescription,
+    description: product.description,
+  })
   const seoTitle = product.seoTitle?.trim() || product.title
 
   return {
@@ -306,6 +321,7 @@ export default async function ProductPage({ params }: Props) {
   const product = await getPublishedProductBySlug(slug)
 
   if (!product) notFound()
+  const shortDescription = await getProductShortDescriptionById(product.id)
   const categoryRows = await fetchCategoryPathRows()
 
   const primaryCategory = product.categories[0] || null
@@ -321,7 +337,7 @@ export default async function ProductPage({ params }: Props) {
 
   const serializedProduct = {
     ...product,
-    shortDescription: product.seoDescription,
+    shortDescription,
     categories: product.categories.map((category) => ({
       ...category,
       path: getCategoryPathById(categoryRows, category.id),
@@ -430,7 +446,11 @@ export default async function ProductPage({ params }: Props) {
     .filter(Boolean)
     .map((image) => toAbsoluteUrl(image))
   const productCanonicalUrl = `${getSiteUrl()}/product/${product.slug}`
-  const productMetaDescription = buildProductMetaDescription(product.title, product.description)
+  const productMetaDescription = buildProductMetaDescription({
+    title: product.title,
+    seoDescription: product.seoDescription,
+    description: product.description,
+  })
   const productSchema = {
     "@context": "https://schema.org",
     "@type": "Product",

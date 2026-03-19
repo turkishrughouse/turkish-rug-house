@@ -13,8 +13,16 @@ import { useStorefrontCurrency } from "@/components/storefront/currency-provider
 import { ForgotPasswordModal } from "@/components/storefront/forgot-password-modal"
 
 type Provider = "stripe" | "paypal" | "gpay" | "applepay" | "paytr"
-type PaymentTab = "gpay" | "applepay" | "paypal" | "stripe"
+type PaymentTab = Provider | ""
 type ShippingMethod = "dhl" | "ups" | "fedex"
+
+type PaymentMethodOption = {
+  value: PaymentTab
+  title: string
+  shortLabel: string
+  description: string
+  detail: string
+}
 
 type PublicSettings = {
   checkoutEnabled?: boolean
@@ -24,22 +32,34 @@ type PublicSettings = {
   thousandSeparator?: string
   decimalSeparator?: string
   numberOfDecimals?: number
-  stripeEnabled?: boolean
-  googlePayEnabled?: boolean
-  applePayEnabled?: boolean
-  paypalEnabled?: boolean
-  paytrEnabled?: boolean
   paymentDefaultProvider?: Provider
   flatShippingRate?: number
   localPickupRate?: number
   enableTaxes?: boolean
   requirePhoneAtCheckout?: boolean
   requireAddressAtCheckout?: boolean
+  paymentProviders?: PaymentMethodOption[]
 }
 
 type LocationCountry = {
   code: string
   name: string
+}
+
+type SavedAddress = {
+  id: string
+  label: string
+  fullName: string
+  phoneNumber: string
+  country: string
+  countryCode: string
+  state: string
+  city: string
+  addressLine1: string
+  addressLine2: string
+  postalCode: string
+  isDefaultShipping: boolean
+  isDefaultBilling: boolean
 }
 
 type RegisterFieldKey =
@@ -67,10 +87,14 @@ const REQUEST_TIMEOUT_MS = 15000
 export default function CheckoutPage() {
   const countriesInitializedRef = useRef(false)
   const statesFetchKeyRef = useRef("")
+  const billingSectionRef = useRef<HTMLDivElement | null>(null)
+  const paymentSectionRef = useRef<HTMLDivElement | null>(null)
+  const billingFieldRefs = useRef<Partial<Record<BillingFieldKey, HTMLInputElement | HTMLSelectElement | null>>>({})
 
   const [items, setItems] = useState<CartItem[]>([])
   const [loading, setLoading] = useState(false)
   const [settings, setSettings] = useState<PublicSettings>({})
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [paymentTab, setPaymentTab] = useState<PaymentTab>("stripe")
   const [shippingMethod, setShippingMethod] = useState<ShippingMethod>("dhl")
   const [openStep, setOpenStep] = useState<number | null>(1)
@@ -95,6 +119,12 @@ export default function CheckoutPage() {
   const [loginEmail, setLoginEmail] = useState("")
   const [loginPassword, setLoginPassword] = useState("")
   const [checkoutOption, setCheckoutOption] = useState<"register" | "guest">("guest")
+  const [customerSession, setCustomerSession] = useState<null | { id: string; email: string; name: string | null }>(null)
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([])
+  const [selectedSavedAddressId, setSelectedSavedAddressId] = useState("")
+  const [showNewAddressForm, setShowNewAddressForm] = useState(true)
+  const [saveCheckoutAddressToProfile, setSaveCheckoutAddressToProfile] = useState(false)
+  const [makeCheckoutAddressDefault, setMakeCheckoutAddressDefault] = useState(false)
   const [fallbackBannerImage, setFallbackBannerImage] = useState("")
   const [authModalMode, setAuthModalMode] = useState<null | "forgot">(null)
   const [authLoading, setAuthLoading] = useState(false)
@@ -106,13 +136,66 @@ export default function CheckoutPage() {
   const [registerPasswordConfirm, setRegisterPasswordConfirm] = useState("")
   const [registerOptIn, setRegisterOptIn] = useState(true)
   const [registerPolicyAgree, setRegisterPolicyAgree] = useState(false)
+  const [registerAddressEnabled, setRegisterAddressEnabled] = useState(false)
+  const [registerAddressConsent, setRegisterAddressConsent] = useState(false)
+  const [registerAddressLine1, setRegisterAddressLine1] = useState("")
+  const [registerAddressLine2, setRegisterAddressLine2] = useState("")
+  const [registerAddressCity, setRegisterAddressCity] = useState("")
+  const [registerAddressState, setRegisterAddressState] = useState("")
+  const [registerAddressPostalCode, setRegisterAddressPostalCode] = useState("")
+  const [registerAddressCountry, setRegisterAddressCountry] = useState("")
+  const [registerAddressCountryCode, setRegisterAddressCountryCode] = useState("")
   const [showRegisterSuccess, setShowRegisterSuccess] = useState(false)
   const [registerErrors, setRegisterErrors] = useState<Partial<Record<RegisterFieldKey, string>>>({})
   const [billingErrors, setBillingErrors] = useState<Partial<Record<BillingFieldKey, string>>>({})
+  const [billingErrorSummary, setBillingErrorSummary] = useState("")
+  const [paymentError, setPaymentError] = useState("")
   const { selectedCurrency, formatUsd } = useStorefrontCurrency()
   const countryConfig = useMemo(() => getAddressCountryConfig(countryCode), [countryCode])
   const showRegionField = countryConfig.regionMode !== "none"
   const regionAsSelect = countryConfig.regionMode === "select" && stateOptions.length > 0
+  const selectedSavedAddress = useMemo(
+    () => savedAddresses.find((address) => address.id === selectedSavedAddressId) || null,
+    [savedAddresses, selectedSavedAddressId]
+  )
+  const usingSavedAddress = Boolean(customerSession && selectedSavedAddress && !showNewAddressForm)
+  const resolvedShippingAddress = useMemo(() => {
+    const source = usingSavedAddress && selectedSavedAddress
+      ? selectedSavedAddress
+      : {
+          addressLine1,
+          addressLine2,
+          city,
+          postalCode: postcode,
+          country,
+          countryCode,
+          state: regionState,
+        }
+
+    const normalizedCountryCode =
+      source.countryCode?.trim() ||
+      countryOptions.find((item) => item.name.toLowerCase() === (source.country || "").trim().toLowerCase())?.code ||
+      ""
+    const normalizedCountryName =
+      source.country?.trim() ||
+      countryOptions.find((item) => item.code === normalizedCountryCode)?.name ||
+      ""
+
+    return {
+      addressLine1: source.addressLine1?.trim() || "",
+      addressLine2: source.addressLine2?.trim() || "",
+      city: source.city?.trim() || "",
+      postcode: source.postalCode?.trim() || "",
+      country: normalizedCountryName,
+      countryCode: normalizedCountryCode,
+      regionState: source.state?.trim() || "",
+    }
+  }, [addressLine1, addressLine2, city, country, countryCode, countryOptions, postcode, regionState, selectedSavedAddress, usingSavedAddress])
+  const billingMode = useMemo<"same_as_shipping" | "saved_address" | "new_address">(() => {
+    if (usingSavedAddress) return "saved_address"
+    if (deliverySameAsBilling) return "same_as_shipping"
+    return "new_address"
+  }, [deliverySameAsBilling, usingSavedAddress])
 
   const inputClassName = "h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm outline-none transition-colors focus:border-teal-700"
   const invalidInputClassName = "border-red-400 bg-red-50/40 focus:border-red-500"
@@ -135,6 +218,88 @@ export default function CheckoutPage() {
       delete next[field]
       return next
     })
+    setBillingErrorSummary("")
+  }
+
+  const clearBillingAddressErrors = () => {
+    setBillingErrors((current) => {
+      const next = { ...current }
+      delete next.addressLine1
+      delete next.city
+      delete next.postcode
+      delete next.country
+      delete next.regionState
+      return next
+    })
+    setBillingErrorSummary("")
+  }
+
+  const applySavedAddress = (address: SavedAddress) => {
+    const parts = address.fullName.trim().split(/\s+/)
+    setFirstName(parts.shift() || "")
+    setLastName(parts.join(" "))
+    setCustomerPhone(address.phoneNumber || "")
+    setAddressLine1(address.addressLine1 || "")
+    setAddressLine2(address.addressLine2 || "")
+    setCity(address.city || "")
+    setPostcode(address.postalCode || "")
+    setCountry(address.country || "")
+    setCountryCode(address.countryCode || "")
+    setRegionState(address.state || "")
+    setSelectedSavedAddressId(address.id)
+    setShowNewAddressForm(false)
+    setSaveCheckoutAddressToProfile(false)
+    setMakeCheckoutAddressDefault(false)
+    clearBillingAddressErrors()
+  }
+
+  const loadCustomerSession = async () => {
+    try {
+      const sessionRes = await fetch("/api/auth/session?portal=customer", { cache: "no-store" })
+      const sessionJson = (await sessionRes.json().catch(() => ({}))) as {
+        authenticated?: boolean
+        user?: { id: string; email: string; name: string | null }
+      }
+      if (!sessionJson.authenticated || !sessionJson.user) {
+        setCustomerSession(null)
+        setSavedAddresses([])
+        setSelectedSavedAddressId("")
+        setShowNewAddressForm(true)
+        setSaveCheckoutAddressToProfile(false)
+        setMakeCheckoutAddressDefault(false)
+        return
+      }
+      setCustomerSession(sessionJson.user)
+
+      const addressesRes = await fetch("/api/account/addresses", { cache: "no-store" })
+      if (!addressesRes.ok) {
+        setSavedAddresses([])
+        setShowNewAddressForm(true)
+        return
+      }
+      const addressJson = (await addressesRes.json().catch(() => ({}))) as {
+        addresses?: SavedAddress[]
+        defaultShippingAddressId?: string | null
+      }
+      const nextAddresses = Array.isArray(addressJson.addresses) ? addressJson.addresses : []
+      setSavedAddresses(nextAddresses)
+      const defaultAddress =
+        nextAddresses.find((address) => address.id === addressJson.defaultShippingAddressId) ||
+        nextAddresses.find((address) => address.isDefaultShipping) ||
+        nextAddresses[0]
+      if (defaultAddress) {
+        applySavedAddress(defaultAddress)
+      } else {
+        setShowNewAddressForm(true)
+      }
+    } catch {
+      setCustomerSession(null)
+      setSavedAddresses([])
+      setSelectedSavedAddressId("")
+      setShowNewAddressForm(true)
+      setSaveCheckoutAddressToProfile(false)
+      setMakeCheckoutAddressDefault(false)
+    }
   }
 
   const validateRegisterFields = () => {
@@ -153,21 +318,50 @@ export default function CheckoutPage() {
     return Object.keys(nextErrors).length === 0
   }
 
+  const focusBillingField = (field: BillingFieldKey) => {
+    setOpenStep(2)
+    billingSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    window.setTimeout(() => {
+      const target = billingFieldRefs.current[field]
+      if (!target) return
+      target.focus()
+      if ("select" in target) {
+        try {
+          target.select()
+        } catch {
+          // no-op
+        }
+      }
+      target.scrollIntoView({ behavior: "smooth", block: "center" })
+    }, 120)
+  }
+
   const validateBillingFields = () => {
     const nextErrors: Partial<Record<BillingFieldKey, string>> = {}
+    const digitsOnlyPhone = customerPhone.replace(/[^\d+]/g, "")
+    const resolvedAddress = resolvedShippingAddress
+    const resolvedCountryConfig = getAddressCountryConfig(resolvedAddress.countryCode || countryCode)
+
     if (!firstName.trim()) nextErrors.firstName = "First name is required."
     if (!lastName.trim()) nextErrors.lastName = "Last name is required."
     if (!customerEmail.trim()) nextErrors.email = "Email is required."
     else if (!customerEmail.includes("@")) nextErrors.email = "Enter a valid email address."
-    if (!customerPhone.trim()) nextErrors.telephone = "Telephone is required."
-    if (!addressLine1.trim()) nextErrors.addressLine1 = "Address line 1 is required."
-    if (!city.trim()) nextErrors.city = `${countryConfig.cityLabel} is required.`
-    if (!postcode.trim()) nextErrors.postcode = `${countryConfig.postalCodeLabel} is required.`
-    if (!countryCode || !country.trim()) nextErrors.country = "Country is required."
-    if (countryConfig.regionRequired && !regionState.trim()) nextErrors.regionState = `${countryConfig.regionLabel} is required.`
+    if (!customerPhone.trim()) nextErrors.telephone = "Phone number is required."
+    else if (digitsOnlyPhone.replace(/\D/g, "").length < 6) nextErrors.telephone = "Please enter a valid phone number."
+    if (!resolvedAddress.addressLine1.trim()) nextErrors.addressLine1 = "Address line 1 is required."
+    if (!resolvedAddress.city.trim()) nextErrors.city = "City is required."
+    if (!resolvedAddress.postcode.trim()) nextErrors.postcode = "ZIP / Postal code is required."
+    else if (resolvedAddress.postcode.trim().length < 2) nextErrors.postcode = "Please enter a valid ZIP / Postal code."
+    if (!resolvedAddress.countryCode?.trim() && !resolvedAddress.country.trim()) nextErrors.country = "Country is required."
+    if (resolvedCountryConfig.regionRequired && !resolvedAddress.regionState.trim()) nextErrors.regionState = "State / Region is required."
 
     setBillingErrors(nextErrors)
-    return Object.keys(nextErrors).length === 0
+    const firstInvalidField = (Object.keys(nextErrors)[0] as BillingFieldKey | undefined) || null
+    setBillingErrorSummary(firstInvalidField ? "Please complete the highlighted billing fields." : "")
+    return {
+      isValid: Object.keys(nextErrors).length === 0,
+      firstInvalidField,
+    }
   }
 
   useEffect(() => {
@@ -188,32 +382,26 @@ export default function CheckoutPage() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const res = await fetch("/api/public/settings", { cache: "force-cache" })
+        const res = await fetch("/api/public/checkout-config", { cache: "no-store" })
         if (!res.ok) return
         const data = (await res.json()) as PublicSettings
-        setSettings(data)
-
-        const enabledTabs: PaymentTab[] = []
-        if (data.googlePayEnabled) enabledTabs.push("gpay")
-        if (data.applePayEnabled) enabledTabs.push("applepay")
-        if (data.stripeEnabled) enabledTabs.push("stripe")
-        if (data.paypalEnabled) enabledTabs.push("paypal")
-
-        if (data.paymentDefaultProvider === "gpay" && enabledTabs.includes("gpay")) {
-          setPaymentTab("gpay")
-        } else if (data.paymentDefaultProvider === "applepay" && enabledTabs.includes("applepay")) {
-          setPaymentTab("applepay")
-        } else if (data.paymentDefaultProvider === "paypal" && enabledTabs.includes("paypal")) {
-          setPaymentTab("paypal")
-        } else if (enabledTabs.length > 0) {
-          setPaymentTab(enabledTabs[0])
+        if (process.env.NODE_ENV !== "production") {
+          console.info("[checkout] received payment providers", data.paymentProviders?.map((provider) => provider.value) || [])
+          console.info("[checkout] received checkout config", data)
         }
+        setSettings(data)
       } catch {
         // keep defaults
+      } finally {
+        setSettingsLoaded(true)
       }
     }
 
     void loadSettings()
+  }, [])
+
+  useEffect(() => {
+    void loadCustomerSession()
   }, [])
 
   useEffect(() => {
@@ -325,41 +513,60 @@ export default function CheckoutPage() {
   const vatAmount = settings.enableTaxes ? (summary.total + shippingCost) * 0.1 : 0
   const total = summary.total + shippingCost + ecoTaxAmount + vatAmount
 
-  const enabledPaymentTabs = useMemo(() => {
-    const tabs: Array<{ value: PaymentTab; label: string; enabled: boolean }> = [
-      { value: "gpay", label: "GPay", enabled: Boolean(settings.googlePayEnabled) },
-      { value: "applepay", label: "Apple Pay", enabled: Boolean(settings.applePayEnabled) },
-      { value: "paypal", label: "PayPal", enabled: Boolean(settings.paypalEnabled) },
-      { value: "stripe", label: "Stripe", enabled: Boolean(settings.stripeEnabled) },
-    ]
-    return tabs
-  }, [settings.googlePayEnabled, settings.applePayEnabled, settings.stripeEnabled, settings.paypalEnabled])
+  const paymentMethods = useMemo(() => {
+    return Array.isArray(settings.paymentProviders) ? settings.paymentProviders : []
+  }, [settings.paymentProviders])
 
-  const provider: Provider = paymentTab
+  useEffect(() => {
+    if (!settingsLoaded || paymentMethods.length > 0) return
+    console.warn("Checkout payment methods are not configured; no payment providers are available.")
+  }, [
+    paymentMethods.length,
+    settingsLoaded,
+  ])
+
+  const paymentProviderConfigured = useMemo(
+    () =>
+      paymentMethods.reduce<Record<Provider, boolean>>(
+        (acc, method) => {
+          acc[method.value] = true
+          return acc
+        },
+        { stripe: false, paypal: false, paytr: false, gpay: false, applepay: false }
+      ),
+    [paymentMethods]
+  )
+
+  const isPaymentSelectionValid = useMemo(
+    () => Boolean(paymentTab && paymentMethods.some((method) => method.value === paymentTab) && paymentProviderConfigured[paymentTab]),
+    [paymentMethods, paymentProviderConfigured, paymentTab]
+  )
+
+  const canContinueFromPaymentStep = isPaymentSelectionValid && agreeTerms
+
+  useEffect(() => {
+    const defaultProvider = settings.paymentDefaultProvider
+    const stripeMethod = paymentMethods.find((method) => method.value === "stripe")
+    const preferredMethod =
+      (defaultProvider && paymentMethods.find((method) => method.value === defaultProvider)) ||
+      stripeMethod ||
+      paymentMethods[0]
+
+    if (!preferredMethod) {
+      setPaymentTab("" as PaymentTab)
+      return
+    }
+
+    setPaymentTab((current) => {
+      if (current && paymentMethods.some((method) => method.value === current)) return current
+      return preferredMethod.value
+    })
+  }, [paymentMethods, settings.paymentDefaultProvider])
+
+  const provider = paymentTab as Provider
   const paymentPanel = useMemo(() => {
-    if (paymentTab === "gpay") {
-      return {
-        title: "Google Pay",
-        description: "Use Google Pay for a fast and secure checkout with your saved cards.",
-      }
-    }
-    if (paymentTab === "applepay") {
-      return {
-        title: "Apple Pay",
-        description: "Pay quickly with Apple Pay using Face ID or Touch ID on supported devices.",
-      }
-    }
-    if (paymentTab === "paypal") {
-      return {
-        title: "PayPal",
-        description: "You will be redirected to PayPal to complete payment securely.",
-      }
-    }
-    return {
-      title: "Stripe Card Payment",
-      description: "Pay with Visa, MasterCard, AMEX or other cards powered by Stripe.",
-    }
-  }, [paymentTab])
+    return paymentMethods.find((method) => method.value === paymentTab) || null
+  }, [paymentMethods, paymentTab])
 
   const startPayment = async () => {
     if (items.length === 0) {
@@ -377,28 +584,23 @@ export default function CheckoutPage() {
       return
     }
 
-    if (!countryCode || !country.trim()) {
-      toast.error("Please select your country")
+    if (!resolvedShippingAddress.countryCode || !resolvedShippingAddress.country) {
+      toast.error("Please select a shipping country.")
       return
     }
 
-    if (!addressLine1.trim() || !city.trim() || !postcode.trim()) {
+    if (!resolvedShippingAddress.addressLine1 || !resolvedShippingAddress.city || !resolvedShippingAddress.postcode) {
       toast.error("Please complete your address, city, and postal code")
       return
     }
 
-    if (countryConfig.regionRequired && !regionState.trim()) {
-      toast.error(`Please enter your ${countryConfig.regionLabel.toLowerCase()}`)
+    const resolvedCountryConfig = getAddressCountryConfig(resolvedShippingAddress.countryCode)
+    if (resolvedCountryConfig.regionRequired && !resolvedShippingAddress.regionState) {
+      toast.error(`Please enter your ${resolvedCountryConfig.regionLabel.toLowerCase()}`)
       return
     }
 
-    if (!enabledPaymentTabs.some((tab) => tab.enabled)) {
-      toast.error("No payment provider is enabled")
-      return
-    }
-
-    if (!agreeTerms) {
-      toast.error("Please accept terms & conditions")
+    if (!validatePaymentStep(true)) {
       return
     }
 
@@ -413,14 +615,16 @@ export default function CheckoutPage() {
           customerEmail: customerEmail.trim(),
           customerPhone: customerPhone.trim(),
           company: company.trim(),
-          addressLine1: addressLine1.trim(),
-          addressLine2: addressLine2.trim(),
-          city: city.trim(),
-          postcode: postcode.trim(),
-          country: country.trim(),
-          countryCode: countryCode.trim(),
-          regionState: regionState.trim(),
+          addressLine1: resolvedShippingAddress.addressLine1,
+          addressLine2: resolvedShippingAddress.addressLine2,
+          city: resolvedShippingAddress.city,
+          postcode: resolvedShippingAddress.postcode,
+          country: resolvedShippingAddress.country,
+          countryCode: resolvedShippingAddress.countryCode,
+          regionState: resolvedShippingAddress.regionState,
           orderComment: orderComment.trim(),
+          saveAddressToProfile: Boolean(customerSession && saveCheckoutAddressToProfile),
+          makeDefaultShippingAddress: Boolean(customerSession && saveCheckoutAddressToProfile && makeCheckoutAddressDefault),
           shippingMethod,
           displayCurrency: selectedCurrency,
           items: items.map((item) => ({
@@ -458,6 +662,7 @@ export default function CheckoutPage() {
       const json = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) throw new Error(json.error || "Login failed")
       setCustomerEmail(loginEmail.trim())
+      await loadCustomerSession()
       setOpenStep(2)
       toast.success("Login successful")
     } catch (error) {
@@ -489,6 +694,21 @@ export default function CheckoutPage() {
           password: registerPassword,
           marketingOptIn: registerOptIn,
           source: "account",
+          saveAddressToProfile: registerAddressEnabled && registerAddressConsent && Boolean(registerAddressLine1.trim()),
+          address: registerAddressEnabled
+            ? {
+                label: "Primary",
+                fullName,
+                phoneNumber: registerPhone.trim(),
+                country: registerAddressCountry.trim(),
+                countryCode: registerAddressCountryCode.trim(),
+                state: registerAddressState.trim(),
+                city: registerAddressCity.trim(),
+                addressLine1: registerAddressLine1.trim(),
+                addressLine2: registerAddressLine2.trim(),
+                postalCode: registerAddressPostalCode.trim(),
+              }
+            : undefined,
         }),
       })
       window.clearTimeout(timeoutId)
@@ -508,6 +728,15 @@ export default function CheckoutPage() {
       setRegisterPhone("")
       setRegisterPassword("")
       setRegisterPasswordConfirm("")
+      setRegisterAddressEnabled(false)
+      setRegisterAddressConsent(false)
+      setRegisterAddressLine1("")
+      setRegisterAddressLine2("")
+      setRegisterAddressCity("")
+      setRegisterAddressState("")
+      setRegisterAddressPostalCode("")
+      setRegisterAddressCountry("")
+      setRegisterAddressCountryCode("")
       setRegisterPolicyAgree(false)
       setRegisterErrors({})
       setOpenStep(2)
@@ -522,6 +751,29 @@ export default function CheckoutPage() {
       if (timeoutId) window.clearTimeout(timeoutId)
       setAuthLoading(false)
     }
+  }
+
+  const validatePaymentStep = (showFeedback = false) => {
+    let nextError = ""
+
+    if (!paymentTab || !paymentMethods.some((method) => method.value === paymentTab)) {
+      nextError = paymentMethods.length === 0
+        ? "No payment methods are currently available."
+        : "Please select a payment method."
+    } else if (!paymentProviderConfigured[paymentTab]) {
+      nextError = "Payment method is not properly configured."
+    } else if (!agreeTerms) {
+      nextError = "Please accept terms & conditions before continuing."
+    }
+
+    setPaymentError(nextError)
+
+    if (nextError && showFeedback) {
+      paymentSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+      toast.error(nextError)
+    }
+
+    return !nextError
   }
 
   if (items.length === 0) {
@@ -592,7 +844,7 @@ export default function CheckoutPage() {
 
       <div className="mx-auto w-full max-w-[1600px] px-3 py-8 sm:px-4 sm:py-10 lg:px-10">
         <div className="border-t border-slate-200">
-          <div className="border-b border-slate-200">
+          <div ref={billingSectionRef} className="border-b border-slate-200">
             <button type="button" onClick={() => setOpenStep(openStep === 1 ? null : 1)} className="flex h-16 w-full items-center justify-between text-left">
               <span className="text-base font-semibold leading-none text-teal-800">Step 1: <span className="text-base font-semibold text-slate-900">Checkout Options</span></span>
               {openStep === 1 ? <ChevronUp className="h-6 w-6 text-slate-700" /> : <ChevronDown className="h-6 w-6 text-slate-700" />}
@@ -703,6 +955,24 @@ export default function CheckoutPage() {
                           </div>
                           <div className="mt-4 flex flex-col gap-3">
                             <label className="flex w-full items-start gap-3 text-sm leading-6 text-slate-700">
+                              <input className="mt-1 h-4 w-4 shrink-0" type="checkbox" checked={registerAddressEnabled} onChange={(event) => setRegisterAddressEnabled(event.target.checked)} />
+                              <span>I want to add my address now</span>
+                            </label>
+                            {registerAddressEnabled ? (
+                              <div className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-4 md:grid-cols-2">
+                                <input value={registerAddressCountry} onChange={(event) => setRegisterAddressCountry(event.target.value)} className={inputClassName} placeholder="Country" />
+                                <input value={registerAddressCountryCode} onChange={(event) => setRegisterAddressCountryCode(event.target.value)} className={inputClassName} placeholder="Country code" />
+                                <input value={registerAddressState} onChange={(event) => setRegisterAddressState(event.target.value)} className={inputClassName} placeholder="State / Region" />
+                                <input value={registerAddressCity} onChange={(event) => setRegisterAddressCity(event.target.value)} className={inputClassName} placeholder="City" />
+                                <input value={registerAddressLine1} onChange={(event) => setRegisterAddressLine1(event.target.value)} className={`${inputClassName} md:col-span-2`} placeholder="Address line 1" />
+                                <input value={registerAddressLine2} onChange={(event) => setRegisterAddressLine2(event.target.value)} className={`${inputClassName} md:col-span-2`} placeholder="Address line 2" />
+                                <input value={registerAddressPostalCode} onChange={(event) => setRegisterAddressPostalCode(event.target.value)} className={inputClassName} placeholder="ZIP / Postal code" />
+                                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+                                  Full name and phone number will be taken from your account details.
+                                </div>
+                              </div>
+                            ) : null}
+                            <label className="flex w-full items-start gap-3 text-sm leading-6 text-slate-700">
                               <input className="mt-1 h-4 w-4 shrink-0" type="checkbox" checked={registerPolicyAgree} onChange={(event) => { setRegisterPolicyAgree(event.target.checked); if (event.target.checked) setRegisterErrors((current) => { const next = { ...current }; delete next.privacyPolicy; return next }) }} />
                               <span>
                                 I have read and agree to the{" "}
@@ -715,6 +985,12 @@ export default function CheckoutPage() {
                               <input className="mt-1 h-4 w-4 shrink-0" type="checkbox" checked={registerOptIn} onChange={(event) => setRegisterOptIn(event.target.checked)} />
                               <span>Subscribe to the newsletter</span>
                             </label>
+                            {registerAddressEnabled ? (
+                              <label className="flex w-full items-start gap-3 text-sm leading-6 text-slate-700">
+                                <input className="mt-1 h-4 w-4 shrink-0" type="checkbox" checked={registerAddressConsent} onChange={(event) => setRegisterAddressConsent(event.target.checked)} />
+                                <span>Save this address to my account for faster checkout next time.</span>
+                              </label>
+                            ) : null}
                             {registerErrors.privacyPolicy ? <p className="text-xs text-red-600">{registerErrors.privacyPolicy}</p> : null}
                           </div>
                           {showRegisterSuccess ? (
@@ -745,42 +1021,47 @@ export default function CheckoutPage() {
             ) : null}
           </div>
 
-          <div className="border-b border-slate-200">
+          <div ref={billingSectionRef} className="border-b border-slate-200">
             <button type="button" onClick={() => setOpenStep(openStep === 2 ? null : 2)} className="flex h-16 w-full items-center justify-between text-left">
               <span className="text-base font-semibold leading-none text-teal-800">Step 2: <span className="text-base font-semibold text-slate-900">Billing Details</span></span>
               {openStep === 2 ? <ChevronUp className="h-6 w-6 text-slate-700" /> : <ChevronDown className="h-6 w-6 text-slate-700" />}
             </button>
             {openStep === 2 ? (
               <div className="pb-8">
+                {billingErrorSummary ? (
+                  <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                    {billingErrorSummary}
+                  </div>
+                ) : null}
                 <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
                   <div>
                     <h3 className="text-2xl font-semibold leading-none text-slate-900">Your Personal Details</h3>
                     <div className="mt-10 space-y-4">
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
-                        <label className="text-base text-slate-600">First Name *</label>
+                        <label className={`text-base ${billingErrors.firstName ? "text-red-700" : "text-slate-600"}`}>First Name *</label>
                         <div>
-                          <input value={firstName} onChange={(e) => { setFirstName(e.target.value); setBillingErrorValue("firstName", e.target.value) }} className={`h-11 w-full rounded border px-4 text-base ${billingErrors.firstName ? "border-red-400 bg-red-50/40" : "border-slate-300"}`} placeholder="First Name" />
+                          <input ref={(node) => { billingFieldRefs.current.firstName = node }} value={firstName} onChange={(e) => { setFirstName(e.target.value); setBillingErrorValue("firstName", e.target.value) }} className={`h-11 w-full rounded border px-4 text-base ${billingErrors.firstName ? "border-red-400 bg-red-50/40" : "border-slate-300"}`} placeholder="First Name" />
                           {billingErrors.firstName ? <p className="mt-1 text-xs text-red-600">{billingErrors.firstName}</p> : null}
                         </div>
                       </div>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
-                        <label className="text-base text-slate-600">Last Name *</label>
+                        <label className={`text-base ${billingErrors.lastName ? "text-red-700" : "text-slate-600"}`}>Last Name *</label>
                         <div>
-                          <input value={lastName} onChange={(e) => { setLastName(e.target.value); setBillingErrorValue("lastName", e.target.value) }} className={`h-11 w-full rounded border px-4 text-base ${billingErrors.lastName ? "border-red-400 bg-red-50/40" : "border-slate-300"}`} placeholder="Last Name" />
+                          <input ref={(node) => { billingFieldRefs.current.lastName = node }} value={lastName} onChange={(e) => { setLastName(e.target.value); setBillingErrorValue("lastName", e.target.value) }} className={`h-11 w-full rounded border px-4 text-base ${billingErrors.lastName ? "border-red-400 bg-red-50/40" : "border-slate-300"}`} placeholder="Last Name" />
                           {billingErrors.lastName ? <p className="mt-1 text-xs text-red-600">{billingErrors.lastName}</p> : null}
                         </div>
                       </div>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
-                        <label className="text-base text-slate-600">E-Mail *</label>
+                        <label className={`text-base ${billingErrors.email ? "text-red-700" : "text-slate-600"}`}>E-Mail *</label>
                         <div>
-                          <input value={customerEmail} onChange={(e) => { setCustomerEmail(e.target.value); setBillingErrorValue("email", e.target.value) }} type="email" className={`h-11 w-full rounded border px-4 text-base ${billingErrors.email ? "border-red-400 bg-red-50/40" : "border-slate-300"}`} placeholder="E-Mail" />
+                          <input ref={(node) => { billingFieldRefs.current.email = node }} value={customerEmail} onChange={(e) => { setCustomerEmail(e.target.value); setBillingErrorValue("email", e.target.value) }} type="email" className={`h-11 w-full rounded border px-4 text-base ${billingErrors.email ? "border-red-400 bg-red-50/40" : "border-slate-300"}`} placeholder="E-Mail" />
                           {billingErrors.email ? <p className="mt-1 text-xs text-red-600">{billingErrors.email}</p> : null}
                         </div>
                       </div>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
-                        <label className="text-base text-slate-600">Telephone *</label>
+                        <label className={`text-base ${billingErrors.telephone ? "text-red-700" : "text-slate-600"}`}>Phone Number *</label>
                         <div>
-                          <input value={customerPhone} onChange={(e) => { setCustomerPhone(e.target.value); setBillingErrorValue("telephone", e.target.value) }} className={`h-11 w-full rounded border px-4 text-base ${billingErrors.telephone ? "border-red-400 bg-red-50/40" : "border-slate-300"}`} placeholder="Telephone" />
+                          <input ref={(node) => { billingFieldRefs.current.telephone = node }} value={customerPhone} onChange={(e) => { setCustomerPhone(e.target.value); setBillingErrorValue("telephone", e.target.value) }} className={`h-11 w-full rounded border px-4 text-base ${billingErrors.telephone ? "border-red-400 bg-red-50/40" : "border-slate-300"}`} placeholder="Phone number" />
                           {billingErrors.telephone ? <p className="mt-1 text-xs text-red-600">{billingErrors.telephone}</p> : null}
                         </div>
                       </div>
@@ -789,114 +1070,209 @@ export default function CheckoutPage() {
 
                   <div>
                     <h3 className="text-2xl font-semibold leading-none text-slate-900">Your Address</h3>
-                    <div className="mt-10 space-y-4">
+                    {customerSession && savedAddresses.length > 0 ? (
+                      <div className="mt-6 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">Saved addresses</p>
+                            <p className="text-xs text-slate-500">Use your saved address or enter a new one for this order.</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <select
+                              value={selectedSavedAddressId}
+                              onChange={(event) => {
+                                const next = savedAddresses.find((address) => address.id === event.target.value)
+                                if (next) applySavedAddress(next)
+                              }}
+                              className="h-11 min-w-[240px] rounded-xl border border-slate-300 bg-white px-4 text-sm"
+                            >
+                              {savedAddresses.map((address) => (
+                                <option key={address.id} value={address.id}>
+                                  {address.label}: {address.addressLine1}, {address.city}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowNewAddressForm(true)
+                                setSelectedSavedAddressId("")
+                                setSaveCheckoutAddressToProfile(false)
+                                setMakeCheckoutAddressDefault(false)
+                                setBillingErrorSummary("")
+                              }}
+                              className="rounded-xl border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              Use new address
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                    {usingSavedAddress && selectedSavedAddress ? (
+                      <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+                        <p className="text-sm font-semibold text-slate-900">Using saved address</p>
+                        <p className="mt-1 text-sm text-slate-700">{selectedSavedAddress.fullName}</p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {[
+                            selectedSavedAddress.addressLine1,
+                            selectedSavedAddress.addressLine2,
+                            selectedSavedAddress.city,
+                            selectedSavedAddress.state,
+                            selectedSavedAddress.postalCode,
+                            selectedSavedAddress.country,
+                          ]
+                            .filter(Boolean)
+                            .join(", ")}
+                        </p>
+                        {selectedSavedAddress.phoneNumber ? (
+                          <p className="mt-1 text-xs text-slate-500">{selectedSavedAddress.phoneNumber}</p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <div className={`space-y-4 ${usingSavedAddress ? "mt-6" : "mt-10"}`}>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
                         <label className="text-base text-slate-600">Company</label>
                         <input value={company} onChange={(e) => setCompany(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="Company" />
                       </div>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
-                        <label className="text-base text-slate-600">Address 1 *</label>
+                      {showNewAddressForm ? (
+                        <>
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
+                        <label className={`text-base ${billingErrors.addressLine1 ? "text-red-700" : "text-slate-600"}`}>Address 1 *</label>
                         <div>
-                          <input value={addressLine1} onChange={(e) => { setAddressLine1(e.target.value); setBillingErrorValue("addressLine1", e.target.value) }} className={`h-11 w-full rounded border px-4 text-base ${billingErrors.addressLine1 ? "border-red-400 bg-red-50/40" : "border-slate-300"}`} placeholder="Address 1" />
-                          {billingErrors.addressLine1 ? <p className="mt-1 text-xs text-red-600">{billingErrors.addressLine1}</p> : null}
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
-                        <label className="text-base text-slate-600">Address 2</label>
-                        <input value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="Address 2" />
-                      </div>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
-                        <label className="text-base text-slate-600">City *</label>
-                        <div>
-                          <input
-                            value={city}
-                            onChange={(e) => { setCity(e.target.value); setBillingErrorValue("city", e.target.value) }}
-                            className={`h-11 w-full rounded border px-4 text-base ${billingErrors.city ? "border-red-400 bg-red-50/40" : "border-slate-300"}`}
-                            placeholder={countryConfig.cityLabel}
-                            autoComplete="address-level2"
-                          />
-                          {billingErrors.city ? <p className="mt-1 text-xs text-red-600">{billingErrors.city}</p> : null}
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
-                        <label className="text-base text-slate-600">{countryConfig.postalCodeLabel} *</label>
-                        <div>
-                          <input
-                            value={postcode}
-                            onChange={(e) => { setPostcode(e.target.value); setBillingErrorValue("postcode", e.target.value) }}
-                            className={`h-11 w-full rounded border px-4 text-base ${billingErrors.postcode ? "border-red-400 bg-red-50/40" : "border-slate-300"}`}
-                            placeholder={countryConfig.postalCodeLabel}
-                            autoComplete="postal-code"
-                          />
-                          {billingErrors.postcode ? <p className="mt-1 text-xs text-red-600">{billingErrors.postcode}</p> : null}
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
-                        <label className="text-base text-slate-600">Country *</label>
-                        <div>
-                          <select
-                            value={countryCode}
-                            onChange={(e) => {
-                              const code = e.target.value
-                              setCountryCode(code)
-                              const selected = countryOptions.find((item) => item.code === code)
-                              setCountry(selected?.name || "")
-                              setRegionState("")
-                              setBillingErrorValue("country", code)
-                              setBillingErrors((current) => {
-                                if (!current.regionState) return current
-                                const next = { ...current }
-                                delete next.regionState
-                                return next
-                              })
-                            }}
-                            className={`h-11 w-full rounded border bg-white px-4 text-base ${billingErrors.country ? "border-red-400 bg-red-50/40" : "border-slate-300"}`}
-                            autoComplete="country"
-                          >
-                            <option value="">Select country</option>
-                            {countryOptions.length > 0 ? countryOptions.map((item) => (
-                              <option key={item.code} value={item.code}>{item.name}</option>
-                            )) : countryCode ? <option value={countryCode}>{country}</option> : null}
-                          </select>
-                          {billingErrors.country ? <p className="mt-1 text-xs text-red-600">{billingErrors.country}</p> : null}
-                        </div>
-                      </div>
-                      {showRegionField ? (
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
-                          <label className="text-base text-slate-600">
-                            {countryConfig.regionLabel}
-                            {countryConfig.regionRequired ? " *" : ""}
-                          </label>
-                          {regionAsSelect ? (
-                            <div>
-                              <select
-                                value={regionState}
-                                onChange={(e) => { setRegionState(e.target.value); setBillingErrorValue("regionState", e.target.value) }}
-                                className={`h-11 w-full rounded border bg-white px-4 text-base ${billingErrors.regionState ? "border-red-400 bg-red-50/40" : "border-slate-300"}`}
-                                autoComplete="address-level1"
-                              >
-                                <option value="">{`Select ${countryConfig.regionLabel}`}</option>
-                                {stateOptions.map((stateName) => (
-                                  <option key={stateName} value={stateName}>{stateName}</option>
-                                ))}
-                              </select>
-                              {billingErrors.regionState ? <p className="mt-1 text-xs text-red-600">{billingErrors.regionState}</p> : null}
+                          <input ref={(node) => { billingFieldRefs.current.addressLine1 = node }} value={addressLine1} onChange={(e) => { setShowNewAddressForm(true); setSelectedSavedAddressId(""); setAddressLine1(e.target.value); setBillingErrorValue("addressLine1", e.target.value) }} className={`h-11 w-full rounded border px-4 text-base ${billingErrors.addressLine1 ? "border-red-400 bg-red-50/40" : "border-slate-300"}`} placeholder="Address 1" />
+                              {billingErrors.addressLine1 ? <p className="mt-1 text-xs text-red-600">{billingErrors.addressLine1}</p> : null}
                             </div>
-                          ) : (
+                          </div>
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
+                            <label className="text-base text-slate-600">Address 2</label>
+                            <input value={addressLine2} onChange={(e) => { setShowNewAddressForm(true); setSelectedSavedAddressId(""); setAddressLine2(e.target.value) }} className="h-11 rounded border border-slate-300 px-4 text-base" placeholder="Address 2" />
+                          </div>
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
+                            <label className={`text-base ${billingErrors.city ? "text-red-700" : "text-slate-600"}`}>City *</label>
                             <div>
                               <input
-                                value={regionState}
-                                onChange={(e) => { setRegionState(e.target.value); setBillingErrorValue("regionState", e.target.value) }}
-                                className={`h-11 w-full rounded border px-4 text-base ${billingErrors.regionState ? "border-red-400 bg-red-50/40" : "border-slate-300"}`}
-                                placeholder={countryConfig.regionLabel}
-                                autoComplete="address-level1"
+                                ref={(node) => { billingFieldRefs.current.city = node }}
+                                value={city}
+                                onChange={(e) => { setShowNewAddressForm(true); setSelectedSavedAddressId(""); setCity(e.target.value); setBillingErrorValue("city", e.target.value) }}
+                                className={`h-11 w-full rounded border px-4 text-base ${billingErrors.city ? "border-red-400 bg-red-50/40" : "border-slate-300"}`}
+                                placeholder={countryConfig.cityLabel}
+                                autoComplete="address-level2"
                               />
-                              {billingErrors.regionState ? <p className="mt-1 text-xs text-red-600">{billingErrors.regionState}</p> : null}
+                              {billingErrors.city ? <p className="mt-1 text-xs text-red-600">{billingErrors.city}</p> : null}
                             </div>
-                          )}
-                        </div>
+                          </div>
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
+                            <label className={`text-base ${billingErrors.postcode ? "text-red-700" : "text-slate-600"}`}>{countryConfig.postalCodeLabel} *</label>
+                            <div>
+                              <input
+                                ref={(node) => { billingFieldRefs.current.postcode = node }}
+                                value={postcode}
+                                onChange={(e) => { setShowNewAddressForm(true); setSelectedSavedAddressId(""); setPostcode(e.target.value); setBillingErrorValue("postcode", e.target.value) }}
+                                className={`h-11 w-full rounded border px-4 text-base ${billingErrors.postcode ? "border-red-400 bg-red-50/40" : "border-slate-300"}`}
+                                placeholder={countryConfig.postalCodeLabel}
+                                autoComplete="postal-code"
+                              />
+                              {billingErrors.postcode ? <p className="mt-1 text-xs text-red-600">{billingErrors.postcode}</p> : null}
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
+                            <label className={`text-base ${billingErrors.country ? "text-red-700" : "text-slate-600"}`}>Country *</label>
+                            <div>
+                              <select
+                                ref={(node) => { billingFieldRefs.current.country = node }}
+                                value={countryCode}
+                                onChange={(e) => {
+                                  const code = e.target.value
+                                  setShowNewAddressForm(true)
+                                  setSelectedSavedAddressId("")
+                                  setCountryCode(code)
+                                  const selected = countryOptions.find((item) => item.code === code)
+                                  setCountry(selected?.name || "")
+                                  setRegionState("")
+                                  setBillingErrorValue("country", code)
+                                  setBillingErrors((current) => {
+                                    if (!current.regionState) return current
+                                    const next = { ...current }
+                                    delete next.regionState
+                                    return next
+                                  })
+                                }}
+                                className={`h-11 w-full rounded border bg-white px-4 text-base ${billingErrors.country ? "border-red-400 bg-red-50/40" : "border-slate-300"}`}
+                                autoComplete="country"
+                              >
+                                <option value="">Select country</option>
+                                {countryOptions.length > 0 ? countryOptions.map((item) => (
+                                  <option key={item.code} value={item.code}>{item.name}</option>
+                                )) : countryCode ? <option value={countryCode}>{country}</option> : null}
+                              </select>
+                              {billingErrors.country ? <p className="mt-1 text-xs text-red-600">{billingErrors.country}</p> : null}
+                            </div>
+                          </div>
+                          {showRegionField ? (
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-4">
+                              <label className={`text-base ${billingErrors.regionState ? "text-red-700" : "text-slate-600"}`}>
+                                {countryConfig.regionLabel}
+                                {countryConfig.regionRequired ? " *" : ""}
+                              </label>
+                              {regionAsSelect ? (
+                                <div>
+                                  <select
+                                    ref={(node) => { billingFieldRefs.current.regionState = node }}
+                                    value={regionState}
+                                    onChange={(e) => { setShowNewAddressForm(true); setSelectedSavedAddressId(""); setRegionState(e.target.value); setBillingErrorValue("regionState", e.target.value) }}
+                                    className={`h-11 w-full rounded border bg-white px-4 text-base ${billingErrors.regionState ? "border-red-400 bg-red-50/40" : "border-slate-300"}`}
+                                    autoComplete="address-level1"
+                                  >
+                                    <option value="">{`Select ${countryConfig.regionLabel}`}</option>
+                                    {stateOptions.map((stateName) => (
+                                      <option key={stateName} value={stateName}>{stateName}</option>
+                                    ))}
+                                  </select>
+                                  {billingErrors.regionState ? <p className="mt-1 text-xs text-red-600">{billingErrors.regionState}</p> : null}
+                                </div>
+                              ) : (
+                                <div>
+                                  <input
+                                    ref={(node) => { billingFieldRefs.current.regionState = node }}
+                                    value={regionState}
+                                    onChange={(e) => { setShowNewAddressForm(true); setSelectedSavedAddressId(""); setRegionState(e.target.value); setBillingErrorValue("regionState", e.target.value) }}
+                                    className={`h-11 w-full rounded border px-4 text-base ${billingErrors.regionState ? "border-red-400 bg-red-50/40" : "border-slate-300"}`}
+                                    placeholder={countryConfig.regionLabel}
+                                    autoComplete="address-level1"
+                                  />
+                                  {billingErrors.regionState ? <p className="mt-1 text-xs text-red-600">{billingErrors.regionState}</p> : null}
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
+                        </>
                       ) : null}
                     </div>
+                    {customerSession && showNewAddressForm ? (
+                      <div className="mt-5 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                        <label className="flex items-start gap-3 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            className="mt-1 h-4 w-4"
+                            checked={saveCheckoutAddressToProfile}
+                            onChange={(event) => setSaveCheckoutAddressToProfile(event.target.checked)}
+                          />
+                          <span>Save this address to my account and use it for future orders</span>
+                        </label>
+                        {saveCheckoutAddressToProfile ? (
+                          <label className="flex items-start gap-3 text-sm text-slate-700">
+                            <input
+                              type="checkbox"
+                              className="mt-1 h-4 w-4"
+                              checked={makeCheckoutAddressDefault}
+                              onChange={(event) => setMakeCheckoutAddressDefault(event.target.checked)}
+                            />
+                            <span>Set this as my new default shipping address</span>
+                          </label>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
                 <label className="mt-8 inline-flex items-center gap-2 text-base text-slate-700">
@@ -904,8 +1280,9 @@ export default function CheckoutPage() {
                   My delivery and billing addresses are the same.
                 </label>
                 <button type="button" onClick={() => {
-                  if (!validateBillingFields()) {
-                    toast.error("Please complete the required billing details")
+                  const result = validateBillingFields()
+                  if (!result.isValid && result.firstInvalidField) {
+                    focusBillingField(result.firstInvalidField)
                     return
                   }
                   setOpenStep(3)
@@ -993,7 +1370,7 @@ export default function CheckoutPage() {
             ) : null}
           </div>
 
-          <div className="border-b border-slate-200">
+          <div ref={paymentSectionRef} className="border-b border-slate-200">
             <button type="button" onClick={() => setOpenStep(openStep === 5 ? null : 5)} className="flex h-16 w-full items-center justify-between text-left">
               <span className="text-base font-semibold leading-none text-teal-800">Step 5: <span className="text-base font-semibold text-slate-900">Payment Method</span></span>
               {openStep === 5 ? <ChevronUp className="h-6 w-6 text-slate-700" /> : <ChevronDown className="h-6 w-6 text-slate-700" />}
@@ -1001,45 +1378,80 @@ export default function CheckoutPage() {
             {openStep === 5 ? (
               <div className="pb-8">
                 <p className="text-base text-slate-600">Please select the preferred payment method to use on this order.</p>
-                <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-                  {enabledPaymentTabs.map((tab) => (
-                    <button
-                      key={tab.value}
-                      type="button"
-                      disabled={!tab.enabled}
-                      onClick={() => setPaymentTab(tab.value)}
-                      className={`h-12 rounded border text-base font-semibold transition-colors ${
-                        paymentTab === tab.value
-                          ? "border-teal-700 bg-teal-700 text-white"
-                          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                      } disabled:cursor-not-allowed disabled:opacity-40`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-4 rounded-lg border border-slate-300 bg-white p-4">
-                  <h5 className="text-base font-semibold text-slate-900">{paymentPanel.title}</h5>
-                  <p className="mt-2 text-base text-slate-600">{paymentPanel.description}</p>
-                  {paymentTab === "stripe" ? (
-                    <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-4 text-sm leading-6 text-slate-700">
-                      Card details are entered securely on Stripe after you confirm the order.
-                      We do not store your card number, expiry date, or CVC in our database.
+                {paymentError ? (
+                  <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                    {paymentError}
+                  </div>
+                ) : null}
+                {paymentMethods.length === 0 ? (
+                  <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm font-medium text-amber-900">
+                    No payment methods are currently available.
+                  </div>
+                ) : (
+                  <>
+                    <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {paymentMethods.map((method) => {
+                        const selected = paymentTab === method.value
+                        return (
+                          <button
+                            key={method.value}
+                            type="button"
+                            onClick={() => {
+                              setPaymentTab(method.value)
+                              setPaymentError("")
+                            }}
+                            className={`rounded-2xl border px-4 py-4 text-left transition-colors ${
+                              selected
+                                ? "border-teal-700 bg-teal-50 shadow-[0_10px_24px_rgba(15,118,110,0.08)]"
+                                : "border-slate-300 bg-white hover:border-slate-400 hover:bg-slate-50"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-lg font-semibold text-slate-900">{method.title}</p>
+                                <p className="mt-1 text-sm text-slate-600">{method.description}</p>
+                              </div>
+                              <div className={`inline-flex min-w-[88px] justify-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                                selected ? "border-teal-300 bg-white text-teal-800" : "border-slate-200 bg-slate-50 text-slate-600"
+                              }`}>
+                                {method.shortLabel}
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
                     </div>
-                  ) : null}
-                  {paymentTab === "paypal" ? (
-                    <p className="mt-4 rounded bg-slate-50 p-3 text-sm text-slate-700">
-                      After you click Confirm Order, you will continue on PayPal.
-                    </p>
-                  ) : null}
-                  {paymentTab === "gpay" || paymentTab === "applepay" ? (
-                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-700">
-                      {paymentTab === "gpay"
-                        ? "You will continue to Google Pay on Stripe's secure payment page."
-                        : "You will continue to Apple Pay on Stripe's secure payment page."}
-                    </div>
-                  ) : null}
-                </div>
+                    {paymentPanel ? (
+                      <div className="mt-4 rounded-2xl border border-slate-300 bg-white p-5">
+                        <h5 className="text-lg font-semibold text-slate-900">{paymentPanel.title}</h5>
+                        <p className="mt-2 text-base text-slate-600">{paymentPanel.description}</p>
+                        {paymentTab === "stripe" ? (
+                          <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-4 text-sm leading-6 text-slate-700">
+                            {paymentPanel.detail} We do not store your card number, expiry date, or CVC in our database.
+                          </div>
+                        ) : null}
+                        {paymentTab === "paypal" ? (
+                          <p className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-700">
+                            {paymentPanel.detail}
+                          </p>
+                        ) : null}
+                        {paymentTab === "paytr" ? (
+                          <p className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-700">
+                            {paymentPanel.detail}
+                          </p>
+                        ) : null}
+                        {paymentTab === "gpay" || paymentTab === "applepay" ? (
+                          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-700">
+                            {paymentPanel.detail}
+                          </div>
+                        ) : null}
+                        <p className="mt-4 text-sm text-slate-500">
+                          Your payment is processed securely. We do not store card details.
+                        </p>
+                      </div>
+                    ) : null}
+                  </>
+                )}
                 <h4 className="mt-6 text-xl font-semibold text-slate-700">Add Comments About Your Order</h4>
                 <textarea
                   value={orderComment}
@@ -1047,10 +1459,25 @@ export default function CheckoutPage() {
                   className="mt-3 min-h-[170px] w-full rounded border border-slate-300 px-3 py-3 text-base"
                 />
                 <label className="mt-5 inline-flex items-center gap-2 text-base text-slate-700">
-                  <input type="checkbox" checked={agreeTerms} onChange={(e) => setAgreeTerms(e.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={agreeTerms}
+                    onChange={(e) => {
+                      setAgreeTerms(e.target.checked)
+                      if (e.target.checked) setPaymentError("")
+                    }}
+                  />
                   I have read and agree to the <Link href="/info/terms" className="text-teal-800 underline">Terms & Conditions</Link>
                 </label>
-                <button type="button" onClick={() => setOpenStep(6)} className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-full bg-teal-700 text-lg font-semibold text-white hover:bg-teal-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!validatePaymentStep(true)) return
+                    setOpenStep(6)
+                  }}
+                  disabled={!canContinueFromPaymentStep}
+                  className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-full bg-teal-700 text-lg font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:hover:bg-slate-300 disabled:opacity-100"
+                >
                   Continue
                 </button>
               </div>
@@ -1058,7 +1485,18 @@ export default function CheckoutPage() {
           </div>
 
           <div className="border-b border-slate-200">
-            <button type="button" onClick={() => setOpenStep(openStep === 6 ? null : 6)} className="flex h-16 w-full items-center justify-between text-left">
+            <button
+              type="button"
+              onClick={() => {
+                if (openStep === 6) {
+                  setOpenStep(null)
+                  return
+                }
+                if (!validatePaymentStep(true)) return
+                setOpenStep(6)
+              }}
+              className="flex h-16 w-full items-center justify-between text-left"
+            >
               <span className="text-base font-semibold leading-none text-teal-800">Step 6: <span className="text-base font-semibold text-slate-900">Confirm Order</span></span>
               {openStep === 6 ? <ChevronUp className="h-6 w-6 text-slate-700" /> : <ChevronDown className="h-6 w-6 text-slate-700" />}
             </button>
@@ -1112,9 +1550,9 @@ export default function CheckoutPage() {
                 </div>
                 <button
                   type="button"
-                  disabled={loading}
+                  disabled={loading || !canContinueFromPaymentStep}
                   onClick={startPayment}
-                  className="mt-7 inline-flex h-14 w-full items-center justify-center rounded-full bg-teal-700 text-2xl font-semibold text-white hover:bg-teal-800 disabled:opacity-60"
+                  className="mt-7 inline-flex h-14 w-full items-center justify-center rounded-full bg-teal-700 text-2xl font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:hover:bg-slate-300 disabled:opacity-100"
                 >
                   {loading ? "Please wait..." : "Confirm Order"}
                 </button>
