@@ -529,7 +529,9 @@ export default function CheckoutPage() {
     () =>
       paymentMethods.reduce<Record<Provider, boolean>>(
         (acc, method) => {
-          acc[method.value] = true
+if (method.value in acc) {
+  acc[method.value as Provider] = true
+}
           return acc
         },
         { stripe: false, paypal: false, paytr: false, gpay: false, applepay: false }

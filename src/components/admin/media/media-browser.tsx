@@ -52,7 +52,7 @@ type FolderCard = {
 
 const ALL_TOP = "__all__"
 const ALL_CATEGORY = "__all_category__"
-const SPECIAL_ROOT_FOLDERS = ["Kategori-Fotoğrafları"] as const
+const SPECIAL_ROOT_FOLDERS = ["Kategori-Fotoğrafları"] 
 
 function formatFolderLabel(value: string) {
   return value
@@ -201,7 +201,7 @@ export function MediaBrowser() {
         path,
         label: productMeta?.sku || formatFolderLabel(path.split("/").pop() || path),
         count: productMeta?.count || folders.find((folder) => folder.name === path)?.count || 0,
-        kind: hasChildren ? ("category" as const) : ("product" as const),
+        kind: (hasChildren ? "category" : "product") as FolderCard["kind"],
       }
     })
   }, [activeCategoryPath, folders, productFolders])
@@ -252,17 +252,17 @@ export function MediaBrowser() {
   }, [selectedProductFolder])
 
   const breadcrumbItems = useMemo(() => {
-    const items = [{ label: "Media", value: "root" as const }]
+    const items = [{ label: "Media", value: "root" }]
     if (activeCategoryPath) {
       const categoryLabel =
         categoryFolders.find((folder) => folder.path === activeCategoryPath)?.label ||
         formatFolderLabel(activeCategoryPath.split("/").pop() || activeCategoryPath)
-      items.push({ label: categoryLabel, value: activeCategoryPath as const })
+      items.push({ label: categoryLabel, value: activeCategoryPath as string })
     }
     if (selectedProductFolder) {
       items.push({
         label: selectedProductFolder.split("/").filter(Boolean).pop() || selectedProductFolder,
-        value: selectedProductFolder as const,
+        value: selectedProductFolder ,
       })
     }
     return items
