@@ -47,7 +47,7 @@ export async function GET() {
     const now = new Date()
     const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
-    const [totalOrders, totalCustomers, customerRows, activeProductsRows, productRows, pendingDeliveryRows, revenueAgg, weeklyOrders, todayOrders, revenueRows, adminSalesRows] = await Promise.all([
+    const [totalOrders, totalCustomers, customerRows, totalProductsRows, productRows, pendingDeliveryRows, revenueAgg, weeklyOrders, todayOrders, revenueRows, adminSalesRows] = await Promise.all([
       prisma.order.count(),
       prisma.user.count({ where: { role: "CUSTOMER" } }),
       prisma.user.findMany({
@@ -63,14 +63,17 @@ export async function GET() {
           },
         },
       }),
-      prisma.$queryRawUnsafe<Array<{ count: number }>>(
-        `SELECT COUNT(*) as count FROM "Product" WHERE "deletedAt" IS NULL AND "isPublished" = 1`
-      ),
-      prisma.$queryRawUnsafe<Array<{ createdAt: Date | string; createdByName: string | null }>>(
-        `SELECT "createdAt", "createdByName"
-         FROM "Product"
-         WHERE "deletedAt" IS NULL`
-      ),
+      prisma.$queryRaw<Array<{ count: bigint | number }>>`
+        SELECT COUNT(*) as count
+        FROM "Product"
+        WHERE "deletedAt" IS NULL
+          AND "isPublished" IS TRUE
+      `,
+      prisma.$queryRaw<Array<{ createdAt: Date | string; createdByName: string | null }>>`
+        SELECT "createdAt", "createdByName"
+        FROM "Product"
+        WHERE "deletedAt" IS NULL
+      `,
       prisma.order.findMany({
         select: {
           status: true,
@@ -133,20 +136,20 @@ export async function GET() {
           total: true,
         },
       }),
-      prisma.$queryRawUnsafe<Array<{ creator: string | null; salesTotal: number | string | null; itemsSold: number | string | null }>>(
-        `SELECT
-           COALESCE(p."createdByName", 'Unknown') as creator,
-           SUM(CAST(oi."quantity" as REAL) * CAST(oi."price" as REAL)) as salesTotal,
-           SUM(CAST(oi."quantity" as REAL)) as itemsSold
-         FROM "OrderItem" oi
-         JOIN "Order" o ON o."id" = oi."orderId"
-         LEFT JOIN "Product" p ON p."id" = oi."productId"
-         WHERE o."status" != 'CANCELLED'
-         GROUP BY COALESCE(p."createdByName", 'Unknown')
-         ORDER BY salesTotal DESC`
-      ),
+      prisma.$queryRaw<Array<{ creator: string | null; salesTotal: number | string | null; itemsSold: number | string | null }>>`
+        SELECT
+          COALESCE(p."createdByName", 'Unknown') as creator,
+          SUM(CAST(oi."quantity" as DOUBLE PRECISION) * CAST(oi."price" as DOUBLE PRECISION)) as "salesTotal",
+          SUM(CAST(oi."quantity" as DOUBLE PRECISION)) as "itemsSold"
+        FROM "OrderItem" oi
+        JOIN "Order" o ON o."id" = oi."orderId"
+        LEFT JOIN "Product" p ON p."id" = oi."productId"
+        WHERE o."status" != 'CANCELLED'
+        GROUP BY COALESCE(p."createdByName", 'Unknown')
+        ORDER BY "salesTotal" DESC NULLS LAST
+      `,
     ])
-    const totalProducts = Number(activeProductsRows?.[0]?.count || 0)
+    const totalProducts = Number(totalProductsRows?.[0]?.count || 0)
     const startWeek = new Date(startToday)
     startWeek.setDate(startWeek.getDate() - 6)
     const startMonth = new Date(now.getFullYear(), now.getMonth(), 1)

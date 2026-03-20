@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { Prisma } from "@prisma/client"
 import { mkdir, readdir, rmdir, stat, unlink, rename } from "fs/promises"
 import path from "path"
 import { z } from "zod"
@@ -523,12 +524,7 @@ async function moveUploadedAssetToFolder(url: string, targetFolder: string) {
     await rename(sibling.absolutePath, targetPath)
     const nextUrl = storage.getPublicUrl(`${targetFolder}/${sibling.fileName}`)
     await replaceUrlReferences(sibling.url, nextUrl)
-    await prisma.$executeRawUnsafe(
-      `UPDATE "MediaAsset" SET "image_url" = ?, "object_key" = ? WHERE "image_url" = ?`,
-      nextUrl,
-      `${targetFolder}/${sibling.fileName}`,
-      sibling.url
-    )
+    await prisma.$executeRaw`UPDATE "MediaAsset" SET "image_url" = ${nextUrl}, "object_key" = ${`${targetFolder}/${sibling.fileName}`} WHERE "image_url" = ${sibling.url}`
     if (sibling.fileName.endsWith("-master.webp") || !nextPrimaryUrl) {
       nextPrimaryUrl = nextUrl
     }
@@ -542,11 +538,11 @@ async function backfillProductSkuFolders(
   categoryPathMap: Map<string, string>
 ) {
   for (const product of products) {
-    const skuRows = await prisma.$queryRawUnsafe<Array<{ sku: string | null }>>(
-      `SELECT "sku" FROM "Product" WHERE "id" = ? LIMIT 1`,
-      product.id
-    )
-    const sku = sanitizeFolderPath(skuRows[0]?.sku || "")
+    const skuRecord = await prisma.product.findUnique({
+      where: { id: product.id },
+      select: { sku: true },
+    })
+    const sku = sanitizeFolderPath(skuRecord?.sku || "")
     if (!sku) continue
 
     const targetCategoryFolders = product.categories
@@ -859,12 +855,7 @@ export async function PATCH(req: NextRequest) {
       await rename(sibling.absolutePath, targetPath)
       const nextUrl = storage.getPublicUrl(`${targetFolder}/${sibling.fileName}`)
       await replaceUrlReferences(sibling.url, nextUrl)
-      await prisma.$executeRawUnsafe(
-        `UPDATE "MediaAsset" SET "image_url" = ?, "object_key" = ? WHERE "image_url" = ?`,
-        nextUrl,
-        `${targetFolder}/${sibling.fileName}`,
-        sibling.url
-      )
+      await prisma.$executeRaw`UPDATE "MediaAsset" SET "image_url" = ${nextUrl}, "object_key" = ${`${targetFolder}/${sibling.fileName}`} WHERE "image_url" = ${sibling.url}`
       if (sibling.fileName.endsWith("-master.webp") || !nextPrimaryUrl) {
         nextPrimaryUrl = nextUrl
       }
@@ -903,10 +894,7 @@ export async function DELETE(req: NextRequest) {
         })
       }
     }
-    await prisma.$executeRawUnsafe(
-      `DELETE FROM "MediaAsset" WHERE "image_url" IN (${relatedUrls.map(() => "?").join(", ")})`,
-      ...relatedUrls
-    )
+    await prisma.$executeRaw`DELETE FROM "MediaAsset" WHERE "image_url" IN (${Prisma.join(relatedUrls)})`
     return NextResponse.json({ success: true })
   } catch (error) {
     logger.error("Error deleting media asset", { error: error instanceof Error ? error.message : String(error) }, "admin-media-api")
