@@ -23,6 +23,7 @@ export const productFormSchema = z.object({
     sku: z.string().trim().min(1, "SKU is required"),
     description: z.string().optional(),
     shortDescription: z.string().optional(),
+    shippingContent: z.string().optional(),
     price: z.coerce.number().min(0, "Price must be positive"),
     compareAtPrice: z.coerce.number().min(0).optional(),
     stockCount: z.coerce.number().int().min(0),

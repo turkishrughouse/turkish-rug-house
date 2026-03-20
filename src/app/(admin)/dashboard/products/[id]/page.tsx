@@ -16,11 +16,11 @@ export default async function EditProductPage({ params }: PageProps) {
     const user = await getSessionUser("admin")
     if (!user) notFound()
 
-    const ownership = await prisma.product.findFirst({
-      where: { id, createdById: user.id },
+    const productExists = await prisma.product.findUnique({
+      where: { id },
       select: { id: true },
     }).catch(() => null)
-    if (!ownership) notFound()
+    if (!productExists) notFound()
     const profile = user
         ? await prisma.customerProfile.findUnique({
             where: { userId: user.id },

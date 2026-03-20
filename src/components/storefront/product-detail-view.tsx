@@ -178,7 +178,7 @@ export function ProductDetailView({
     ? shippingContent.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
     : "Delivery estimates and shipping details are shown at checkout."
   const canExpandShipping = shippingText.length > 520
-  const visibleCategories = product.categories.slice(0, 2)
+  const visibleCategories = product.categories
 
   useEffect(() => {
     if (typeof window === "undefined") return

@@ -6,6 +6,7 @@ import { ProductDetailView } from "@/components/storefront/product-detail-view"
 import { fetchCategoryPathRows, getCategoryPathById, type CategoryPathRow } from "@/lib/category-paths"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { getProductShortDescriptionById, getProductShortDescriptionMap } from "@/lib/product-short-description"
+import { getProductShippingContentById } from "@/lib/product-shipping-content"
 import { stripHtmlForSeo } from "@/lib/rich-text"
 
 type Props = {
@@ -35,7 +36,25 @@ type RelatedProductCard = {
 }
 
 type ProductRecord = Prisma.ProductGetPayload<{
-  include: {
+  select: {
+    id: true
+    slug: true
+    sku: true
+    customAttributes: true
+    title: true
+    description: true
+    price: true
+    compareAtPrice: true
+    images: true
+    stockCount: true
+    isStock: true
+    isPublished: true
+    deletedAt: true
+    createdAt: true
+    updatedAt: true
+    seoTitle: true
+    seoDescription: true
+    seoKeywords: true
     categories: {
       select: {
         id: true
@@ -57,9 +76,27 @@ type ProductRecord = Prisma.ProductGetPayload<{
 }>
 
 async function getPublishedProductBySlug(slug: string) {
-  return prisma.product.findUnique({
-    where: { slug, isPublished: true },
-    include: {
+  return prisma.product.findFirst({
+    where: { slug, isPublished: true, deletedAt: null },
+    select: {
+      id: true,
+      slug: true,
+      sku: true,
+      customAttributes: true,
+      title: true,
+      description: true,
+      price: true,
+      compareAtPrice: true,
+      images: true,
+      stockCount: true,
+      isStock: true,
+      isPublished: true,
+      deletedAt: true,
+      createdAt: true,
+      updatedAt: true,
+      seoTitle: true,
+      seoDescription: true,
+      seoKeywords: true,
       categories: {
         select: {
           id: true,
@@ -322,6 +359,7 @@ export default async function ProductPage({ params }: Props) {
 
   if (!product) notFound()
   const shortDescription = await getProductShortDescriptionById(product.id)
+  const productShippingContent = await getProductShippingContentById(product.id)
   const categoryRows = await fetchCategoryPathRows()
 
   const primaryCategory = product.categories[0] || null
@@ -342,32 +380,8 @@ export default async function ProductPage({ params }: Props) {
       ...category,
       path: getCategoryPathById(categoryRows, category.id),
     })),
-    ...(await (async () => {
-      try {
-        const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
-        const hasSku = columns.some((column) => column.name === "sku")
-        const hasCustomAttributes = columns.some((column) => column.name === "customAttributes")
-
-        const selectParts = [
-          hasSku ? `"sku"` : `NULL AS "sku"`,
-          hasCustomAttributes ? `"customAttributes"` : `NULL AS "customAttributes"`,
-        ]
-        const rows = await prisma.$queryRawUnsafe<Array<{ sku: string | null; customAttributes: string | null }>>(
-          `SELECT ${selectParts.join(", ")} FROM "Product" WHERE "id" = ? LIMIT 1`,
-          product.id
-        )
-        const record = rows[0]
-        return {
-          sku: record?.sku ?? null,
-          customAttributes: parseCustomAttributes(record?.customAttributes),
-        }
-      } catch {
-        return {
-          sku: null,
-          customAttributes: [] as CustomAttribute[],
-        }
-      }
-    })()),
+    sku: product.sku ?? null,
+    customAttributes: parseCustomAttributes(product.customAttributes),
     price: Number(product.price),
     compareAtPrice: product.compareAtPrice ? Number(product.compareAtPrice) : null,
   }
@@ -439,7 +453,7 @@ export default async function ProductPage({ params }: Props) {
     },
   })
 
-  const shippingContent = shippingPage?.content || shippingPage?.excerpt || null
+  const shippingContent = productShippingContent || shippingPage?.content || shippingPage?.excerpt || null
   const productImageRecords = parseProductImageRecords(product.images)
   const productImageUrls = productImageRecords
     .map((image) => getProductImageUrl(image, "master") || getProductImageUrl(image, "large"))

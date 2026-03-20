@@ -36,6 +36,7 @@ let featuredColumnReadyPromise: Promise<void> | null = null
 let deletedAtColumnReadyPromise: Promise<void> | null = null
 let productCreatorColumnsReadyPromise: Promise<void> | null = null
 let shortDescriptionColumnReadyPromise: Promise<void> | null = null
+let shippingContentColumnReadyPromise: Promise<void> | null = null
 let lastTrashPurgeAt = 0
 
 async function requireAdminActor() {
@@ -44,9 +45,19 @@ async function requireAdminActor() {
     return actor
 }
 
+async function getManagedProductIds(ids: string[]) {
+    if (!Array.isArray(ids) || ids.length === 0) return []
+    const rows = await db.product.findMany({
+        where: {
+            id: { in: ids },
+        },
+        select: { id: true },
+    })
+    return rows.map((r) => r.id)
+}
+
 async function getOwnedProductIds(ids: string[], actorId: string) {
     if (!Array.isArray(ids) || ids.length === 0) return []
-    // Include products this actor created, plus unclaimed legacy products (createdById IS NULL).
     const rows = await db.product.findMany({
         where: {
             id: { in: ids },
@@ -60,9 +71,15 @@ async function getOwnedProductIds(ids: string[], actorId: string) {
     return rows.map((r) => r.id)
 }
 
+async function assertManagedProductOrThrow(productId: string) {
+    const row = await db.product.findFirst({
+        where: { id: productId },
+        select: { id: true },
+    })
+    if (!row) throw new Error("Forbidden")
+}
+
 async function assertOwnProductOrThrow(productId: string, actorId: string) {
-    // A product is "owned" by the actor if createdById matches, OR if createdById is NULL
-    // (legacy products created before ownership tracking was added — treat as unclaimed/claimable).
     const row = await db.product.findFirst({
         where: {
             id: productId,
@@ -74,6 +91,61 @@ async function assertOwnProductOrThrow(productId: string, actorId: string) {
         select: { id: true },
     })
     if (!row) throw new Error("Forbidden")
+}
+
+type PermanentDeleteProductRecord = {
+    id: string
+    sku: string | null
+    images: string | null
+    categories: Array<{ id: string }>
+}
+
+async function getProductsForPermanentDelete(ids: string[]) {
+    if (ids.length === 0) return []
+    return db.product.findMany({
+        where: { id: { in: ids } },
+        select: {
+            id: true,
+            sku: true,
+            images: true,
+            categories: { select: { id: true } },
+        },
+    })
+}
+
+async function cleanupDeletedProductsMedia(products: PermanentDeleteProductRecord[]) {
+    if (products.length === 0) return
+
+    await deleteManagedUploadsForProducts(products, "product-permanent-delete")
+
+    const mediaUrlsToDelete = new Set<string>()
+
+    for (const product of products) {
+        const mediaRecords = normalizeProductImageRecords(product.images)
+        await removeProductMediaFolder(
+            product.categories.map((category) => category.id),
+            product.sku,
+            mediaRecords.map((record) => record.image_url).filter(Boolean)
+        )
+
+        mediaRecords.forEach((record) => {
+            ;[
+                record.image_url,
+                record.variants?.thumb,
+                record.variants?.large,
+                record.variants?.master,
+            ].forEach((url) => {
+                if (url) mediaUrlsToDelete.add(url)
+            })
+        })
+    }
+
+    if (mediaUrlsToDelete.size > 0) {
+        const values = Array.from(mediaUrlsToDelete)
+        await db.$executeRaw(
+            Prisma.sql`DELETE FROM "MediaAsset" WHERE "image_url" IN (${Prisma.join(values)})`
+        )
+    }
 }
 
 async function ensureCanonicalProductMediaMigration() {
@@ -143,6 +215,38 @@ async function setShortDescriptionByProductId(productId: string, shortDescriptio
         Prisma.sql`
             UPDATE "Product"
             SET "shortDescription" = ${normalizedShortDescription || null}
+            WHERE "id" = ${productId}
+        `
+    )
+}
+
+async function ensureShippingContentColumn() {
+    if (!shippingContentColumnReadyPromise) {
+        shippingContentColumnReadyPromise = (async () => {
+            await ensureTableColumns("Product", [{ name: "shippingContent", postgresType: "TEXT" }])
+        })().catch((error) => {
+            shippingContentColumnReadyPromise = null
+            throw error
+        })
+    }
+    await shippingContentColumnReadyPromise
+}
+
+async function getShippingContentByProductId(productId: string) {
+    await ensureShippingContentColumn()
+    const rows = await db.$queryRaw<Array<{ shippingContent: string | null }>>(
+        Prisma.sql`SELECT "shippingContent" FROM "Product" WHERE "id" = ${productId} LIMIT 1`
+    )
+    return rows[0]?.shippingContent ?? null
+}
+
+async function setShippingContentByProductId(productId: string, shippingContent: string | null | undefined) {
+    await ensureShippingContentColumn()
+    const normalizedShippingContent = normalizeRichTextHtml(shippingContent || "")
+    await db.$executeRaw(
+        Prisma.sql`
+            UPDATE "Product"
+            SET "shippingContent" = ${normalizedShippingContent || null}
             WHERE "id" = ${productId}
         `
     )
@@ -770,6 +874,7 @@ export async function getProduct(id: string) {
     const sku = await getSkuByProductId(product.id)
     const isFeatured = await getFeaturedByProductId(product.id)
     const shortDescription = await getShortDescriptionByProductId(product.id)
+    const shippingContent = await getShippingContentByProductId(product.id)
     const customAttributes = await getCustomAttributesByProductId(product.id)
     const suppliers = await getSuppliersByProductId(product.id)
 
@@ -778,6 +883,7 @@ export async function getProduct(id: string) {
         sku,
         isFeatured,
         shortDescription,
+        shippingContent,
         customAttributes,
         suppliers,
         price: product.price.toNumber(),
@@ -842,6 +948,7 @@ export async function createProduct(data: ProductFormValues) {
         })
         await setSkuByProductId(created.id, validated.sku || null)
         await setShortDescriptionByProductId(created.id, validated.shortDescription || null)
+        await setShippingContentByProductId(created.id, validated.shippingContent || null)
         await setFeaturedByProductId(created.id, validated.isFeatured)
         await setCustomAttributesByProductId(created.id, validated.customAttributes)
         await setSuppliersByProductId(created.id, validated.suppliers)
@@ -921,9 +1028,9 @@ export async function updateProduct(id: string, data: ProductFormValues) {
     const connect = (ids: string[]) => ids.map(id => ({ id }))
 
     try {
-        const actor = await requireAdminActor()
+        await requireAdminActor()
         await ensureProductCreatorColumns()
-        await assertOwnProductOrThrow(id, actor.id)
+        await assertManagedProductOrThrow(id)
 
         const existingProduct = await db.product.findUnique({
             where: { id },
@@ -1011,6 +1118,7 @@ export async function updateProduct(id: string, data: ProductFormValues) {
         })
         await setSkuByProductId(id, validated.sku || null)
         await setShortDescriptionByProductId(id, validated.shortDescription || null)
+        await setShippingContentByProductId(id, validated.shippingContent || null)
         await setFeaturedByProductId(id, validated.isFeatured)
         await setCustomAttributesByProductId(id, validated.customAttributes)
         await setSuppliersByProductId(id, validated.suppliers)
@@ -1085,75 +1193,39 @@ export async function updateProduct(id: string, data: ProductFormValues) {
 
 export async function deleteProduct(id: string, permanent = false) {
     try {
-        const actor = await requireAdminActor()
+        await requireAdminActor()
         await ensureDeletedAtColumn()
         await ensureProductCreatorColumns()
-        await assertOwnProductOrThrow(id, actor.id)
-        const productToDelete = permanent
-            ? await db.product.findFirst({
-                where: {
-                    id,
-                    OR: [
-                        { createdById: actor.id },
-                        { createdById: null },
-                    ],
-                },
-                select: {
-                    id: true,
-                    sku: true,
-                    images: true,
-                    categories: { select: { id: true } },
-                },
-            })
-            : null
+        await assertManagedProductOrThrow(id)
+        const productToDelete = permanent ? await getProductsForPermanentDelete([id]) : []
         if (permanent) {
-            if (!productToDelete) {
+            if (productToDelete.length === 0) {
                 return { success: false, error: "Product not found" }
             }
-            // Delete products owned by this actor OR unclaimed legacy products (createdById IS NULL)
             await db.$transaction(async (tx) => {
-                await tx.product.deleteMany({
-                    where: {
-                        id,
-                        OR: [
-                            { createdById: actor.id },
-                            { createdById: null },
-                        ],
-                    },
+                const deleted = await tx.product.deleteMany({
+                    where: { id },
                 })
+                if (deleted.count === 0) {
+                    throw new Error("Product not found")
+                }
             })
-
-            const mediaRecords = normalizeProductImageRecords(productToDelete.images)
-            const mediaUrls = mediaRecords.flatMap((record) => [
-                record.image_url,
-                record.variants?.thumb,
-                record.variants?.large,
-                record.variants?.master,
-            ]).filter(Boolean) as string[]
-
-            await deleteManagedUploadsForProducts([productToDelete], "product-permanent-delete")
-            await removeProductMediaFolder(
-                productToDelete.categories.map((category) => category.id),
-                productToDelete.sku,
-                mediaRecords.map((record) => record.image_url).filter(Boolean)
-            )
-
-            for (const url of mediaUrls) {
-                await db.$executeRaw`DELETE FROM "MediaAsset" WHERE "image_url" = ${url}`
-            }
+            await cleanupDeletedProductsMedia(productToDelete)
         } else {
-            // Soft-delete: set deletedAt for owned OR unclaimed products
-            await db.$executeRawUnsafe(
-                `UPDATE "Product" SET "deletedAt" = datetime('now') WHERE "id" = ? AND ("createdById" = ? OR "createdById" IS NULL)`,
-                id,
-                actor.id
-            )
+            const updated = await db.product.updateMany({
+                where: { id, deletedAt: null },
+                data: { deletedAt: new Date() },
+            })
+            if (updated.count === 0) {
+                return { success: false, error: "Product not found" }
+            }
         }
         revalidatePath("/dashboard/products")
         revalidatePath("/dashboard/media")
-        return { success: true }
-    } catch {
-        return { success: false, error: "Failed to delete product" }
+        return { success: true as const }
+    } catch (error) {
+        console.error("deleteProduct error:", error)
+        return { success: false as const, error: (error as Error).message || "Failed to delete product" }
     }
 }
 
@@ -1192,6 +1264,7 @@ export async function duplicateProduct(id: string) {
         })
         await setSkuByProductId(newProduct.id, original.sku || null)
         await setShortDescriptionByProductId(newProduct.id, original.shortDescription || null)
+        await setShippingContentByProductId(newProduct.id, original.shippingContent || null)
         await setFeaturedByProductId(newProduct.id, Boolean(original.isFeatured))
         await setCustomAttributesByProductId(newProduct.id, original.customAttributes || [])
         await setSuppliersByProductId(newProduct.id, original.suppliers || [])
@@ -1209,103 +1282,116 @@ export async function duplicateProduct(id: string) {
 
 export async function bulkDeleteProducts(ids: string[]) {
     try {
-        const actor = await requireAdminActor()
-        await ensureProductCreatorColumns()
+        await requireAdminActor()
         await ensureDeletedAtColumn()
         if (ids.length === 0) return { success: true }
-        const ownedIds = await getOwnedProductIds(ids, actor.id)
-        if (ownedIds.length === 0) return { success: false, error: "Forbidden" }
-        // Soft-delete owned OR unclaimed legacy products
-        await db.$executeRawUnsafe(
-            `UPDATE "Product" SET "deletedAt" = datetime('now') WHERE "id" IN (${ownedIds.map(() => "?").join(",")}) AND ("createdById" = ? OR "createdById" IS NULL)`,
-            ...ownedIds,
-            actor.id
-        )
+        const managedIds = await getManagedProductIds(ids)
+        if (managedIds.length === 0) return { success: false, error: "Product not found" }
+        const updated = await db.product.updateMany({
+            where: {
+                id: { in: managedIds },
+                deletedAt: null,
+            },
+            data: { deletedAt: new Date() },
+        })
+        if (updated.count === 0) return { success: false, error: "No products were moved to trash" }
         revalidatePath("/dashboard/products")
-        return { success: true }
-    } catch {
-        return { success: false, error: "Bulk delete failed" }
+        revalidatePath("/dashboard/media")
+        return { success: true as const }
+    } catch (error) {
+        console.error("bulkDeleteProducts error:", error)
+        return { success: false as const, error: (error as Error).message || "Bulk delete failed" }
     }
 }
 
 export async function bulkDeleteProductsPermanently(ids: string[]) {
     try {
-        const actor = await requireAdminActor()
-        await ensureProductCreatorColumns()
+        await requireAdminActor()
         if (ids.length === 0) return { success: true }
-        const ownedIds = await getOwnedProductIds(ids, actor.id)
-        if (ownedIds.length === 0) return { success: false, error: "Forbidden" }
-        // Hard-delete owned OR unclaimed legacy products
-        await db.product.deleteMany({
+        const managedIds = await getManagedProductIds(ids)
+        if (managedIds.length === 0) return { success: false, error: "Product not found" }
+        const productsToDelete = await getProductsForPermanentDelete(managedIds)
+        if (productsToDelete.length === 0) return { success: false, error: "Product not found" }
+        const deleted = await db.product.deleteMany({
             where: {
-                id: { in: ownedIds },
-                OR: [
-                    { createdById: actor.id },
-                    { createdById: null },
-                ],
+                id: { in: managedIds },
             },
         })
+        if (deleted.count === 0) return { success: false, error: "No products were deleted" }
+        await cleanupDeletedProductsMedia(productsToDelete)
         revalidatePath("/dashboard/products")
-        return { success: true }
-    } catch {
-        return { success: false, error: "Bulk permanent delete failed" }
+        revalidatePath("/dashboard/media")
+        return { success: true as const }
+    } catch (error) {
+        console.error("bulkDeleteProductsPermanently error:", error)
+        return { success: false as const, error: (error as Error).message || "Bulk permanent delete failed" }
     }
 }
 
 export async function restoreProduct(id: string) {
     try {
-        const actor = await requireAdminActor()
-        await ensureProductCreatorColumns()
+        await requireAdminActor()
         await ensureDeletedAtColumn()
-        await assertOwnProductOrThrow(id, actor.id)
-        // Restore owned OR unclaimed legacy products
-        await db.$executeRawUnsafe(
-            `UPDATE "Product" SET "deletedAt" = NULL WHERE "id" = ? AND ("createdById" = ? OR "createdById" IS NULL)`,
-            id,
-            actor.id
-        )
+        await assertManagedProductOrThrow(id)
+        const updated = await db.product.updateMany({
+            where: { id, deletedAt: { not: null } },
+            data: { deletedAt: null },
+        })
+        if (updated.count === 0) return { success: false, error: "Product not found in trash" }
         revalidatePath("/dashboard/products")
-        return { success: true }
-    } catch {
-        return { success: false, error: "Failed to restore product" }
+        return { success: true as const }
+    } catch (error) {
+        console.error("restoreProduct error:", error)
+        return { success: false as const, error: (error as Error).message || "Failed to restore product" }
     }
 }
 
 export async function bulkRestoreProducts(ids: string[]) {
     try {
-        const actor = await requireAdminActor()
-        await ensureProductCreatorColumns()
+        await requireAdminActor()
         await ensureDeletedAtColumn()
         if (ids.length === 0) return { success: true }
-        const ownedIds = await getOwnedProductIds(ids, actor.id)
-        if (ownedIds.length === 0) return { success: false, error: "Forbidden" }
-        // Restore owned OR unclaimed legacy products
-        await db.$executeRawUnsafe(
-            `UPDATE "Product" SET "deletedAt" = NULL WHERE "id" IN (${ownedIds.map(() => "?").join(",")}) AND ("createdById" = ? OR "createdById" IS NULL)`,
-            ...ownedIds,
-            actor.id
-        )
+        const managedIds = await getManagedProductIds(ids)
+        if (managedIds.length === 0) return { success: false, error: "Product not found" }
+        const updated = await db.product.updateMany({
+            where: {
+                id: { in: managedIds },
+                deletedAt: { not: null },
+            },
+            data: { deletedAt: null },
+        })
+        if (updated.count === 0) return { success: false, error: "No products were restored" }
         revalidatePath("/dashboard/products")
-        return { success: true }
-    } catch {
-        return { success: false, error: "Bulk restore failed" }
+        return { success: true as const }
+    } catch (error) {
+        console.error("bulkRestoreProducts error:", error)
+        return { success: false as const, error: (error as Error).message || "Bulk restore failed" }
     }
 }
 
 export async function emptyProductTrash() {
     try {
-        const actor = await requireAdminActor()
-        await ensureProductCreatorColumns()
+        await requireAdminActor()
         await ensureDeletedAtColumn()
-        // Delete trashed products owned by this actor OR unclaimed legacy products
-        await db.$executeRawUnsafe(
-          `DELETE FROM "Product" WHERE "deletedAt" IS NOT NULL AND ("createdById" = ? OR "createdById" IS NULL)`,
-          actor.id
+        const trashedProducts = await getProductsForPermanentDelete(
+            (
+                await db.product.findMany({
+                    where: { deletedAt: { not: null } },
+                    select: { id: true },
+                })
+            ).map((product) => product.id)
         )
+        const deleted = await db.product.deleteMany({
+            where: { deletedAt: { not: null } },
+        })
+        if (deleted.count === 0) return { success: true as const }
+        await cleanupDeletedProductsMedia(trashedProducts)
         revalidatePath("/dashboard/products")
-        return { success: true }
-    } catch {
-        return { success: false, error: "Failed to empty trash" }
+        revalidatePath("/dashboard/media")
+        return { success: true as const }
+    } catch (error) {
+        console.error("emptyProductTrash error:", error)
+        return { success: false as const, error: (error as Error).message || "Failed to empty trash" }
     }
 }
 

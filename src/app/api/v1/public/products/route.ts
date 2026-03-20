@@ -22,6 +22,7 @@ export async function GET(request: Request) {
         const colorSlug = searchParams.get("color") || undefined;
         const sizeSlug = searchParams.get("size") || undefined;
         const ageSlug = searchParams.get("age") || undefined;
+        const materialSlug = searchParams.get("material") || undefined;
 
         // Parse filters if passed as JSON string or individual params
         // For simplicity, we'll mapping basic params to filters
@@ -33,6 +34,7 @@ export async function GET(request: Request) {
             colors: colorSlug ? [colorSlug] : undefined,
             sizes: sizeSlug ? [sizeSlug] : undefined,
             ages: ageSlug ? [ageSlug] : undefined,
+            materials: materialSlug ? [materialSlug] : undefined,
         };
 
         const result = await getProducts(page, limit, query, "published", sort, categorySlug, filters);

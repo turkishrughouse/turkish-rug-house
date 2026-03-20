@@ -246,6 +246,7 @@ type ProductFormInitialData = {
     sku: string | null
     description: string | null
     shortDescription: string | null
+    shippingContent: string | null
     price: number
     compareAtPrice: number | null
     stockCount: number
@@ -1002,6 +1003,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         sku: initialData.sku || "",
         description: initialData.description || "",
         shortDescription: initialData.shortDescription || "",
+        shippingContent: initialData.shippingContent || "",
         price: Number(initialData.compareAtPrice && Number(initialData.compareAtPrice) > Number(initialData.price)
             ? initialData.compareAtPrice
             : initialData.price),
@@ -1031,6 +1033,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         sku: "",
         description: "",
         shortDescription: "",
+        shippingContent: "",
         price: 0,
         compareAtPrice: 0,
         stockCount: 1,
@@ -1083,6 +1086,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         selectedMaterialIds.length
     const descriptionValue = watch("description") || ""
     const shortDescriptionValue = watch("shortDescription") || ""
+    const shippingContentValue = watch("shippingContent") || ""
     const tagItems = useMemo(
         () => tags.map((tag) => tag.value),
         [tags]
@@ -1311,6 +1315,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         setIsLoading(true)
         data.description = normalizeRichTextHtml(data.description || "")
         data.shortDescription = normalizeRichTextHtml(data.shortDescription || "")
+        data.shippingContent = normalizeRichTextHtml(data.shippingContent || "")
         data.images = [...(featuredImage ? [featuredImage] : []), ...galleryImagesState]
         data.customAttributes = (data.customAttributes || [])
             .map((item) => ({
@@ -1720,6 +1725,22 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                                         placeholder={tx("Height", "Yükseklik")}
                                                     />
                                                 </div>
+                                            </div>
+                                            <div className="rounded-sm border border-[#dcdcde] bg-white">
+                                                <div className="border-b border-[#dcdcde] px-4 py-3">
+                                                    <h3 className="text-base font-semibold text-slate-900">{tx("Shipping content", "Kargo içeriği")}</h3>
+                                                    <p className="mt-1 text-sm text-slate-500">
+                                                        {tx("This content appears in the shipping section on the product detail page.", "Bu içerik ürün detay sayfasındaki kargo bölümünde gösterilir.")}
+                                                    </p>
+                                                </div>
+                                                <RichTextEditor
+                                                    mode="visual"
+                                                    onModeChange={() => {}}
+                                                    value={shippingContentValue}
+                                                    onChange={(nextValue) => setValue("shippingContent", nextValue, { shouldValidate: true, shouldDirty: true, shouldTouch: true })}
+                                                    placeholder={tx("Add shipping and delivery details for this product.", "Bu ürün için kargo ve teslimat detaylarını girin.")}
+                                                    minHeight={150}
+                                                />
                                             </div>
                                             <p className="text-sm text-slate-500">{tx("Shipping values are design-ready placeholders and will be connected to backend rules next.", "Kargo alanları şimdilik tasarım amaçlıdır, sonraki adımda backend kurallarına bağlanacaktır.")}</p>
                                         </div>
