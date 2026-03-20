@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
+import { addColumnIfMissing } from "@/lib/db-compat"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -30,20 +31,9 @@ type SupplierPayload = {
 }
 
 async function ensureSupplierColumns() {
-  const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
-  const hasSku = columns.some((column) => column.name === "sku")
-  const hasDeletedAt = columns.some((column) => column.name === "deletedAt")
-  const hasSuppliers = columns.some((column) => column.name === "suppliers")
-
-  if (!hasSku) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "sku" TEXT`)
-  }
-  if (!hasDeletedAt) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "deletedAt" DATETIME`)
-  }
-  if (!hasSuppliers) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "suppliers" TEXT`)
-  }
+  await addColumnIfMissing(prisma, "Product", "sku", "TEXT")
+  await addColumnIfMissing(prisma, "Product", "deletedAt", "TIMESTAMP(3)")
+  await addColumnIfMissing(prisma, "Product", "suppliers", "TEXT")
 }
 
 function normalizeSuppliers(input: unknown): SupplierRecord[] {

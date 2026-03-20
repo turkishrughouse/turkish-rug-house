@@ -1,3 +1,5 @@
+import { addColumnIfMissing } from "@/lib/db-compat"
+
 export type OrderDetails = {
   customerPhone: string | null
   addressLine1: string | null
@@ -153,11 +155,7 @@ export async function ensureOrderDetailsColumn() {
   if (!ensureOrderDetailsColumnPromise) {
     ensureOrderDetailsColumnPromise = (async () => {
       const prisma = await getPrisma()
-      const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Order")`)
-      const hasDetailsJson = columns.some((column) => column.name === "detailsJson")
-      if (!hasDetailsJson) {
-        await prisma.$executeRawUnsafe(`ALTER TABLE "Order" ADD COLUMN "detailsJson" TEXT DEFAULT '{}'`)
-      }
+      await addColumnIfMissing(prisma, "Order", "detailsJson", "TEXT DEFAULT '{}'")
     })().catch((error) => {
       ensureOrderDetailsColumnPromise = null
       throw error

@@ -10,6 +10,7 @@ import { getSessionUser } from "@/lib/auth"
 import { syncProductToInventory } from "@/lib/inventory-sync"
 import { normalizeProductImageRecords } from "@/lib/product-images"
 import { ensureProductSkuFolders, migrateAllProductsToCanonicalMediaFolders, relocateProductImagesToSkuFolders } from "@/lib/media-folders"
+import { addColumnIfMissing } from "@/lib/db-compat"
 
 type MaterialDelegate = {
     findMany: (...args: any[]) => Promise<any[]>
@@ -45,11 +46,7 @@ async function ensureCanonicalProductMediaMigration() {
 async function ensureSkuColumn() {
     if (!skuColumnReadyPromise) {
         skuColumnReadyPromise = (async () => {
-            const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
-            const hasSku = columns.some((column) => column.name === "sku")
-            if (!hasSku) {
-                await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "sku" TEXT`)
-            }
+            await addColumnIfMissing(db, "Product", "sku", "TEXT")
         })().catch((error) => {
             skuColumnReadyPromise = null
             throw error
@@ -80,11 +77,7 @@ async function setSkuByProductId(productId: string, sku: string | null | undefin
 async function ensureFeaturedColumn() {
     if (!featuredColumnReadyPromise) {
         featuredColumnReadyPromise = (async () => {
-            const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
-            const hasColumn = columns.some((column) => column.name === "isFeatured")
-            if (!hasColumn) {
-                await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "isFeatured" BOOLEAN NOT NULL DEFAULT 0`)
-            }
+            await addColumnIfMissing(db, "Product", "isFeatured", "BOOLEAN NOT NULL DEFAULT false")
         })().catch((error) => {
             featuredColumnReadyPromise = null
             throw error
@@ -124,11 +117,7 @@ async function setFeaturedByProductId(productId: string, featured: boolean) {
 async function ensureDeletedAtColumn() {
     if (!deletedAtColumnReadyPromise) {
         deletedAtColumnReadyPromise = (async () => {
-            const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
-            const hasColumn = columns.some((column) => column.name === "deletedAt")
-            if (!hasColumn) {
-                await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "deletedAt" DATETIME`)
-            }
+            await addColumnIfMissing(db, "Product", "deletedAt", "TIMESTAMP(3)")
         })().catch((error) => {
             deletedAtColumnReadyPromise = null
             throw error
@@ -140,15 +129,8 @@ async function ensureDeletedAtColumn() {
 async function ensureProductCreatorColumns() {
     if (!productCreatorColumnsReadyPromise) {
         productCreatorColumnsReadyPromise = (async () => {
-            const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
-            const hasCreatorId = columns.some((column) => column.name === "createdById")
-            const hasCreatorName = columns.some((column) => column.name === "createdByName")
-            if (!hasCreatorId) {
-                await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "createdById" TEXT`)
-            }
-            if (!hasCreatorName) {
-                await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "createdByName" TEXT`)
-            }
+            await addColumnIfMissing(db, "Product", "createdById", "TEXT")
+            await addColumnIfMissing(db, "Product", "createdByName", "TEXT")
         })().catch((error) => {
             productCreatorColumnsReadyPromise = null
             throw error
@@ -170,8 +152,10 @@ async function setProductCreatorByProductId(productId: string, creator: { id: st
 async function purgeExpiredTrashedProducts() {
     if (Date.now() - lastTrashPurgeAt < 1000 * 60 * 60) return
     await ensureDeletedAtColumn()
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
     await db.$executeRawUnsafe(
-        `DELETE FROM "Product" WHERE "deletedAt" IS NOT NULL AND "deletedAt" <= datetime('now', '-30 days')`
+        `DELETE FROM "Product" WHERE "deletedAt" IS NOT NULL AND "deletedAt" <= ?`,
+        cutoff
     )
     lastTrashPurgeAt = Date.now()
 }
@@ -325,11 +309,7 @@ async function findConflictingProductSku(sku: string, currentProductId?: string)
 }
 
 async function ensureShortDescriptionColumn() {
-    const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
-    const hasColumn = columns.some((column) => column.name === "shortDescription")
-    if (!hasColumn) {
-        await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "shortDescription" TEXT`)
-    }
+    await addColumnIfMissing(db, "Product", "shortDescription", "TEXT")
 }
 
 async function getShortDescriptionByProductId(productId: string) {
@@ -352,11 +332,7 @@ async function setShortDescriptionByProductId(productId: string, shortDescriptio
 }
 
 async function ensureCustomAttributesColumn() {
-    const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
-    const hasColumn = columns.some((column) => column.name === "customAttributes")
-    if (!hasColumn) {
-        await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "customAttributes" TEXT`)
-    }
+    await addColumnIfMissing(db, "Product", "customAttributes", "TEXT")
 }
 
 async function getCustomAttributesByProductId(productId: string): Promise<CustomAttribute[]> {
@@ -386,11 +362,7 @@ async function setCustomAttributesByProductId(productId: string, attributes: Cus
 }
 
 async function ensureSuppliersColumn() {
-    const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
-    const hasColumn = columns.some((column) => column.name === "suppliers")
-    if (!hasColumn) {
-        await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "suppliers" TEXT`)
-    }
+    await addColumnIfMissing(db, "Product", "suppliers", "TEXT")
 }
 
 async function getSuppliersByProductId(productId: string): Promise<SupplierRecord[]> {
@@ -997,7 +969,7 @@ export async function deleteProduct(id: string, permanent = false) {
             await db.product.delete({ where: { id } })
         } else {
             await db.$executeRawUnsafe(
-                `UPDATE "Product" SET "deletedAt" = datetime('now') WHERE "id" = ?`,
+                `UPDATE "Product" SET "deletedAt" = CURRENT_TIMESTAMP WHERE "id" = ?`,
                 id
             )
         }
@@ -1061,7 +1033,7 @@ export async function bulkDeleteProducts(ids: string[]) {
         await ensureDeletedAtColumn()
         if (ids.length === 0) return { success: true }
         await db.$executeRawUnsafe(
-            `UPDATE "Product" SET "deletedAt" = datetime('now') WHERE "id" IN (${ids.map(() => "?").join(",")})`,
+            `UPDATE "Product" SET "deletedAt" = CURRENT_TIMESTAMP WHERE "id" IN (${ids.map(() => "?").join(",")})`,
             ...ids
         )
         revalidatePath("/dashboard/products")

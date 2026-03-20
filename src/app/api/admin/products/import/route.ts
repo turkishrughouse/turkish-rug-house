@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { getSessionUser } from "@/lib/auth"
 import { isAdminRole } from "@/lib/rbac"
 import { normalizeProductImageRecords } from "@/lib/product-images"
+import { addColumnIfMissing } from "@/lib/db-compat"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -77,20 +78,9 @@ function slugifyText(input: string) {
 }
 
 async function ensureSkuAndFeaturedColumns() {
-  const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
-  const hasSku = columns.some((column) => column.name === "sku")
-  const hasFeatured = columns.some((column) => column.name === "isFeatured")
-  const hasDeletedAt = columns.some((column) => column.name === "deletedAt")
-
-  if (!hasSku) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "sku" TEXT`)
-  }
-  if (!hasFeatured) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "isFeatured" BOOLEAN NOT NULL DEFAULT 0`)
-  }
-  if (!hasDeletedAt) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "deletedAt" DATETIME`)
-  }
+  await addColumnIfMissing(prisma, "Product", "sku", "TEXT")
+  await addColumnIfMissing(prisma, "Product", "isFeatured", "BOOLEAN NOT NULL DEFAULT false")
+  await addColumnIfMissing(prisma, "Product", "deletedAt", "TIMESTAMP(3)")
 }
 
 export async function POST(req: NextRequest) {

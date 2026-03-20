@@ -2,21 +2,12 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getSessionUser } from "@/lib/auth"
 import { isAdminRole } from "@/lib/rbac"
+import { addColumnIfMissing } from "@/lib/db-compat"
 
 async function ensureProductCreatorColumns() {
-  const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
-  const hasDeletedAt = columns.some((column) => column.name === "deletedAt")
-  const hasCreatorId = columns.some((column) => column.name === "createdById")
-  const hasCreatorName = columns.some((column) => column.name === "createdByName")
-  if (!hasDeletedAt) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "deletedAt" DATETIME`)
-  }
-  if (!hasCreatorId) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "createdById" TEXT`)
-  }
-  if (!hasCreatorName) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "createdByName" TEXT`)
-  }
+  await addColumnIfMissing(prisma, "Product", "deletedAt", "TIMESTAMP(3)")
+  await addColumnIfMissing(prisma, "Product", "createdById", "TEXT")
+  await addColumnIfMissing(prisma, "Product", "createdByName", "TEXT")
 }
 
 function getPeriodStart(period: string) {

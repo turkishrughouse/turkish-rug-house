@@ -3,16 +3,13 @@ import { prisma } from "@/lib/db"
 import { getSessionUser } from "@/lib/auth"
 import { isAdminRole } from "@/lib/rbac"
 import { parseProductImages } from "@/lib/product-images"
+import { addColumnIfMissing } from "@/lib/db-compat"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 async function ensureDeletedAtColumn() {
-  const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
-  const hasColumn = columns.some((column) => column.name === "deletedAt")
-  if (!hasColumn) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "deletedAt" DATETIME`)
-  }
+  await addColumnIfMissing(prisma, "Product", "deletedAt", "TIMESTAMP(3)")
 }
 
 function escapeCsvCell(value: unknown) {

@@ -14,8 +14,8 @@ export async function ensurePaymentWebhookEventsTable() {
           "eventType" TEXT NOT NULL,
           "status" TEXT NOT NULL DEFAULT 'PROCESSING',
           "error" TEXT,
-          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          "processedAt" DATETIME
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "processedAt" TIMESTAMP(3)
         )
       `)
       await prisma.$executeRawUnsafe(
@@ -74,8 +74,9 @@ export async function claimPaymentWebhookEvent(input: {
   const id = `${input.provider}-${input.eventId}`
   const result = await prisma.$executeRawUnsafe(
     `
-      INSERT OR IGNORE INTO "PaymentWebhookEvent" ("id", "eventId", "provider", "orderId", "eventType", "status")
+      INSERT INTO "PaymentWebhookEvent" ("id", "eventId", "provider", "orderId", "eventType", "status")
       VALUES (?, ?, ?, ?, ?, 'PROCESSING')
+      ON CONFLICT("eventId") DO NOTHING
     `,
     id,
     input.eventId,

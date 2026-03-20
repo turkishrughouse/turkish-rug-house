@@ -327,17 +327,8 @@ export default async function ProductPage({ params }: Props) {
     })),
     ...(await (async () => {
       try {
-        const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
-        const hasSku = columns.some((column) => column.name === "sku")
-        const hasCustomAttributes = columns.some((column) => column.name === "customAttributes")
-
-        const selectParts = [
-          hasSku ? `"sku"` : `NULL AS "sku"`,
-          hasCustomAttributes ? `"customAttributes"` : `NULL AS "customAttributes"`,
-          columns.some((column) => column.name === "shortDescription") ? `"shortDescription"` : `NULL AS "shortDescription"`,
-        ]
         const rows = await prisma.$queryRawUnsafe<Array<{ sku: string | null; customAttributes: string | null; shortDescription: string | null }>>(
-          `SELECT ${selectParts.join(", ")} FROM "Product" WHERE "id" = ? LIMIT 1`,
+          `SELECT "sku", "customAttributes", "shortDescription" FROM "Product" WHERE "id" = ? LIMIT 1`,
           product.id
         )
         const record = rows[0]
