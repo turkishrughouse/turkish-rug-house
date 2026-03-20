@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useRef, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -153,18 +153,18 @@ const buildTree = (flatCategories: Category[]): Category[] => {
     return withAggregatedCounts(roots)
 }
 
-const collectParentIds = (items: Category[]): string[] => {
-    const ids: string[] = []
+const countVisibleCategories = (items: Category[], collapsedIds: Set<string>): number => {
+    let total = 0
     const walk = (rows: Category[]) => {
         rows.forEach((row) => {
-            if (row.children && row.children.length > 0) {
-                ids.push(row.id)
+            total += 1
+            if (row.children && row.children.length > 0 && !collapsedIds.has(row.id)) {
                 walk(row.children)
             }
         })
     }
     walk(items)
-    return ids
+    return total
 }
 
 export default function CategoriesPage() {
@@ -174,7 +174,6 @@ export default function CategoriesPage() {
     const [editingId, setEditingId] = useState<string | null>(null)
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
     const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set()) // State for collapse/expand
-    const hasInitializedCollapseRef = useRef(false)
 
     // New State for Reorder
     const [reorderMode, setReorderMode] = useState(false)
@@ -223,6 +222,7 @@ export default function CategoriesPage() {
             })
             if (res.ok) {
                 const flatData = await res.json()
+                console.log("[admin-categories] fetched category count", flatData.length)
                 const tree = buildTree(flatData)
                 setCategories(tree)
             } else {
@@ -294,23 +294,20 @@ export default function CategoriesPage() {
     }, [categories])
 
     useEffect(() => {
-        if (hasInitializedCollapseRef.current) return
-        if (categories.length === 0) return
-        setCollapsedIds(new Set(collectParentIds(categories)))
-        hasInitializedCollapseRef.current = true
-    }, [categories])
-
-    useEffect(() => {
         const validIds = new Set(flattenCategories(categories).map((cat) => cat.id))
         setShopByCategoryIds((prev) => prev.filter((id) => validIds.has(id)).slice(0, 8))
         setCollectionCategoryIds((prev) => prev.filter((id) => validIds.has(id)).slice(0, 7))
         setHomePromoCategoryId((prev) => (prev && !validIds.has(prev) ? "" : prev))
     }, [categories])
 
+    const visibleCategoryCount = useMemo(
+        () => countVisibleCategories(categories, collapsedIds),
+        [categories, collapsedIds]
+    )
+
     useEffect(() => {
-        if (!reorderMode) return
-        setCollapsedIds(new Set(collectParentIds(categories)))
-    }, [categories, reorderMode])
+        console.log("[admin-categories] visible rendered category count", visibleCategoryCount)
+    }, [visibleCategoryCount])
 
     const setHomeCategorySlot = (index: number, value: string) => {
         setShopByCategoryIds((prev) => {
