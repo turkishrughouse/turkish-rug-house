@@ -152,11 +152,8 @@ async function setProductCreatorByProductId(productId: string, creator: { id: st
 async function purgeExpiredTrashedProducts() {
     if (Date.now() - lastTrashPurgeAt < 1000 * 60 * 60) return
     await ensureDeletedAtColumn()
-    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-    await db.$executeRawUnsafe(
-        `DELETE FROM "Product" WHERE "deletedAt" IS NOT NULL AND "deletedAt" <= ?`,
-        cutoff
-    )
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    await db.$executeRaw`DELETE FROM "Product" WHERE "deletedAt" IS NOT NULL AND "deletedAt" <= ${cutoff}`
     lastTrashPurgeAt = Date.now()
 }
 
