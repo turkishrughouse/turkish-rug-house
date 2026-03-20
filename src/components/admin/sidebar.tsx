@@ -6,7 +6,6 @@ import {
     BarChart3,
     ShoppingBag,
     FileText,
-    Newspaper,
     Image as ImageIcon,
     Settings,
     Users,
@@ -48,7 +47,7 @@ interface AdminSidebarProps {
     user: SidebarUser
 }
 
-const SIDEBAR_NOTIFICATION_POLL_MS = 60000
+const SIDEBAR_NOTIFICATION_POLL_MS = 3000
 
 export function AdminSidebar({ user }: AdminSidebarProps) {
     const [activeItem, setActiveItem] = useState<{ id: string, items: NavSubItem[], rect: DOMRect } | null>(null)
@@ -69,16 +68,16 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
             disableDirectLink: true,
             items: [
                 { name: t.sidebar.analyticsOverview, href: "/dashboard/analytics/overview" },
-                { name: t.sidebar.analyticsProducts, href: "/dashboard/analytics/products" },
-                { name: t.sidebar.analyticsRevenue, href: "/dashboard/analytics/revenue" },
-                { name: t.sidebar.analyticsOrders, href: "/dashboard/analytics/orders" },
-                { name: t.sidebar.analyticsVariations, href: "/dashboard/analytics/variations" },
-                { name: t.sidebar.analyticsCategories, href: "/dashboard/analytics/categories" },
-                { name: t.sidebar.analyticsCoupons, href: "/dashboard/analytics/coupons" },
-                { name: t.sidebar.analyticsTaxes, href: "/dashboard/analytics/taxes" },
-                { name: t.sidebar.analyticsDownloads, href: "/dashboard/analytics/downloads" },
-                { name: t.sidebar.analyticsStock, href: "/dashboard/analytics/stock" },
-                { name: t.sidebar.analyticsSettings, href: "/dashboard/analytics/settings" },
+                { name: t.sidebar.analyticsProducts, href: "/dashboard/products" },
+                { name: t.sidebar.analyticsRevenue, href: "/dashboard/orders/reports?metric=revenue" },
+                { name: t.sidebar.analyticsOrders, href: "/dashboard/orders" },
+                { name: t.sidebar.analyticsVariations, href: "/dashboard/products/attributes" },
+                { name: t.sidebar.analyticsCategories, href: "/dashboard/products/categories" },
+                { name: t.sidebar.analyticsCoupons, href: "/dashboard/orders/coupons" },
+                { name: t.sidebar.analyticsTaxes, href: "/dashboard/orders/reports?metric=taxes" },
+                { name: t.sidebar.analyticsDownloads, href: "/dashboard/orders/reports?metric=downloads" },
+                { name: t.sidebar.analyticsStock, href: "/dashboard/products?stock=instock" },
+                { name: t.sidebar.analyticsSettings, href: "/dashboard/orders/settings" },
             ]
         },
         {
@@ -111,7 +110,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
         {
             name: t.sidebar.design,
             href: "/dashboard/design?tab=banners",
-            section: "design",
+            section: "menus",
             icon: Menu,
             items: [
                 { name: t.sidebar.designBanners, href: "/dashboard/design?tab=banners" },
@@ -120,16 +119,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
             ],
         },
         { name: t.sidebar.pages, href: "/dashboard/pages", section: "pages", icon: FileText },
-        { name: t.sidebar.blog, href: "/dashboard/blog", section: "blog", icon: Newspaper },
-        {
-            name: t.sidebar.media,
-            href: "/dashboard/media",
-            section: "media",
-            icon: ImageIcon,
-            items: [
-                { name: "Add New", href: "/dashboard/media/new" },
-            ],
-        },
+        { name: t.sidebar.media, href: "/dashboard/media", section: "media", icon: ImageIcon },
         { name: t.sidebar.users, href: "/dashboard/users", section: "users", icon: Users },
         { name: t.sidebar.settings, href: "/dashboard/settings", section: "settings", icon: Settings },
     ]
@@ -144,7 +134,6 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
     const visibleNavItems = navItems.filter((item) => canAccessAdminSection(user.role, item.section))
     const canSeeOrders = canAccessAdminSection(user.role, "orders")
     const canSeeMessages = canAccessAdminSection(user.role, "messages")
-    const sidebarCountsInFlightRef = useRef(false)
 
     useEffect(() => {
         // Close flyout on scroll or resize to prevent misalignment
@@ -168,8 +157,6 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
         let cancelled = false
 
         const fetchSidebarCounts = async () => {
-            if (sidebarCountsInFlightRef.current) return
-            sidebarCountsInFlightRef.current = true
             try {
                 const notificationsResponsePromise = (canSeeOrders || canSeeMessages)
                     ? fetch("/api/admin/notifications", { cache: "no-store" })
@@ -198,8 +185,6 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
                 }
             } catch {
                 // sidebar indicator should not block navigation
-            } finally {
-                sidebarCountsInFlightRef.current = false
             }
         }
 

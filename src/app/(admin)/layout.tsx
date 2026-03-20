@@ -2,8 +2,8 @@ import { AdminSidebar } from "@/components/admin/sidebar"
 import { ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { headers } from "next/headers"
-import { getSessionUser } from "@/lib/auth-server"
+import { cookies } from "next/headers"
+import { getSessionUser } from "@/lib/auth"
 import { NotificationCenter } from "@/components/admin/notifications/notification-center"
 import { isAdminRole } from "@/lib/rbac"
 import { prisma } from "@/lib/db"
@@ -24,27 +24,11 @@ export default async function AdminLayout({
     try {
         user = await getSessionUser("admin")
     } catch (error) {
-        if (process.env.NODE_ENV !== "production") {
-            console.error("[admin-layout] failed to resolve admin session", error)
-        }
+        console.error("[admin-layout] failed to resolve admin session", error)
         user = null
     }
     if (!user || !isAdminRole(user.role)) {
         redirect("/rughouse/login")
-    }
-
-    // Canonicalize admin panel entrypoint by role (DB is source of truth).
-    // Middleware handles most redirects, but this ensures DB role changes apply.
-    const reqHeaders = await headers()
-    const originalPath = reqHeaders.get("x-original-pathname") || ""
-    if (user.role === "SUPER_USER") {
-        if (originalPath.startsWith("/admin")) {
-            redirect(originalPath.replace(/^\/admin/, "/superuser") || "/superuser")
-        }
-    } else if (user.role === "ADMIN") {
-        if (originalPath.startsWith("/superuser")) {
-            redirect(originalPath.replace(/^\/superuser/, "/admin") || "/admin")
-        }
     }
     let profile: {
         avatarUrl: string | null
@@ -68,13 +52,13 @@ export default async function AdminLayout({
         })
     } catch (error) {
         // Keep admin shell accessible even if profile table/fields are temporarily out of sync.
-        if (process.env.NODE_ENV !== "production") {
-            console.error("[admin-layout] profile lookup failed, using defaults", error)
-        }
+        console.error("[admin-layout] profile lookup failed, using defaults", error)
         profile = null
     }
-    // Vendor/admin panel should always be light, calm, and minimal.
-    const theme = getAdminTheme("light")
+    const cookieStore = await cookies()
+    const cookieScheme = cookieStore.get(ADMIN_SCHEME_COOKIE_KEY)?.value || null
+    const effectiveScheme = isAdminColorScheme(cookieScheme) ? cookieScheme : profile?.adminColorScheme
+    const theme = getAdminTheme(effectiveScheme)
     const lang = resolveAdminLanguage(profile?.locale)
     const t = adminText[lang]
     const adminStyle = {
@@ -96,7 +80,7 @@ export default async function AdminLayout({
 
     return (
         <div
-            className={`admin-shell flex min-h-screen h-dvh w-full overflow-hidden bg-[#f6f7fb] text-slate-900 ${profile?.disableSyntaxHighlighting ? "admin-no-syntax" : ""}`}
+            className={`admin-shell flex min-h-screen h-dvh w-full overflow-hidden bg-[#f4f7fb] text-slate-900 ${profile?.disableSyntaxHighlighting ? "admin-no-syntax" : ""}`}
             style={adminStyle}
             data-admin-shortcuts={profile?.enableKeyboardShortcuts ? "on" : "off"}
         >
@@ -104,7 +88,7 @@ export default async function AdminLayout({
             <div className="admin-shell-sidebar">
                 <AdminSidebar user={{ ...user, locale: profile?.locale, avatarUrl: profile?.avatarUrl }} />
             </div>
-            <main className="admin-shell-main flex min-h-0 flex-1 flex-col overflow-hidden" lang={(profile?.locale || "en_US").replace("_", "-")}>
+            <main className="admin-shell-main flex min-h-0 flex-1 flex-col" lang={(profile?.locale || "en_US").replace("_", "-")}>
                 <header
                     className="admin-shell-header admin-header-surface h-[80px] border-b border-[#dce3ed] items-center px-6 justify-between sticky top-0 z-30 shrink-0 shadow-[0_1px_0_rgba(15,23,42,0.03)]"
                     style={{ display: "var(--admin-header-display)" }}
@@ -134,7 +118,7 @@ export default async function AdminLayout({
                         </div>
                     </div>
                 </header>
-                <div className="admin-shell-scroll flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable] [webkit-overflow-scrolling:touch]">
+                <div className="admin-shell-scroll min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
                     {children}
                 </div>
             </main>

@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
                     existingInFolderWithFiles.push(item)
                     continue
                 }
-                await prisma.$executeRawUnsafe(`DELETE FROM "MediaAsset" WHERE "image_url" = ?`, item.image_url)
+                await prisma.$executeRaw`DELETE FROM "MediaAsset" WHERE "image_url" = ${item.image_url}`
             }
             if (existingInFolderWithFiles.length > 0) {
                 const primary = existingInFolderWithFiles.find((item) => item.is_primary === 1) || existingInFolderWithFiles[0]

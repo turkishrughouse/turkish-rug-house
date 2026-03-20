@@ -202,12 +202,7 @@ export async function POST(req: NextRequest) {
           },
         })
         updated += 1
-        await prisma.$executeRawUnsafe(
-          `UPDATE "Product" SET "sku" = ?, "isFeatured" = ?, "deletedAt" = NULL WHERE "id" = ?`,
-          sku,
-          isFeatured ? 1 : 0,
-          existing.id
-        )
+        await prisma.$executeRaw`UPDATE "Product" SET "sku" = ${sku}, "isFeatured" = ${isFeatured}, "deletedAt" = NULL WHERE "id" = ${existing.id}`
       } else {
         const createdProduct = await prisma.product.create({
           data: {
@@ -217,12 +212,7 @@ export async function POST(req: NextRequest) {
           select: { id: true },
         })
         created += 1
-        await prisma.$executeRawUnsafe(
-          `UPDATE "Product" SET "sku" = ?, "isFeatured" = ?, "deletedAt" = NULL WHERE "id" = ?`,
-          sku,
-          isFeatured ? 1 : 0,
-          createdProduct.id
-        )
+        await prisma.$executeRaw`UPDATE "Product" SET "sku" = ${sku}, "isFeatured" = ${isFeatured}, "deletedAt" = NULL WHERE "id" = ${createdProduct.id}`
       }
     } catch (error) {
       skipped += 1

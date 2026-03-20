@@ -64,15 +64,6 @@ export function DailyCategoryShowcase({
             {products.slice(0, 8).map((product) => (
               <CategoryHoverProductCard key={product.id} product={product} />
             ))}
-
-            {products.length < 8 && Array.from({ length: 8 - products.length }).map((_, index) => (
-              <div
-                key={`daily-placeholder-${index}`}
-                className="aspect-square p-2.5"
-              >
-                <div className="h-full w-full rounded-md border-2 border-dashed border-slate-300 bg-slate-50/40" />
-              </div>
-            ))}
           </div>
         </div>
       </div>

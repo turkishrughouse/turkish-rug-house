@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import { getSessionUser } from "@/lib/auth"
 import { isAdminRole } from "@/lib/rbac"
@@ -44,10 +45,7 @@ export async function GET() {
   })
 
   const dynamicRows = products.length > 0
-    ? await prisma.$queryRawUnsafe<Array<{ id: string; sku: string | null; isFeatured: number | boolean | null }>>(
-      `SELECT "id", "sku", "isFeatured" FROM "Product" WHERE "id" IN (${products.map(() => "?").join(",")})`,
-      ...products.map((product) => product.id)
-    )
+    ? await prisma.$queryRaw<Array<{ id: string; sku: string | null; isFeatured: number | boolean | null }>>`SELECT "id", "sku", "isFeatured" FROM "Product" WHERE "id" IN (${Prisma.join(products.map((product) => product.id))})`
     : []
   const dynamicMap = new Map(dynamicRows.map((row) => [row.id, row]))
 

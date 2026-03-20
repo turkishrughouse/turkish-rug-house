@@ -264,12 +264,7 @@ export async function moveManagedAssetGroupToFolder(url: string, targetFolder: s
     const targetPath = path.join(targetDir, sibling.fileName)
     await rename(sibling.absolutePath, targetPath)
     const nextUrl = storage.getPublicUrl(`${safeTargetFolder}/${sibling.fileName}`)
-    await prisma.$executeRawUnsafe(
-      `UPDATE "MediaAsset" SET "image_url" = ?, "object_key" = ? WHERE "image_url" = ?`,
-      nextUrl,
-      `${safeTargetFolder}/${sibling.fileName}`,
-      sibling.url
-    )
+    await prisma.$executeRaw`UPDATE "MediaAsset" SET "image_url" = ${nextUrl}, "object_key" = ${`${safeTargetFolder}/${sibling.fileName}`} WHERE "image_url" = ${sibling.url}`
     if (sibling.fileName.endsWith("-master.webp")) {
       nextPrimaryUrl = nextUrl
     }

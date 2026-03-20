@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
 
 export type MediaRegistryRow = {
@@ -34,18 +35,15 @@ export async function ensureMediaRegistryTable() {
       "size_bytes" INTEGER,
       "storage_provider" TEXT,
       "object_key" TEXT,
-      "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "updated_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `)
 }
 
 export async function findMediaByChecksum(checksum: string) {
   await ensureMediaRegistryTable()
-  return prisma.$queryRawUnsafe<MediaRegistryRow[]>(
-    `SELECT * FROM "MediaAsset" WHERE "checksum" = ? ORDER BY "is_primary" DESC, "sort_order" ASC`,
-    checksum
-  )
+  return prisma.$queryRaw<MediaRegistryRow[]>`SELECT * FROM "MediaAsset" WHERE "checksum" = ${checksum} ORDER BY "is_primary" DESC, "sort_order" ASC`
 }
 
 export async function upsertMediaAsset(row: {
@@ -65,12 +63,11 @@ export async function upsertMediaAsset(row: {
   object_key?: string | null
 }) {
   await ensureMediaRegistryTable()
-  await prisma.$executeRawUnsafe(
-    `
+  await prisma.$executeRaw`
       INSERT INTO "MediaAsset" (
         "id", "image_url", "width", "height", "alt", "sort_order", "is_primary", "variant", "master_url",
         "checksum", "mime_type", "size_bytes", "storage_provider", "object_key", "updated_at"
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ) VALUES (${row.id}, ${row.image_url}, ${row.width ?? null}, ${row.height ?? null}, ${row.alt ?? null}, ${row.sort_order ?? 0}, ${row.is_primary ? 1 : 0}, ${row.variant ?? null}, ${row.master_url ?? null}, ${row.checksum ?? null}, ${row.mime_type ?? null}, ${row.size_bytes ?? null}, ${row.storage_provider ?? null}, ${row.object_key ?? null}, CURRENT_TIMESTAMP)
       ON CONFLICT("image_url") DO UPDATE SET
         "width"=excluded."width",
         "height"=excluded."height",
@@ -85,21 +82,6 @@ export async function upsertMediaAsset(row: {
         "storage_provider"=excluded."storage_provider",
         "object_key"=excluded."object_key",
         "updated_at"=CURRENT_TIMESTAMP
-    `,
-    row.id,
-    row.image_url,
-    row.width ?? null,
-    row.height ?? null,
-    row.alt ?? null,
-    row.sort_order ?? 0,
-    row.is_primary ? 1 : 0,
-    row.variant ?? null,
-    row.master_url ?? null,
-    row.checksum ?? null,
-    row.mime_type ?? null,
-    row.size_bytes ?? null,
-    row.storage_provider ?? null,
-    row.object_key ?? null
-  )
+    `
 }
 

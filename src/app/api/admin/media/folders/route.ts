@@ -88,20 +88,12 @@ async function replaceFolderUrlReferences(oldFolder: string, nextFolder: string)
   }
 
   await ensureMediaRegistryTable()
-  await prisma.$executeRawUnsafe(
-    `
+  await prisma.$executeRaw`
       UPDATE "MediaAsset"
-      SET "image_url" = REPLACE("image_url", ?, ?),
-          "object_key" = REPLACE("object_key", ?, ?)
-      WHERE "image_url" LIKE ? OR "object_key" LIKE ?
-    `,
-    oldPrefix,
-    nextPrefix,
-    `${oldFolder}/`,
-    `${nextFolder}/`,
-    `${oldPrefix}%`,
-    `${oldFolder}/%`
-  )
+      SET "image_url" = REPLACE("image_url", ${oldPrefix}, ${nextPrefix}),
+          "object_key" = REPLACE("object_key", ${`${oldFolder}/`}, ${`${nextFolder}/`})
+      WHERE "image_url" LIKE ${`${oldPrefix}%`} OR "object_key" LIKE ${`${oldFolder}/%`}
+    `
 }
 
 export async function DELETE(req: NextRequest) {
@@ -162,10 +154,7 @@ export async function DELETE(req: NextRequest) {
         })
 
         const linkedProduct = await Promise.all(products.map(async (product) => {
-          const skuRows = await prisma.$queryRawUnsafe<Array<{ sku: string | null }>>(
-            `SELECT "sku" FROM "Product" WHERE "id" = ? LIMIT 1`,
-            product.id
-          )
+          const skuRows = await prisma.$queryRaw<Array<{ sku: string | null }>>`SELECT "sku" FROM "Product" WHERE "id" = ${product.id} LIMIT 1`
           const productSku = sanitizeFolderPath(skuRows[0]?.sku || "")
           if (productSku !== sku) return null
           const categoryPaths = product.categories.map((category) => resolvePath(category.id))

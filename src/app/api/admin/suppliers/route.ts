@@ -192,11 +192,7 @@ export async function PATCH(req: Request) {
 
       if (!changed) continue
 
-      await prisma.$executeRawUnsafe(
-        `UPDATE "Product" SET "suppliers" = ? WHERE "id" = ?`,
-        JSON.stringify(nextSuppliers),
-        row.id
-      )
+      await prisma.$executeRaw`UPDATE "Product" SET "suppliers" = ${JSON.stringify(nextSuppliers)} WHERE "id" = ${row.id}`
       updatedProducts += 1
     }
 

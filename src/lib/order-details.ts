@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client"
 import { addColumnIfMissing } from "@/lib/db-compat"
 
 export type OrderDetails = {
@@ -169,10 +170,7 @@ export async function getOrderDetailsMap(orderIds: string[]) {
   if (ids.length === 0) return new Map<string, OrderDetails>()
   await ensureOrderDetailsColumn()
   const prisma = await getPrisma()
-  const rows = await prisma.$queryRawUnsafe<Array<{ id: string; detailsJson: string | null }>>(
-    `SELECT "id", "detailsJson" FROM "Order" WHERE "id" IN (${ids.map(() => "?").join(",")})`,
-    ...ids
-  )
+  const rows = await prisma.$queryRaw<Array<{ id: string; detailsJson: string | null }>>`SELECT "id", "detailsJson" FROM "Order" WHERE "id" IN (${Prisma.join(ids)})`
   return new Map(
     rows.map((row) => {
       let parsed: unknown = {}
@@ -194,11 +192,7 @@ export async function saveOrderDetails(orderId: string, input: Partial<OrderDeta
   const existing = await getSingleOrderDetails(orderId)
   const next = normalizeOrderDetails({ ...existing, ...input })
   const prisma = await getPrisma()
-  await prisma.$executeRawUnsafe(
-    `UPDATE "Order" SET "detailsJson" = ?, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?`,
-    JSON.stringify(next),
-    orderId
-  )
+  await prisma.$executeRaw`UPDATE "Order" SET "detailsJson" = ${JSON.stringify(next)}, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ${orderId}`
   return next
 }
 
