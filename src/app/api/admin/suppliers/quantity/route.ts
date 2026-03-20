@@ -19,14 +19,13 @@ export async function POST(req: NextRequest) {
 
     const counts: Record<string, number> = {}
     for (const prefix of normalizedPrefixes) {
-      const rows = await prisma.$queryRawUnsafe<Array<{ count: number }>>(
-        `SELECT COUNT(*) as count
-         FROM "Product"
-         WHERE "sku" IS NOT NULL
-           AND UPPER("sku") LIKE UPPER(?)
-           AND ("deletedAt" IS NULL OR "deletedAt" = '')`,
-        `${prefix}%`
-      )
+      const rows = await prisma.$queryRaw<Array<{ count: bigint | number }>>`
+        SELECT COUNT(*) as count
+        FROM "Product"
+        WHERE "sku" IS NOT NULL
+          AND UPPER("sku") LIKE UPPER(${`${prefix}%`})
+          AND "deletedAt" IS NULL
+      `
       counts[prefix] = Number(rows[0]?.count || 0)
     }
 

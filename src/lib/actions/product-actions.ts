@@ -278,14 +278,14 @@ async function findConflictingProductSku(sku: string, currentProductId?: string)
         SELECT "id", "title"
         FROM "Product"
         WHERE "sku" = ${normalizedSku}
-          AND ("deletedAt" IS NULL OR "deletedAt" = '')
+          AND "deletedAt" IS NULL
           AND "id" != ${currentProductId}
         LIMIT 1`
         : await db.$queryRaw<Array<{ id: string; title: string }>>`
         SELECT "id", "title"
         FROM "Product"
         WHERE "sku" = ${normalizedSku}
-          AND ("deletedAt" IS NULL OR "deletedAt" = '')
+          AND "deletedAt" IS NULL
         LIMIT 1`
     return rows[0] || null
 }
