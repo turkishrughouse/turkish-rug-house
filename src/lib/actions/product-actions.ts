@@ -453,7 +453,7 @@ export async function getProducts(
 
     if (filters?.featuredOnly) {
         const featuredRows = await db.$queryRawUnsafe<Array<{ id: string }>>(
-            `SELECT "id" FROM "Product" WHERE "isFeatured" = 1 AND "deletedAt" IS NULL`
+            `SELECT "id" FROM "Product" WHERE "isFeatured" IS TRUE AND "deletedAt" IS NULL`
         )
         const featuredIds = featuredRows.map((row) => row.id)
         if (idFilter) {
