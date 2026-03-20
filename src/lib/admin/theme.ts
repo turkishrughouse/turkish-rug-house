@@ -57,19 +57,19 @@ export const ADMIN_THEME_MAP: Record<AdminColorScheme, AdminTheme> = {
     navActiveText: "#ffffff",
   },
   light: {
-    sidebarBg: "#f0f0f1",
+    sidebarBg: "#f1f5f9",
     headerBg: "#ffffff",
     headerText: "#0f172a",
-    headerMuted: "#475569",
+    headerMuted: "#64748b",
     headerHoverBg: "#eef2f7",
-    headerInputBg: "#f8fafc",
-    headerInputBorder: "#d0d7e2",
-    navDivider: "#e5e7eb",
-    navText: "#3c434a",
-    navHoverBg: "#dcdcde",
-    navHoverText: "#111827",
-    navActiveBg: "#00a0d2",
-    navActiveText: "#ffffff",
+    headerInputBg: "#ffffff",
+    headerInputBorder: "#dce3ed",
+    navDivider: "#dce3ed",
+    navText: "#334155",
+    navHoverBg: "#e2e8f0",
+    navHoverText: "#0f172a",
+    navActiveBg: "#dbeafe",
+    navActiveText: "#0f172a",
   },
   modern: {
     sidebarBg: "#1e1e1e",
@@ -179,9 +179,9 @@ export const ADMIN_THEME_MAP: Record<AdminColorScheme, AdminTheme> = {
 }
 
 export function getAdminTheme(scheme: string | null | undefined): AdminTheme {
-  if (!scheme) return ADMIN_THEME_MAP.default
+  if (!scheme) return ADMIN_THEME_MAP.light
   const key = scheme as AdminColorScheme
-  return ADMIN_THEME_MAP[key] || ADMIN_THEME_MAP.default
+  return ADMIN_THEME_MAP[key] || ADMIN_THEME_MAP.light
 }
 
 export function isAdminColorScheme(value: string | null | undefined): value is AdminColorScheme {

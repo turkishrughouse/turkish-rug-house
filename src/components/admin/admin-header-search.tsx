@@ -74,7 +74,7 @@ export function AdminHeaderSearch({ placeholder }: AdminHeaderSearchProps) {
           if (query.trim()) setOpen(true)
         }}
         placeholder={placeholder}
-        className="pl-10 admin-header-input-theme focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:border-white/70"
+        className="pl-10 admin-header-input-theme focus-visible:ring-2 focus-visible:ring-slate-200 focus-visible:border-slate-300"
       />
       {open ? (
         <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-lg border border-[#dce3ed] bg-white shadow-[0_16px_40px_rgba(15,23,42,0.12)]">

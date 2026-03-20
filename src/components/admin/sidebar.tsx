@@ -134,6 +134,8 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
     const visibleNavItems = navItems.filter((item) => canAccessAdminSection(user.role, item.section))
     const canSeeOrders = canAccessAdminSection(user.role, "orders")
     const canSeeMessages = canAccessAdminSection(user.role, "messages")
+    const navItemBaseClass = "flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-md transition-all duration-200 group-hover:translate-x-1"
+    const inactiveNavClass = "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
 
     useEffect(() => {
         // Close flyout on scroll or resize to prevent misalignment
@@ -291,10 +293,8 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
                                         <button
                                             type="button"
                                             onClick={() => setActiveItem(null)}
-                                            className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-md transition-all duration-200 group-hover:translate-x-1 text-left ${activeItem?.id === item.name
-                                                ? "bg-slate-900 text-white"
-                                                : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
-                                                }`}
+                                            className={`w-full text-left ${navItemBaseClass} ${activeItem?.id === item.name ? "" : inactiveNavClass}`}
+                                            style={activeItem?.id === item.name ? { backgroundColor: "var(--admin-nav-active-bg)", color: "var(--admin-nav-active-text)" } : undefined}
                                         >
                                             <item.icon className="h-4 w-4 shrink-0 transition-transform duration-200 group-hover:scale-110" />
                                             <span>{item.name}</span>
@@ -304,7 +304,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
                                                 </span>
                                             ) : null}
                                             {item.items && (
-                                                <div className={`ml-auto w-1 h-1 rounded-full group-hover:bg-slate-600 ${activeItem?.id === item.name ? 'bg-white' : 'bg-slate-300'
+                                                <div className={`ml-auto w-1 h-1 rounded-full group-hover:bg-slate-600 ${activeItem?.id === item.name ? 'bg-slate-700' : 'bg-slate-300'
                                                     }`} />
                                             )}
                                         </button>
@@ -312,10 +312,8 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
                                         <Link
                                             href={item.href}
                                             onClick={() => setActiveItem(null)}
-                                            className={`flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-md transition-all duration-200 group-hover:translate-x-1 ${activeItem?.id === item.name
-                                                ? "bg-slate-900 text-white"
-                                                : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
-                                                }`}
+                                            className={`${navItemBaseClass} ${activeItem?.id === item.name ? "" : inactiveNavClass}`}
+                                            style={activeItem?.id === item.name ? { backgroundColor: "var(--admin-nav-active-bg)", color: "var(--admin-nav-active-text)" } : undefined}
                                         >
                                             <item.icon className="h-4 w-4 shrink-0 transition-transform duration-200 group-hover:scale-110" />
                                             <span>{item.name}</span>
@@ -331,7 +329,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
                                             ) : null}
 
                                             {item.items && (
-                                                <div className={`ml-auto w-1 h-1 rounded-full group-hover:bg-slate-600 ${activeItem?.id === item.name ? 'bg-white' : 'bg-slate-300'
+                                                <div className={`ml-auto w-1 h-1 rounded-full group-hover:bg-slate-600 ${activeItem?.id === item.name ? 'bg-slate-700' : 'bg-slate-300'
                                                     }`} />
                                             )}
                                         </Link>

@@ -2,13 +2,12 @@ import { AdminSidebar } from "@/components/admin/sidebar"
 import { ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { cookies } from "next/headers"
 import { getSessionUser } from "@/lib/auth"
 import { NotificationCenter } from "@/components/admin/notifications/notification-center"
 import { isAdminRole } from "@/lib/rbac"
 import { prisma } from "@/lib/db"
 import type { CSSProperties } from "react"
-import { ADMIN_SCHEME_COOKIE_KEY, getAdminTheme, isAdminColorScheme } from "@/lib/admin/theme"
+import { getAdminTheme } from "@/lib/admin/theme"
 import { AdminKeyboardShortcuts } from "@/components/admin/keyboard-shortcuts"
 import { CacheActionButton } from "@/components/admin/cache-action-button"
 import { adminText, resolveAdminLanguage } from "@/lib/admin/i18n"
@@ -55,10 +54,7 @@ export default async function AdminLayout({
         console.error("[admin-layout] profile lookup failed, using defaults", error)
         profile = null
     }
-    const cookieStore = await cookies()
-    const cookieScheme = cookieStore.get(ADMIN_SCHEME_COOKIE_KEY)?.value || null
-    const effectiveScheme = isAdminColorScheme(cookieScheme) ? cookieScheme : profile?.adminColorScheme
-    const theme = getAdminTheme(effectiveScheme)
+    const theme = getAdminTheme("light")
     const lang = resolveAdminLanguage(profile?.locale)
     const t = adminText[lang]
     const adminStyle = {
