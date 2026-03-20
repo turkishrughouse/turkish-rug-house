@@ -18,9 +18,9 @@ import { ArrowLeft, Mail, MessageSquare, Phone, Calendar, User, FileText, Paperc
 import { toast } from "sonner"
 
 const statusColors = {
-    NEW: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400",
-    OPEN: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-400",
-    RESOLVED: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400",
+    NEW: "bg-blue-100 text-blue-700",
+    OPEN: "bg-yellow-100 text-yellow-700",
+    RESOLVED: "bg-green-100 text-green-700",
 }
 
 const sourceIcons = {
@@ -344,7 +344,7 @@ export default function MessageDetailPage() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="prose prose-sm max-w-none dark:prose-invert">
+                            <div className="prose prose-sm max-w-none">
                                 <p className="whitespace-pre-wrap">{message.content}</p>
                             </div>
                         </CardContent>

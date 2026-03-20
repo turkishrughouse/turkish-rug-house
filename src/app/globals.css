@@ -3,8 +3,6 @@
 @source "../**/*.{js,ts,jsx,tsx,mdx}";
 @source not "../../public/**";
 
-@custom-variant dark (&:is(.dark *));
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -151,82 +149,16 @@
   --admin-caption-size: 0.8125rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Keep admin/storefront readable even when OS is in dark mode */
-    --surface: #FFFFFF;
-    --surface-alt: #F8FAFC;
-
-    --background: #F4F7FB;
-    --foreground: #0F172A;
-
-    --card: #FFFFFF;
-    --card-foreground: #0F172A;
-
-    --popover: #FFFFFF;
-    --popover-foreground: #0F172A;
-
-    --primary: #1E293B;
-    --primary-foreground: #F8FAFC;
-
-    --secondary: #EEF2F7;
-    --secondary-foreground: #1E293B;
-
-    --muted: #F8FAFC;
-    --muted-foreground: #64748B;
-
-    --accent: #334155;
-    --accent-foreground: #F8FAFC;
-
-    --destructive: #B91C1C;
-    --destructive-foreground: #FFFFFF;
-
-    --border: #DCE3ED;
-    --border-subtle: #E8EEF5;
-
-    --input: #E2E8F0;
-    --ring: #475569;
-  }
+html,
+body {
+  background: #ffffff;
+  color: #111827;
 }
 
 body {
   background-color: var(--background);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
   -webkit-font-smoothing: antialiased;
-}
-
-.dark {
-  --background: #F4F7FB;
-  --foreground: #0F172A;
-  --card: #FFFFFF;
-  --card-foreground: #0F172A;
-  --popover: #FFFFFF;
-  --popover-foreground: #0F172A;
-  --primary: #1E293B;
-  --primary-foreground: #F8FAFC;
-  --secondary: #EEF2F7;
-  --secondary-foreground: #1E293B;
-  --muted: #F8FAFC;
-  --muted-foreground: #64748B;
-  --accent: #334155;
-  --accent-foreground: #F8FAFC;
-  --destructive: #B91C1C;
-  --border: #DCE3ED;
-  --input: #E2E8F0;
-  --ring: #475569;
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: #FFFFFF;
-  --sidebar-foreground: #0F172A;
-  --sidebar-primary: #1E293B;
-  --sidebar-primary-foreground: #F8FAFC;
-  --sidebar-accent: #EEF2F7;
-  --sidebar-accent-foreground: #1E293B;
-  --sidebar-border: #DCE3ED;
-  --sidebar-ring: #475569;
 }
 
 .admin-no-syntax pre code span,
