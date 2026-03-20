@@ -11,3 +11,7 @@ export async function requireAdminRoles(roles: string[]) {
   }
   return user
 }
+
+export async function requireAdminSection(_section: string) {
+  return requireAdminRoles(["SUPER_USER", "ADMIN"])
+}

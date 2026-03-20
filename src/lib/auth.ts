@@ -2,9 +2,9 @@ import { createHmac, timingSafeEqual } from "crypto"
 import { cookies } from "next/headers"
 import { prisma } from "@/lib/db"
 
-const LEGACY_AUTH_COOKIE_NAME = "rughouse_admin_session"
-const ADMIN_AUTH_COOKIE_NAME = "rughouse_admin_session_admin"
-const CUSTOMER_AUTH_COOKIE_NAME = "rughouse_customer_session"
+export const LEGACY_AUTH_COOKIE_NAME = "rughouse_admin_session"
+export const ADMIN_AUTH_COOKIE_NAME = "rughouse_admin_session_admin"
+export const CUSTOMER_AUTH_COOKIE_NAME = "rughouse_customer_session"
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 365
 
 type SessionPayload = {
