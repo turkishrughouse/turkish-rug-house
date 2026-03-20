@@ -559,8 +559,8 @@ export async function getProducts(
 
     const productIds = products.map((product) => product.id)
     const dynamicRows = productIds.length > 0
-        ? await db.$queryRawUnsafe<Array<{ id: string; sku: string | null; isFeatured: number | boolean | null; deletedAt: string | null }>>(
-            `SELECT "id", "sku", "isFeatured", "deletedAt" FROM "Product" WHERE "id" IN (${productIds.map(() => "?").join(",")})`,
+        ? await db.$queryRawUnsafe<Array<{ id: string; sku: string | null; isFeatured: number | boolean | null }>>(
+            `SELECT "id", "sku", "isFeatured" FROM "Product" WHERE "id" IN (${productIds.map(() => "?").join(",")})`,
             ...productIds
         )
         : []
@@ -570,7 +570,6 @@ export async function getProducts(
         ...product,
         sku: dynamicMap.get(product.id)?.sku ?? null,
         isFeatured: parseSqliteBoolean(dynamicMap.get(product.id)?.isFeatured),
-        deletedAt: dynamicMap.get(product.id)?.deletedAt ?? null,
         price: product.price.toNumber(),
         compareAtPrice: product.compareAtPrice ? product.compareAtPrice.toNumber() : null,
     }))
