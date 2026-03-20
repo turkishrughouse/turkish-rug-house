@@ -327,10 +327,12 @@ export default async function ProductPage({ params }: Props) {
     })),
     ...(await (async () => {
       try {
-        const rows = await prisma.$queryRawUnsafe<Array<{ sku: string | null; customAttributes: string | null; shortDescription: string | null }>>(
-          `SELECT "sku", "customAttributes", "shortDescription" FROM "Product" WHERE "id" = ? LIMIT 1`,
-          product.id
-        )
+        const rows = await prisma.$queryRaw<Array<{ sku: string | null; customAttributes: string | null; shortDescription: string | null }>>`
+          SELECT "sku", "customAttributes", "shortDescription"
+          FROM "Product"
+          WHERE "id" = ${product.id}
+          LIMIT 1
+        `
         const record = rows[0]
         return {
           sku: record?.sku ?? null,
