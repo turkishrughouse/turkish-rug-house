@@ -57,21 +57,14 @@ async function ensureSkuColumn() {
 
 async function getSkuByProductId(productId: string) {
     await ensureSkuColumn()
-    const rows = await db.$queryRawUnsafe<Array<{ sku: string | null }>>(
-        `SELECT "sku" FROM "Product" WHERE "id" = ? LIMIT 1`,
-        productId
-    )
+    const rows = await db.$queryRaw<Array<{ sku: string | null }>>`SELECT "sku" FROM "Product" WHERE "id" = ${productId} LIMIT 1`
     return rows[0]?.sku ?? null
 }
 
 async function setSkuByProductId(productId: string, sku: string | null | undefined) {
     await ensureSkuColumn()
     const normalizedSku = sku && sku.trim().length > 0 ? sku.trim() : null
-    await db.$executeRawUnsafe(
-        `UPDATE "Product" SET "sku" = ? WHERE "id" = ?`,
-        normalizedSku,
-        productId
-    )
+    await db.$executeRaw`UPDATE "Product" SET "sku" = ${normalizedSku} WHERE "id" = ${productId}`
 }
 
 async function ensureFeaturedColumn() {
@@ -98,20 +91,13 @@ function parseSqliteBoolean(value: unknown) {
 
 async function getFeaturedByProductId(productId: string) {
     await ensureFeaturedColumn()
-    const rows = await db.$queryRawUnsafe<Array<{ isFeatured: number | boolean | null }>>(
-        `SELECT "isFeatured" FROM "Product" WHERE "id" = ? LIMIT 1`,
-        productId
-    )
+    const rows = await db.$queryRaw<Array<{ isFeatured: number | boolean | null }>>`SELECT "isFeatured" FROM "Product" WHERE "id" = ${productId} LIMIT 1`
     return parseSqliteBoolean(rows[0]?.isFeatured)
 }
 
 async function setFeaturedByProductId(productId: string, featured: boolean) {
     await ensureFeaturedColumn()
-    await db.$executeRawUnsafe(
-        `UPDATE "Product" SET "isFeatured" = ? WHERE "id" = ?`,
-        featured ? 1 : 0,
-        productId
-    )
+    await db.$executeRaw`UPDATE "Product" SET "isFeatured" = ${featured} WHERE "id" = ${productId}`
 }
 
 async function ensureDeletedAtColumn() {
@@ -141,17 +127,11 @@ async function ensureProductCreatorColumns() {
 
 async function setProductCreatorByProductId(productId: string, creator: { id: string | null; name: string | null }) {
     await ensureProductCreatorColumns()
-    await db.$executeRawUnsafe(
-        `UPDATE "Product" SET "createdById" = ?, "createdByName" = ? WHERE "id" = ?`,
-        creator.id,
-        creator.name,
-        productId
-    )
+    await db.$executeRaw`UPDATE "Product" SET "createdById" = ${creator.id}, "createdByName" = ${creator.name} WHERE "id" = ${productId}`
 }
 
 async function purgeExpiredTrashedProducts() {
     if (Date.now() - lastTrashPurgeAt < 1000 * 60 * 60) return
-    await ensureDeletedAtColumn()
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
     await db.$executeRaw`DELETE FROM "Product" WHERE "deletedAt" IS NOT NULL AND "deletedAt" <= ${cutoff}`
     lastTrashPurgeAt = Date.now()
@@ -293,15 +273,20 @@ async function findConflictingProductSku(sku: string, currentProductId?: string)
     await ensureDeletedAtColumn()
     const normalizedSku = (sku || "").trim()
     if (!normalizedSku) return null
-    const rows = await db.$queryRawUnsafe<Array<{ id: string; title: string }>>(
-        `SELECT "id", "title"
-         FROM "Product"
-         WHERE "sku" = ?
-           AND ("deletedAt" IS NULL OR "deletedAt" = '')
-           ${currentProductId ? `AND "id" != ?` : ""}
-         LIMIT 1`,
-        ...(currentProductId ? [normalizedSku, currentProductId] : [normalizedSku])
-    )
+    const rows = currentProductId
+        ? await db.$queryRaw<Array<{ id: string; title: string }>>`
+        SELECT "id", "title"
+        FROM "Product"
+        WHERE "sku" = ${normalizedSku}
+          AND ("deletedAt" IS NULL OR "deletedAt" = '')
+          AND "id" != ${currentProductId}
+        LIMIT 1`
+        : await db.$queryRaw<Array<{ id: string; title: string }>>`
+        SELECT "id", "title"
+        FROM "Product"
+        WHERE "sku" = ${normalizedSku}
+          AND ("deletedAt" IS NULL OR "deletedAt" = '')
+        LIMIT 1`
     return rows[0] || null
 }
 
@@ -311,21 +296,14 @@ async function ensureShortDescriptionColumn() {
 
 async function getShortDescriptionByProductId(productId: string) {
     await ensureShortDescriptionColumn()
-    const rows = await db.$queryRawUnsafe<Array<{ shortDescription: string | null }>>(
-        `SELECT "shortDescription" FROM "Product" WHERE "id" = ? LIMIT 1`,
-        productId
-    )
+    const rows = await db.$queryRaw<Array<{ shortDescription: string | null }>>`SELECT "shortDescription" FROM "Product" WHERE "id" = ${productId} LIMIT 1`
     return rows[0]?.shortDescription ?? null
 }
 
 async function setShortDescriptionByProductId(productId: string, shortDescription: string | null | undefined) {
     await ensureShortDescriptionColumn()
     const normalized = shortDescription && shortDescription.trim().length > 0 ? shortDescription : null
-    await db.$executeRawUnsafe(
-        `UPDATE "Product" SET "shortDescription" = ? WHERE "id" = ?`,
-        normalized,
-        productId
-    )
+    await db.$executeRaw`UPDATE "Product" SET "shortDescription" = ${normalized} WHERE "id" = ${productId}`
 }
 
 async function ensureCustomAttributesColumn() {
@@ -334,10 +312,7 @@ async function ensureCustomAttributesColumn() {
 
 async function getCustomAttributesByProductId(productId: string): Promise<CustomAttribute[]> {
     await ensureCustomAttributesColumn()
-    const rows = await db.$queryRawUnsafe<Array<{ customAttributes: string | null }>>(
-        `SELECT "customAttributes" FROM "Product" WHERE "id" = ? LIMIT 1`,
-        productId
-    )
+    const rows = await db.$queryRaw<Array<{ customAttributes: string | null }>>`SELECT "customAttributes" FROM "Product" WHERE "id" = ${productId} LIMIT 1`
     const raw = rows[0]?.customAttributes
     if (!raw) return []
     try {
@@ -351,11 +326,7 @@ async function setCustomAttributesByProductId(productId: string, attributes: Cus
     await ensureCustomAttributesColumn()
     const normalized = normalizeCustomAttributes(attributes || [])
     const payload = normalized.length > 0 ? JSON.stringify(normalized) : null
-    await db.$executeRawUnsafe(
-        `UPDATE "Product" SET "customAttributes" = ? WHERE "id" = ?`,
-        payload,
-        productId
-    )
+    await db.$executeRaw`UPDATE "Product" SET "customAttributes" = ${payload} WHERE "id" = ${productId}`
 }
 
 async function ensureSuppliersColumn() {
@@ -364,10 +335,7 @@ async function ensureSuppliersColumn() {
 
 async function getSuppliersByProductId(productId: string): Promise<SupplierRecord[]> {
     await ensureSuppliersColumn()
-    const rows = await db.$queryRawUnsafe<Array<{ suppliers: string | null }>>(
-        `SELECT "suppliers" FROM "Product" WHERE "id" = ? LIMIT 1`,
-        productId
-    )
+    const rows = await db.$queryRaw<Array<{ suppliers: string | null }>>`SELECT "suppliers" FROM "Product" WHERE "id" = ${productId} LIMIT 1`
     const raw = rows[0]?.suppliers
     if (!raw) return []
     try {
@@ -381,11 +349,7 @@ async function setSuppliersByProductId(productId: string, suppliers: SupplierRec
     await ensureSuppliersColumn()
     const normalized = normalizeSuppliers(suppliers || [])
     const payload = normalized.length > 0 ? JSON.stringify(normalized) : null
-    await db.$executeRawUnsafe(
-        `UPDATE "Product" SET "suppliers" = ? WHERE "id" = ?`,
-        payload,
-        productId
-    )
+    await db.$executeRaw`UPDATE "Product" SET "suppliers" = ${payload} WHERE "id" = ${productId}`
 }
 
 export async function getProducts(
@@ -413,10 +377,6 @@ export async function getProducts(
         scheduledDate?: string
     }
 ) {
-    await ensureSkuColumn()
-    await ensureFeaturedColumn()
-    await ensureDeletedAtColumn()
-    await ensureCanonicalProductMediaMigration()
     await purgeExpiredTrashedProducts()
     const skip = (page - 1) * limit
 
@@ -438,12 +398,10 @@ export async function getProducts(
 
     let idFilter = filters?.productIds?.length ? [...filters.productIds] : undefined
 
-    const trashRows = await db.$queryRawUnsafe<Array<{ id: string }>>(
-        filters?.trashOnly
-            ? `SELECT "id" FROM "Product" WHERE "deletedAt" IS NOT NULL`
-            : `SELECT "id" FROM "Product" WHERE "deletedAt" IS NULL`
-    )
-    const trashScopedIds = trashRows.map((row) => row.id)
+    const trashScopedIds = await (filters?.trashOnly
+        ? db.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Product" WHERE "deletedAt" IS NOT NULL`
+        : db.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Product" WHERE "deletedAt" IS NULL`
+    ).then((rows) => rows.map((row) => row.id))
     if (idFilter) {
         const allowed = new Set(trashScopedIds)
         idFilter = idFilter.filter((id) => allowed.has(id))
@@ -452,10 +410,12 @@ export async function getProducts(
     }
 
     if (filters?.featuredOnly) {
-        const featuredRows = await db.$queryRawUnsafe<Array<{ id: string }>>(
-            `SELECT "id" FROM "Product" WHERE "isFeatured" IS TRUE AND "deletedAt" IS NULL`
-        )
-        const featuredIds = featuredRows.map((row) => row.id)
+        const featuredIds = await db.$queryRaw<Array<{ id: string }>>`
+            SELECT "id"
+            FROM "Product"
+            WHERE "isFeatured" IS TRUE
+              AND "deletedAt" IS NULL
+        `.then((rows) => rows.map((row) => row.id))
         if (idFilter) {
             const featuredIdSet = new Set(featuredIds)
             idFilter = idFilter.filter((id) => featuredIdSet.has(id))
@@ -526,19 +486,10 @@ export async function getProducts(
         db.product.count({ where })
     ])
 
-    const productIds = products.map((product) => product.id)
-    const dynamicRows = productIds.length > 0
-        ? await db.$queryRawUnsafe<Array<{ id: string; sku: string | null; isFeatured: number | boolean | null }>>(
-            `SELECT "id", "sku", "isFeatured" FROM "Product" WHERE "id" IN (${productIds.map(() => "?").join(",")})`,
-            ...productIds
-        )
-        : []
-    const dynamicMap = new Map(dynamicRows.map((row) => [row.id, row]))
-
     const serializedProducts = products.map(product => ({
         ...product,
-        sku: dynamicMap.get(product.id)?.sku ?? null,
-        isFeatured: parseSqliteBoolean(dynamicMap.get(product.id)?.isFeatured),
+        sku: product.sku ?? null,
+        isFeatured: Boolean(product.isFeatured),
         price: product.price.toNumber(),
         compareAtPrice: product.compareAtPrice ? product.compareAtPrice.toNumber() : null,
     }))
@@ -567,35 +518,18 @@ export async function getProductAdminStats(query = "") {
         }
         : {}
 
+    const likeQuery = `%${query}%`
     const featuredPromise = query
-        ? db.$queryRawUnsafe<Array<{ count: number }>>(
-            `SELECT COUNT(*) as count FROM "Product" WHERE "isFeatured" = 1 AND "deletedAt" IS NULL AND ("title" LIKE ? OR "slug" LIKE ?)`,
-            `%${query}%`,
-            `%${query}%`
-        )
-        : db.$queryRawUnsafe<Array<{ count: number }>>(
-            `SELECT COUNT(*) as count FROM "Product" WHERE "isFeatured" = 1 AND "deletedAt" IS NULL`
-        )
+        ? db.$queryRaw<Array<{ count: number }>>`SELECT COUNT(*) as count FROM "Product" WHERE "isFeatured" IS TRUE AND "deletedAt" IS NULL AND ("title" LIKE ${likeQuery} OR "slug" LIKE ${likeQuery})`
+        : db.$queryRaw<Array<{ count: number }>>`SELECT COUNT(*) as count FROM "Product" WHERE "isFeatured" IS TRUE AND "deletedAt" IS NULL`
 
     const trashPromise = query
-        ? db.$queryRawUnsafe<Array<{ count: number }>>(
-            `SELECT COUNT(*) as count FROM "Product" WHERE "deletedAt" IS NOT NULL AND ("title" LIKE ? OR "slug" LIKE ?)`,
-            `%${query}%`,
-            `%${query}%`
-        )
-        : db.$queryRawUnsafe<Array<{ count: number }>>(
-            `SELECT COUNT(*) as count FROM "Product" WHERE "deletedAt" IS NOT NULL`
-        )
+        ? db.$queryRaw<Array<{ count: number }>>`SELECT COUNT(*) as count FROM "Product" WHERE "deletedAt" IS NOT NULL AND ("title" LIKE ${likeQuery} OR "slug" LIKE ${likeQuery})`
+        : db.$queryRaw<Array<{ count: number }>>`SELECT COUNT(*) as count FROM "Product" WHERE "deletedAt" IS NOT NULL`
 
     const activeIdsPromise = query
-        ? db.$queryRawUnsafe<Array<{ id: string }>>(
-            `SELECT "id" FROM "Product" WHERE "deletedAt" IS NULL AND ("title" LIKE ? OR "slug" LIKE ?)`,
-            `%${query}%`,
-            `%${query}%`
-        )
-        : db.$queryRawUnsafe<Array<{ id: string }>>(
-            `SELECT "id" FROM "Product" WHERE "deletedAt" IS NULL`
-        )
+        ? db.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Product" WHERE "deletedAt" IS NULL AND ("title" LIKE ${likeQuery} OR "slug" LIKE ${likeQuery})`
+        : db.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Product" WHERE "deletedAt" IS NULL`
 
     const activeIds = (await activeIdsPromise).map((row) => row.id)
 
@@ -639,10 +573,7 @@ export async function getProduct(id: string) {
     await ensureFeaturedColumn()
     await ensureDeletedAtColumn()
     await ensureCanonicalProductMediaMigration()
-    const deletedRows = await db.$queryRawUnsafe<Array<{ deletedAt: string | null }>>(
-        `SELECT "deletedAt" FROM "Product" WHERE "id" = ? LIMIT 1`,
-        id
-    )
+    const deletedRows = await db.$queryRaw<Array<{ deletedAt: string | null }>>`SELECT "deletedAt" FROM "Product" WHERE "id" = ${id} LIMIT 1`
     if (deletedRows[0]?.deletedAt) return null
 
     const product = await (async () => {
@@ -965,10 +896,7 @@ export async function deleteProduct(id: string, permanent = false) {
         if (permanent) {
             await db.product.delete({ where: { id } })
         } else {
-            await db.$executeRawUnsafe(
-                `UPDATE "Product" SET "deletedAt" = CURRENT_TIMESTAMP WHERE "id" = ?`,
-                id
-            )
+            await db.$executeRaw`UPDATE "Product" SET "deletedAt" = CURRENT_TIMESTAMP WHERE "id" = ${id}`
         }
         revalidatePath("/dashboard/products")
         return { success: true }
@@ -1029,10 +957,7 @@ export async function bulkDeleteProducts(ids: string[]) {
     try {
         await ensureDeletedAtColumn()
         if (ids.length === 0) return { success: true }
-        await db.$executeRawUnsafe(
-            `UPDATE "Product" SET "deletedAt" = CURRENT_TIMESTAMP WHERE "id" IN (${ids.map(() => "?").join(",")})`,
-            ...ids
-        )
+        await db.$executeRaw`UPDATE "Product" SET "deletedAt" = CURRENT_TIMESTAMP WHERE "id" IN (${Prisma.join(ids)})`
         revalidatePath("/dashboard/products")
         return { success: true }
     } catch {
@@ -1056,10 +981,7 @@ export async function bulkDeleteProductsPermanently(ids: string[]) {
 export async function restoreProduct(id: string) {
     try {
         await ensureDeletedAtColumn()
-        await db.$executeRawUnsafe(
-            `UPDATE "Product" SET "deletedAt" = NULL WHERE "id" = ?`,
-            id
-        )
+        await db.$executeRaw`UPDATE "Product" SET "deletedAt" = NULL WHERE "id" = ${id}`
         revalidatePath("/dashboard/products")
         return { success: true }
     } catch {
@@ -1071,10 +993,7 @@ export async function bulkRestoreProducts(ids: string[]) {
     try {
         await ensureDeletedAtColumn()
         if (ids.length === 0) return { success: true }
-        await db.$executeRawUnsafe(
-            `UPDATE "Product" SET "deletedAt" = NULL WHERE "id" IN (${ids.map(() => "?").join(",")})`,
-            ...ids
-        )
+        await db.$executeRaw`UPDATE "Product" SET "deletedAt" = NULL WHERE "id" IN (${Prisma.join(ids)})`
         revalidatePath("/dashboard/products")
         return { success: true }
     } catch {
@@ -1085,7 +1004,7 @@ export async function bulkRestoreProducts(ids: string[]) {
 export async function emptyProductTrash() {
     try {
         await ensureDeletedAtColumn()
-        await db.$executeRawUnsafe(`DELETE FROM "Product" WHERE "deletedAt" IS NOT NULL`)
+        await db.$executeRaw`DELETE FROM "Product" WHERE "deletedAt" IS NOT NULL`
         revalidatePath("/dashboard/products")
         return { success: true }
     } catch {
