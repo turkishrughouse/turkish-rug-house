@@ -50,13 +50,12 @@ type AboutGalleryImage = {
 }
 
 async function getAboutGalleryImages() {
-    const rows = await prisma.$queryRawUnsafe<Array<{
+    const rows = await prisma.$queryRaw<Array<{
         image_url: string
         alt: string | null
         width: number | null
         height: number | null
-    }>>(
-        `
+    }>>`
           SELECT "image_url", "alt", "width", "height"
           FROM "MediaAsset"
           WHERE "variant" = 'master'
@@ -66,7 +65,6 @@ async function getAboutGalleryImages() {
           ORDER BY "created_at" DESC
           LIMIT 3
         `
-    )
 
     return rows
         .filter((row) => typeof row.image_url === "string" && row.image_url.trim())
