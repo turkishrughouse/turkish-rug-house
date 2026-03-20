@@ -324,6 +324,33 @@ async function findConflictingProductSku(sku: string, currentProductId?: string)
     return rows[0] || null
 }
 
+async function ensureShortDescriptionColumn() {
+    const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
+    const hasColumn = columns.some((column) => column.name === "shortDescription")
+    if (!hasColumn) {
+        await db.$executeRawUnsafe(`ALTER TABLE "Product" ADD COLUMN "shortDescription" TEXT`)
+    }
+}
+
+async function getShortDescriptionByProductId(productId: string) {
+    await ensureShortDescriptionColumn()
+    const rows = await db.$queryRawUnsafe<Array<{ shortDescription: string | null }>>(
+        `SELECT "shortDescription" FROM "Product" WHERE "id" = ? LIMIT 1`,
+        productId
+    )
+    return rows[0]?.shortDescription ?? null
+}
+
+async function setShortDescriptionByProductId(productId: string, shortDescription: string | null | undefined) {
+    await ensureShortDescriptionColumn()
+    const normalized = shortDescription && shortDescription.trim().length > 0 ? shortDescription : null
+    await db.$executeRawUnsafe(
+        `UPDATE "Product" SET "shortDescription" = ? WHERE "id" = ?`,
+        normalized,
+        productId
+    )
+}
+
 async function ensureCustomAttributesColumn() {
     const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product")`)
     const hasColumn = columns.some((column) => column.name === "customAttributes")
@@ -684,6 +711,7 @@ export async function getProduct(id: string) {
     if (!product) return null
     const sku = await getSkuByProductId(product.id)
     const isFeatured = await getFeaturedByProductId(product.id)
+    const shortDescription = await getShortDescriptionByProductId(product.id)
     const customAttributes = await getCustomAttributesByProductId(product.id)
     const suppliers = await getSuppliersByProductId(product.id)
 
@@ -691,6 +719,7 @@ export async function getProduct(id: string) {
         ...product,
         sku,
         isFeatured,
+        shortDescription,
         customAttributes,
         suppliers,
         price: product.price.toNumber(),
@@ -755,6 +784,7 @@ export async function createProduct(data: ProductFormValues) {
         })
         await setSkuByProductId(created.id, validated.sku || null)
         await setFeaturedByProductId(created.id, validated.isFeatured)
+        await setShortDescriptionByProductId(created.id, validated.shortDescription)
         await setCustomAttributesByProductId(created.id, validated.customAttributes)
         await setSuppliersByProductId(created.id, validated.suppliers)
         await ensureProductSkuFolders(validated.categoryIds, validated.sku || null)
@@ -891,6 +921,7 @@ export async function updateProduct(id: string, data: ProductFormValues) {
         })
         await setSkuByProductId(id, validated.sku || null)
         await setFeaturedByProductId(id, validated.isFeatured)
+        await setShortDescriptionByProductId(id, validated.shortDescription)
         await setCustomAttributesByProductId(id, validated.customAttributes)
         await setSuppliersByProductId(id, validated.suppliers)
         await ensureProductSkuFolders(validated.categoryIds, validated.sku || null)
@@ -1011,6 +1042,7 @@ export async function duplicateProduct(id: string) {
         })
         await setSkuByProductId(newProduct.id, original.sku || null)
         await setFeaturedByProductId(newProduct.id, Boolean(original.isFeatured))
+        await setShortDescriptionByProductId(newProduct.id, original.shortDescription || null)
         await setCustomAttributesByProductId(newProduct.id, original.customAttributes || [])
         await setSuppliersByProductId(newProduct.id, original.suppliers || [])
         await setProductCreatorByProductId(newProduct.id, {

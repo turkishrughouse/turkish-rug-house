@@ -239,6 +239,7 @@ type ProductFormInitialData = {
     slug: string
     sku: string | null
     description: string | null
+    shortDescription: string | null
     price: number
     compareAtPrice: number | null
     stockCount: number
@@ -831,6 +832,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         isFeatured: initialData.isFeatured,
         seoTitle: initialData.seoTitle || "",
         seoDescription: initialData.seoDescription || "",
+        shortDescription: initialData.shortDescription || "",
         seoKeywords: initialData.seoKeywords || "",
         customAttributes: initialData.customAttributes || [],
         suppliers: initialData.suppliers || [],
@@ -855,6 +857,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         isFeatured: false,
         seoTitle: "",
         seoDescription: "",
+        shortDescription: "",
         seoKeywords: "",
         customAttributes: [],
         suppliers: [],
@@ -897,7 +900,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         selectedAgeIds.length +
         selectedMaterialIds.length
     const descriptionValue = watch("description") || ""
-    const shortDescriptionValue = watch("seoDescription") || ""
+    const shortDescriptionValue = watch("shortDescription") || ""
     const tagItems = useMemo(
         () => seoKeywordsValue.split(",").map((item) => item.trim()).filter(Boolean),
         [seoKeywordsValue]
@@ -1742,7 +1745,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                 mode={shortDescriptionMode}
                                 onModeChange={setShortDescriptionMode}
                                 value={shortDescriptionValue}
-                                onChange={(nextValue) => setValue("seoDescription", nextValue, { shouldValidate: true, shouldDirty: true, shouldTouch: true })}
+                                onChange={(nextValue) => setValue("shortDescription", nextValue, { shouldValidate: true, shouldDirty: true, shouldTouch: true })}
                                 placeholder={tx("Short description shown near product title and price.", "Ürün başlığı ve fiyata yakın gösterilecek kısa açıklama.")}
                                 minHeight={170}
                             />

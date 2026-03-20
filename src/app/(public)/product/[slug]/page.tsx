@@ -321,7 +321,6 @@ export default async function ProductPage({ params }: Props) {
 
   const serializedProduct = {
     ...product,
-    shortDescription: product.seoDescription,
     categories: product.categories.map((category) => ({
       ...category,
       path: getCategoryPathById(categoryRows, category.id),
@@ -335,19 +334,22 @@ export default async function ProductPage({ params }: Props) {
         const selectParts = [
           hasSku ? `"sku"` : `NULL AS "sku"`,
           hasCustomAttributes ? `"customAttributes"` : `NULL AS "customAttributes"`,
+          columns.some((column) => column.name === "shortDescription") ? `"shortDescription"` : `NULL AS "shortDescription"`,
         ]
-        const rows = await prisma.$queryRawUnsafe<Array<{ sku: string | null; customAttributes: string | null }>>(
+        const rows = await prisma.$queryRawUnsafe<Array<{ sku: string | null; customAttributes: string | null; shortDescription: string | null }>>(
           `SELECT ${selectParts.join(", ")} FROM "Product" WHERE "id" = ? LIMIT 1`,
           product.id
         )
         const record = rows[0]
         return {
           sku: record?.sku ?? null,
+          shortDescription: record?.shortDescription ?? null,
           customAttributes: parseCustomAttributes(record?.customAttributes),
         }
       } catch {
         return {
           sku: null,
+          shortDescription: null,
           customAttributes: [] as CustomAttribute[],
         }
       }
