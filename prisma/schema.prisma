@@ -135,6 +135,7 @@ model Product {
   sizes       Size[]
   ages        Age[]
   materials   Material[]
+  origins     Origin[]
   reviews     ProductReview[]
 }
 
@@ -399,3 +400,11 @@ model CustomerMessage {
   @@index([userId, isRead, createdAt(sort: Desc)])
   @@index([kind, createdAt(sort: Desc)])
 }
+
+model Origin {
+  id       String    @id @default(cuid())
+  slug     String    @unique
+  name     String
+  products Product[]
+}
+
