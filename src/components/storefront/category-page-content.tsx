@@ -587,7 +587,7 @@ export async function renderCategoryPage({
           {category.description ? <p className="mt-4 max-w-3xl text-slate-100/90 text-lg leading-relaxed">{category.description}</p> : null}
           {childCounts.length > 0 ? (
             <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {childCounts.map((child) => (
+              {childCounts.filter((child) => child.productCount > 0).map((child) => (
                 <Link key={child.id} href={child.path} className="flex items-center gap-3 rounded-xl border border-white/25 bg-white/10 px-3 py-3 backdrop-blur-sm hover:bg-white/20">
                   <div className="h-11 w-11 overflow-hidden rounded-md bg-white/10 border border-white/30 shrink-0">{child.image ? <img src={child.image} alt={`${child.title} collection preview`} loading="lazy" decoding="async" className="h-full w-full object-cover" /> : null}</div>
                   <div className="min-w-0">
