@@ -8,7 +8,6 @@ import { Loader2, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { saveSearch } from "@/lib/storefront/saved-searches"
 import { parseProductImages } from "@/lib/product-images"
-import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
 
 type ProductItem = {
     id: string
@@ -35,7 +34,6 @@ function parseFirstImage(images: string | undefined) {
 
 export function SearchBar() {
     const router = useRouter()
-    const { formatUsd } = useStorefrontCurrency()
     const rootRef = useRef<HTMLDivElement | null>(null)
     const [query, setQuery] = useState("")
     const [results, setResults] = useState<SearchResult[]>([])
@@ -198,7 +196,7 @@ export function SearchBar() {
                                         </div>
                                         <div className="shrink-0 text-right">
                                             {typeof item.price === "number" ? (
-                                                <span className="text-sm font-semibold text-slate-900">{formatUsd(item.price)}</span>
+                                                <span className="text-sm font-semibold text-slate-900">${item.price.toFixed(2)}</span>
                                             ) : null}
                                         </div>
                                     </Link>

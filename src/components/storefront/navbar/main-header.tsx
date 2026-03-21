@@ -6,12 +6,9 @@ import { useEffect, useRef, useState } from "react"
 import { ChevronDown, ChevronRight, Heart, House, Menu, Search, Shuffle, ShoppingBag, UserCircle2, X } from "lucide-react"
 import { getCartSummary, getCartUpdateEventName, readCart } from "@/lib/storefront/cart"
 import { toast } from "sonner"
-import { ResponsiveImage } from "@/components/ui/responsive-image"
 
 import { DiscoveryCapsule } from "./discovery-capsule"
-import { formatCurrency } from "@/lib/storefront/currency"
-import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
-import { ForgotPasswordModal } from "@/components/storefront/forgot-password-modal"
+import { formatCurrency, type CurrencySettings } from "@/lib/storefront/currency"
 
 type MobileMenuItem = {
     id: string
@@ -43,11 +40,11 @@ const mapMenuTree = (items: unknown): MobileMenuItem[] => {
 const mapCategoryTreeToMenu = (items: unknown): MobileMenuItem[] => {
     if (!Array.isArray(items)) return []
     return items.map((item, index) => {
-        const node = item as { id?: string; title?: string; slug?: string; path?: string; children?: unknown[] }
+        const node = item as { id?: string; title?: string; slug?: string; children?: unknown[] }
         return {
             id: node.id || `cat-${index}`,
             label: node.title || "Category",
-            url: typeof node.path === "string" && node.path.length > 0 ? node.path : node.slug ? `/${node.slug}` : "#",
+            url: node.slug ? `/category/${node.slug}` : "#",
             children: mapCategoryTreeToMenu(node.children || []),
         }
     })
@@ -59,7 +56,13 @@ export function MainHeader() {
     const [brandPrimary, setBrandPrimary] = useState("Turkish")
     const [brandSecondary, setBrandSecondary] = useState("Rug House")
     const [maintenanceMode, setMaintenanceMode] = useState(false)
-    const { getCurrencySettings } = useStorefrontCurrency()
+    const [currencySettings, setCurrencySettings] = useState<CurrencySettings>({
+        defaultCurrency: "USD",
+        currencyPosition: "left",
+        thousandSeparator: ".",
+        decimalSeparator: ",",
+        numberOfDecimals: 2,
+    })
     const [cartCount, setCartCount] = useState(0)
     const [cartTotal, setCartTotal] = useState(0)
     const [compareCount, setCompareCount] = useState(0)
@@ -72,7 +75,6 @@ export function MainHeader() {
     const [mobileOpenItems, setMobileOpenItems] = useState<Record<string, boolean>>({})
     const [cartPreviewOpen, setCartPreviewOpen] = useState(false)
     const [loginDrawerOpen, setLoginDrawerOpen] = useState(false)
-    const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
     const [authMode, setAuthMode] = useState<"login" | "register">("login")
     const [cartItems, setCartItems] = useState<ReturnType<typeof readCart>>([])
     const [registerName, setRegisterName] = useState("")
@@ -95,12 +97,19 @@ export function MainHeader() {
     useEffect(() => {
         const load = async () => {
             try {
-                const res = await fetch("/api/public/settings", { cache: "force-cache" })
+                const res = await fetch("/api/public/settings", { cache: "no-store" })
                 if (!res.ok) return
                 const json = await res.json()
                 setBrandPrimary(json.brandPrimary || "Turkish")
                 setBrandSecondary(json.brandSecondary || "Rug House")
                 setMaintenanceMode(Boolean(json.maintenanceMode))
+                setCurrencySettings({
+                    defaultCurrency: json.defaultCurrency || "USD",
+                    currencyPosition: json.currencyPosition || "left",
+                    thousandSeparator: json.thousandSeparator || ".",
+                    decimalSeparator: json.decimalSeparator || ",",
+                    numberOfDecimals: typeof json.numberOfDecimals === "number" ? json.numberOfDecimals : 2,
+                })
                 setSendPasswordSetupLink(json.sendPasswordSetupLink !== false)
             } catch {
                 // keep defaults
@@ -150,19 +159,19 @@ export function MainHeader() {
         const loadMobileMenus = async () => {
             try {
                 const [categoriesRes, pagesRes] = await Promise.all([
-                    fetch("/api/public/menus/PRIMARY_HEADER", { cache: "force-cache" }),
-                    fetch("/api/public/menus/HEADER_INFORMATION", { cache: "force-cache" }),
+                    fetch("/api/public/menus/PRIMARY_HEADER", { cache: "no-store" }),
+                    fetch("/api/public/menus/HEADER_INFORMATION", { cache: "no-store" }),
                 ])
 
                 const categoriesJson = categoriesRes.ok ? await categoriesRes.json() : null
                 let pagesJson = pagesRes.ok ? await pagesRes.json() : null
                 if (!pagesJson?.items || pagesJson.items.length === 0) {
-                    const footerPagesRes = await fetch("/api/public/menus/INFORMATION_FOOTER", { cache: "force-cache" })
+                    const footerPagesRes = await fetch("/api/public/menus/INFORMATION_FOOTER", { cache: "no-store" })
                     pagesJson = footerPagesRes.ok ? await footerPagesRes.json() : null
                 }
                 let nextCategories = mapMenuTree(categoriesJson?.items)
                 if (nextCategories.length === 0) {
-                    const categoriesTreeRes = await fetch("/api/categories?tree=true", { cache: "force-cache" })
+                    const categoriesTreeRes = await fetch("/api/categories?tree=true", { cache: "no-store" })
                     const categoriesTreeJson = categoriesTreeRes.ok ? await categoriesTreeRes.json() : null
                     nextCategories = mapCategoryTreeToMenu(categoriesTreeJson)
                 }
@@ -431,7 +440,7 @@ export function MainHeader() {
                                     </span>
                                 </div>
                                 <div className="leading-none">
-                                    <p className="text-base font-semibold text-slate-800">{formatCurrency(cartTotal, getCurrencySettings())}</p>
+                                    <p className="text-base font-semibold text-slate-800">{formatCurrency(cartTotal, currencySettings)}</p>
                                 </div>
                             </button>
 
@@ -450,23 +459,16 @@ export function MainHeader() {
                                             {cartItems.slice(0, 4).map((item) => (
                                                 <div key={item.productId} className="flex items-center gap-2 rounded-md border border-slate-200 p-2">
                                                     <Link href={`/product/${item.slug}`} className="h-12 w-12 shrink-0 overflow-hidden rounded border border-slate-200">
-                                                        <ResponsiveImage
-                                                          src={item.image || "/placeholder.jpg"}
-                                                          alt={item.title}
-                                                          width={48}
-                                                          height={48}
-                                                          sizes="48px"
-                                                          className="h-full w-full object-cover"
-                                                        />
+                                                        <img src={item.image || "/placeholder.jpg"} alt={item.title} className="h-full w-full object-cover" />
                                                     </Link>
                                                     <div className="min-w-0 flex-1">
                                                         <p className="truncate text-xs font-medium text-slate-900">{item.title}</p>
                                                         <p className="text-xs text-slate-500">
-                                                            {item.quantity} x {formatCurrency(item.price, getCurrencySettings())}
+                                                            {item.quantity} x {formatCurrency(item.price, currencySettings)}
                                                         </p>
                                                     </div>
                                                     <p className="text-xs font-semibold text-emerald-700">
-                                                        {formatCurrency(item.price * item.quantity, getCurrencySettings())}
+                                                        {formatCurrency(item.price * item.quantity, currencySettings)}
                                                     </p>
                                                 </div>
                                             ))}
@@ -475,7 +477,7 @@ export function MainHeader() {
                                     <div className="mt-3 border-t border-slate-200 pt-3">
                                         <div className="mb-2 flex items-center justify-between text-sm">
                                             <span className="text-slate-700">Subtotal</span>
-                                            <span className="font-semibold text-slate-900">{formatCurrency(cartTotal, getCurrencySettings())}</span>
+                                            <span className="font-semibold text-slate-900">{formatCurrency(cartTotal, currencySettings)}</span>
                                         </div>
                                         <div className="grid grid-cols-2 gap-2">
                                             <button
@@ -687,9 +689,7 @@ export function MainHeader() {
                                     <input type="checkbox" className="h-4 w-4 accent-lime-600" />
                                     Remember me
                                 </label>
-                                <button type="button" className="text-lime-600 hover:underline" onClick={() => setForgotPasswordOpen(true)}>
-                                    Lost your password?
-                                </button>
+                                <Link href="/info/help" className="text-lime-600 hover:underline">Lost your password?</Link>
                             </div>
                             {authMode === "register" ? (
                                 <label className="inline-flex items-center gap-2 text-xs text-slate-700">
@@ -729,12 +729,6 @@ export function MainHeader() {
                     </aside>
                 </div>
             ) : null}
-
-            <ForgotPasswordModal
-                open={forgotPasswordOpen}
-                onClose={() => setForgotPasswordOpen(false)}
-                initialEmail={loginEmail}
-            />
         </div>
     )
 }
