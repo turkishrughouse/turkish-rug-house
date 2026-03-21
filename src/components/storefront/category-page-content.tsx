@@ -608,7 +608,7 @@ export async function renderCategoryPage({
               <div>
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Color</h3>
                 <div className="mt-4 space-y-1.5">
-                  {options.colors.map((color) => {
+                  {options.colors.filter((color) => (colorCountMap.get(color.slug) || 0) > 0).map((color) => {
                     const active = selectedColors.includes(color.slug)
                     const count = colorCountMap.get(color.slug) || 0
                     return (
@@ -636,7 +636,7 @@ export async function renderCategoryPage({
               <div className="border-t border-slate-200 pt-5">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Style</h3>
                 <div className="mt-4 space-y-1.5">
-                  {options.styles.map((style) => {
+                  {options.styles.filter((style) => (styleCountMap.get(style.slug) || 0) > 0).map((style) => {
                     const active = selectedStyles.includes(style.slug)
                     const count = styleCountMap.get(style.slug) || 0
                     return (
@@ -664,7 +664,7 @@ export async function renderCategoryPage({
               <div className="border-t border-slate-200 pt-5">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Size</h3>
                 <div className="mt-4 space-y-1.5">
-                  {options.sizes.map((size) => {
+                  {options.sizes.filter((size) => (sizeCountMap.get(size.slug) || 0) > 0).map((size) => {
                     const active = selectedSizes.includes(size.slug)
                     const count = sizeCountMap.get(size.slug) || 0
                     return (
@@ -692,7 +692,7 @@ export async function renderCategoryPage({
               <div className="border-t border-slate-200 pt-5">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Age</h3>
                 <div className="mt-4 space-y-1.5">
-                  {options.ages.map((age) => {
+                  {options.ages.filter((age) => (ageCountMap.get(age.slug) || 0) > 0).map((age) => {
                     const active = selectedAges.includes(age.slug)
                     const count = ageCountMap.get(age.slug) || 0
                     return (
@@ -720,7 +720,7 @@ export async function renderCategoryPage({
               <div className="border-t border-slate-200 pt-5">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Material</h3>
                 <div className="mt-4 space-y-1.5">
-                  {options.materials.map((material) => {
+                  {options.materials.filter((material) => (materialCountMap.get(material.slug) || 0) > 0).map((material) => {
                     const active = selectedMaterials.includes(material.slug)
                     const count = materialCountMap.get(material.slug) || 0
                     return (
