@@ -38,7 +38,7 @@ export function DiscoveryCapsule() {
         }
         closeTimeoutRef.current = setTimeout(() => {
             setActiveTab(null)
-        }, 120) // Short delay to allow movement to panel
+        }, 150) // Short delay to allow movement to panel
     }
 
     const handlePanelMouseEnter = () => {

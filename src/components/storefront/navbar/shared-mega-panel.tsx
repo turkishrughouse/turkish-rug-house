@@ -4,10 +4,12 @@ import * as React from "react"
 import Link from "next/link"
 import { ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { getImageUrl } from "@/lib/storage/url"
+import { parseProductImages } from "@/lib/product-images"
+// Import data from the original files to avoid duplication
+import { CATEGORIES } from "./mega-menu"
 
 interface SharedMegaPanelProps {
-    activeTab: "categories" | "information" | null
+    activeTab: 'categories' | 'information' | null
     onMouseEnter: () => void
     onMouseLeave: () => void
     onLinkClick: () => void
@@ -20,33 +22,59 @@ type MenuNode = {
     children?: MenuNode[]
 }
 
+type PreviewProduct = {
+    id: string
+    slug: string
+    title: string
+    images: string
+}
+
 type TreeCategory = {
     id: string
     title: string
     slug: string
-    path?: string | null
-    image?: string | null
-    children?: TreeCategory[]
-    productCount?: number
+    children?: Array<{
+        id: string
+        title: string
+        slug: string
+    }>
 }
+
+const CUSHION_COVERS = [
+    `16" x 16" - 40x40 cm`,
+    `18" x 18"`,
+    `20" x 12"`,
+    `20" x 20"`,
+    `24" x 16"`,
+    `24" x 24"`,
+    `28" x 20"`,
+    "Suzani Pillows",
+    "Ikat Pillows",
+    "Velvet Pillows",
+]
+
+const CATEGORY_GROUPS = [
+    { key: "byArea", label: "By Area", categorySlug: "by-area", items: [] as string[], hrefBase: "/category", filterParam: "category" },
+    { key: "byType", label: "By Type", categorySlug: "by-type", items: CATEGORIES.byType, hrefBase: "/category", filterParam: "type" },
+    { key: "byStyle", label: "By Style", categorySlug: "by-style", items: CATEGORIES.byStyle, hrefBase: "/category", filterParam: "style" },
+    { key: "byColor", label: "By Color", categorySlug: "by-color", items: CATEGORIES.byColor, hrefBase: "/category", filterParam: "color" },
+    { key: "bySize", label: "By Size", categorySlug: "by-size", items: CATEGORIES.bySize, hrefBase: "/category", filterParam: "size" },
+    { key: "byAge", label: "By Age", categorySlug: "by-age", items: CATEGORIES.byAge, hrefBase: "/category", filterParam: "age" },
+    { key: "cushionCovers", label: "Cushion Covers", categorySlug: "cushion-covers", items: CUSHION_COVERS, hrefBase: "/category", filterParam: "category" },
+] as const
 
 export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkClick }: SharedMegaPanelProps) {
     const [infoItems, setInfoItems] = React.useState<MenuNode[]>([])
     const [categoryTree, setCategoryTree] = React.useState<TreeCategory[]>([])
-    const [activeCategoryId, setActiveCategoryId] = React.useState<string | null>(null)
-    const [activeChildId, setActiveChildId] = React.useState<string | null>(null)
-    const [categoriesLoading, setCategoriesLoading] = React.useState(true)
-    const [infoLoading, setInfoLoading] = React.useState(true)
-    const categoriesLoadedRef = React.useRef(false)
-    const infoLoadedRef = React.useRef(false)
+    const [activeCategoryGroup, setActiveCategoryGroup] = React.useState<string>("byArea")
+    const [activeSubCategory, setActiveSubCategory] = React.useState("")
+    const [previewProducts, setPreviewProducts] = React.useState<PreviewProduct[]>([])
+    const [previewLoading, setPreviewLoading] = React.useState(false)
+    const [hoverNonce, setHoverNonce] = React.useState(0)
+    const [loading, setLoading] = React.useState(true)
 
     React.useEffect(() => {
-        const fetchCategoryTree = async (force = false) => {
-            if (categoriesLoadedRef.current && !force) {
-                setCategoriesLoading(false)
-                return
-            }
-            setCategoriesLoading(true)
+        const fetchCategoryTree = async () => {
             try {
                 const response = await fetch("/api/categories?tree=true", { cache: "no-store" })
                 if (!response.ok) {
@@ -54,157 +82,307 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
                     return
                 }
                 const data = await response.json()
-                setCategoryTree(normalizeCategoryTree(data))
-                categoriesLoadedRef.current = true
+                setCategoryTree(Array.isArray(data) ? (data as TreeCategory[]) : [])
             } catch {
                 setCategoryTree([])
-            } finally {
-                setCategoriesLoading(false)
             }
         }
 
-        const fetchInfoData = async (force = false) => {
-            if (infoLoadedRef.current && !force) {
-                setInfoLoading(false)
-                return
-            }
-            setInfoLoading(true)
+        const fetchInfoData = async () => {
+            setLoading(true)
             try {
-                const menuRes = await fetch("/api/public/menus/location/HEADER_INFORMATION", { cache: "no-store" })
+                // Fetch HEADER_INFORMATION menu
+                // Using the specific location endpoint we created
+                const menuRes = await fetch('/api/public/menus/location/HEADER_INFORMATION', { cache: "no-store" })
+
                 if (menuRes.ok) {
                     const menuData = await menuRes.json()
-                    setInfoItems(menuData && menuData.items ? (menuData.items as MenuNode[]) : [])
+                    // Check if items exist
+                    if (menuData && menuData.items) {
+                        // The API already returns a tree structure in 'items'
+                        setInfoItems(menuData.items as MenuNode[])
+                    } else {
+                        setInfoItems([])
+                    }
                 } else {
+                    console.log('[SharedMegaPanel] HEADER_INFORMATION menu not found')
                     setInfoItems([])
                 }
-                infoLoadedRef.current = true
             } catch (err) {
-                console.error("[SharedMegaPanel] Failed to fetch Information menu", err)
+                console.error('[SharedMegaPanel] Failed to fetch Information menu', err)
                 setInfoItems([])
             } finally {
-                setInfoLoading(false)
+                setLoading(false)
             }
         }
 
-        void fetchCategoryTree()
-        void fetchInfoData()
-    }, [])
-
-    React.useEffect(() => {
-        if (categoryTree.length === 0) {
-            setActiveCategoryId(null)
-            return
+        if (activeTab === 'categories') {
+            setActiveCategoryGroup("byArea")
+            setActiveSubCategory(CATEGORY_GROUPS[0].items[0] || "")
+            setLoading(false)
+            fetchCategoryTree()
+        } else if (activeTab === 'information') {
+            fetchInfoData()
         }
-        setActiveCategoryId((current) => {
-            if (current && categoryTree.some((item) => item.id === current)) return current
-            return categoryTree[0]?.id || null
+    }, [activeTab])
+
+    const menuGroups = React.useMemo(() => {
+        if (!categoryTree.length) return CATEGORY_GROUPS
+
+        const systemCategorySlugs = new Set<string>(CATEGORY_GROUPS.map((group) => group.categorySlug))
+        const baseGroups = CATEGORY_GROUPS.map((group) => {
+            const treeGroup = categoryTree.find((cat) => cat.slug === group.categorySlug)
+            if (group.key === "byArea") {
+                if (treeGroup?.children?.length) {
+                    const childTitles = treeGroup.children.map((child) => child.title).filter(Boolean)
+                    return { ...group, items: childTitles, filterParam: "category" as const }
+                }
+                const rootAreaItems = categoryTree
+                    .filter((cat) => !systemCategorySlugs.has(cat.slug))
+                    .map((cat) => cat.title)
+                    .filter(Boolean)
+                return { ...group, items: rootAreaItems, filterParam: "category" as const }
+            }
+            if (!treeGroup?.children?.length) return group
+            const childTitles = treeGroup.children.map((child) => child.title).filter(Boolean)
+            return childTitles.length > 0
+                ? { ...group, items: childTitles, filterParam: "category" as const }
+                : group
         })
+
+        const usedBaseCategorySlugs = new Set<string>(CATEGORY_GROUPS.map((group) => group.categorySlug))
+        const usedBaseLabels = new Set(CATEGORY_GROUPS.map((group) => slugify(group.label.trim())))
+        const extraGroups = categoryTree
+            .filter((cat) => !usedBaseCategorySlugs.has(cat.slug))
+            .filter((cat) => !usedBaseLabels.has(slugify(cat.title.trim())))
+            .map((cat) => ({
+                key: `dynamic-${cat.slug}`,
+                label: cat.title,
+                categorySlug: cat.slug,
+                items: (cat.children?.map((child) => child.title).filter(Boolean) || []),
+                hrefBase: "/category",
+                filterParam: "category" as const,
+            }))
+            .filter((group) => group.items.length > 0)
+
+        return [...baseGroups, ...extraGroups]
     }, [categoryTree])
 
-    const activeCategory = React.useMemo(
-        () => categoryTree.find((item) => item.id === activeCategoryId) || categoryTree[0] || null,
-        [activeCategoryId, categoryTree]
-    )
+    const selectedGroup = menuGroups.find((group) => group.key === activeCategoryGroup) || menuGroups[0]
+    const selectedTreeGroup = React.useMemo(() => {
+        const groupSlug = "categorySlug" in selectedGroup ? selectedGroup.categorySlug : undefined
+        if (!groupSlug) return null
+        return categoryTree.find((cat) => cat.slug === groupSlug) || null
+    }, [selectedGroup, categoryTree])
 
-    const activeChildren = React.useMemo(() => activeCategory?.children || [], [activeCategory])
+    const resolveMenuItemHref = React.useCallback((itemLabel: string) => {
+        const fromTree = selectedTreeGroup?.children?.find(
+            (child) => child.title.trim().toLowerCase() === itemLabel.trim().toLowerCase()
+        )
+        if (fromTree?.slug) return `/category/${fromTree.slug}`
+        const fromRoot = categoryTree.find(
+            (cat) => cat.title.trim().toLowerCase() === itemLabel.trim().toLowerCase()
+        )
+        if (fromRoot?.slug) return `/category/${fromRoot.slug}`
+        const fallbackQuery = encodeURIComponent(itemLabel.trim())
+        return fallbackQuery ? `/shop?q=${fallbackQuery}` : "/shop"
+    }, [selectedTreeGroup, categoryTree])
+
+    const submenuColumns = React.useMemo(() => {
+        const cols: string[][] = []
+        for (let i = 0; i < selectedGroup.items.length; i += 6) {
+            cols.push(selectedGroup.items.slice(i, i + 6))
+        }
+        return cols
+    }, [selectedGroup])
+    const previewSlots = React.useMemo<(PreviewProduct | null)[]>(() => {
+        const slots: (PreviewProduct | null)[] = [...previewProducts]
+        while (slots.length < 4) slots.push(null)
+        return slots.slice(0, 4)
+    }, [previewProducts])
+
+    const handleGroupHover = React.useCallback((groupKey: string) => {
+        const targetGroup = menuGroups.find((group) => group.key === groupKey) || menuGroups[0]
+        setActiveCategoryGroup(targetGroup.key)
+        setActiveSubCategory(targetGroup.items[0] || "")
+        setHoverNonce((prev) => prev + 1)
+    }, [menuGroups])
 
     React.useEffect(() => {
-        if (activeChildren.length === 0) {
-            setActiveChildId(null)
+        const firstItem = selectedGroup.items[0] || ""
+        setActiveSubCategory(firstItem)
+    }, [selectedGroup])
+
+    React.useEffect(() => {
+        if (activeTab !== "categories" || !activeSubCategory) {
+            setPreviewProducts([])
             return
         }
-        setActiveChildId((current) => {
-            if (current && activeChildren.some((item) => item.id === current)) return current
-            return activeChildren[0]?.id || null
-        })
-    }, [activeChildren])
 
-    const activeChild = React.useMemo(
-        () => activeChildren.find((item) => item.id === activeChildId) || activeChildren[0] || null,
-        [activeChildId, activeChildren]
-    )
+        const controller = new AbortController()
+        const fetchPreviewProducts = async () => {
+            setPreviewLoading(true)
+            try {
+                const slug = slugify(activeSubCategory)
+                const params = new URLSearchParams({ limit: "120", sort: "latest" })
+                params.set(selectedGroup.filterParam, slug)
+
+                const primaryResponse = await fetch(`/api/v1/public/products?${params.toString()}`, {
+                    cache: "no-store",
+                    signal: controller.signal,
+                })
+                const primaryData = await primaryResponse.json().catch(() => ({ products: [] as PreviewProduct[], metadata: { total: 0 } }))
+                let products = Array.isArray(primaryData?.products) ? (primaryData.products as PreviewProduct[]) : []
+                let total = Number(primaryData?.metadata?.total || products.length)
+
+                if (products.length === 0 && selectedGroup.filterParam !== "category") {
+                    const fallbackParams = new URLSearchParams({ limit: "120", sort: "latest", category: slug })
+                    const fallbackResponse = await fetch(`/api/v1/public/products?${fallbackParams.toString()}`, {
+                        cache: "no-store",
+                        signal: controller.signal,
+                    })
+                    const fallbackData = await fallbackResponse.json().catch(() => ({ products: [] as PreviewProduct[], metadata: { total: 0 } }))
+                    products = Array.isArray(fallbackData?.products) ? (fallbackData.products as PreviewProduct[]) : []
+                    total = Number(fallbackData?.metadata?.total || products.length)
+                }
+
+                const source = total > 100 ? [...products].sort(() => Math.random() - 0.5) : products
+                setPreviewProducts(source.slice(0, 4))
+            } catch {
+                setPreviewProducts([])
+            } finally {
+                setPreviewLoading(false)
+            }
+        }
+
+        fetchPreviewProducts()
+        return () => controller.abort()
+    }, [activeTab, selectedGroup, activeSubCategory, hoverNonce])
 
     if (!activeTab) return null
 
     return (
         <div
             className={cn(
-                "absolute top-full z-50 overflow-hidden transition-[opacity,transform] duration-150 ease-out",
-                activeTab === "categories" ? "left-0 mt-1 w-full" : "right-0 mt-1"
+                "absolute top-full mt-1 z-50 bg-white border border-slate-100 shadow-xl rounded-lg overflow-hidden animate-in fade-in slide-in-from-top-1 duration-200",
+                activeTab === 'categories' ? "left-0" : "right-0"
             )}
             onMouseEnter={onMouseEnter}
             onMouseLeave={onMouseLeave}
         >
-            {activeTab === "categories" && (
-                <div className="w-full border-y border-[#ece5dc] bg-white shadow-[0_22px_50px_rgba(26,25,22,0.08)]">
-                    <div className="grid min-h-[380px] grid-cols-[252px_minmax(0,1fr)] items-stretch">
-                        <aside className="border-r border-[#d7e4dc] bg-[#edf5f0] px-8 py-7">
-                            <p className="mb-5 text-[10px] font-medium uppercase tracking-[0.22em] text-[#8c8070]">
-                                Shop Collections
-                            </p>
-                            {categoriesLoading ? (
-                                <p className="text-sm text-[#8c8070]">Loading categories...</p>
-                            ) : categoryTree.length === 0 ? (
-                                <p className="text-sm text-[#8c8070]">No categories found.</p>
-                            ) : (
-                                <ul className="space-y-2.5">
-                                    {categoryTree.map((group) => {
-                                        const active = group.id === activeCategory?.id
-                                        return (
-                                            <li key={group.id}>
-                                                <Link
-                                                    href={group.path || `/${group.slug}`}
-                                                    onClick={onLinkClick}
-                                                    onMouseEnter={() => setActiveCategoryId(group.id)}
-                                                    onFocus={() => setActiveCategoryId(group.id)}
-                                                    className={cn(
-                                                        "group flex items-center justify-between rounded-sm px-4 py-3 font-serif text-[16px] font-medium text-[#2d2a26] transition-all duration-300",
-                                                        active
-                                                            ? "bg-[#f4ede5] text-[#1f1b16] shadow-[inset_0_0_0_1px_rgba(88,75,61,0.05)]"
-                                                            : "hover:bg-[#faf5ef] hover:text-[#1f1b16]"
-                                                    )}
-                                                >
-                                                    <span>{group.title}</span>
-                                                    <ChevronRight className={cn("h-4 w-4 transition-transform duration-300", active ? "translate-x-0.5 text-[#6b645b]" : "text-[#9b9389] group-hover:translate-x-0.5")} />
-                                                </Link>
-                                            </li>
-                                        )
-                                    })}
-                                </ul>
-                            )}
+            {activeTab === 'categories' && (
+                <div className="w-[min(1240px,calc(100vw-80px))] bg-white">
+                    <div className="grid min-h-[500px] grid-cols-[240px_minmax(0,1fr)]">
+                        <aside className="h-full border-r border-[#93b1aa] bg-[#a6c2bb] p-3">
+                            <ul className="flex h-full flex-col justify-start gap-2 py-2 pr-1">
+                                {menuGroups.map((group) => {
+                                    const active = activeCategoryGroup === group.key
+                                    return (
+                                        <li key={group.key}>
+                                            <button
+                                                type="button"
+                                                onMouseEnter={() => handleGroupHover(group.key)}
+                                                onFocus={() => handleGroupHover(group.key)}
+                                                className={cn(
+                                                    "flex w-full items-center justify-between rounded-md px-3.5 py-3.5 text-left text-sm font-medium transition-colors",
+                                                    active
+                                                        ? "bg-white text-slate-900"
+                                                        : "text-white hover:bg-white/20"
+                                                )}
+                                            >
+                                                <span>{group.label}</span>
+                                                <ChevronRight className={cn("h-4 w-4", active ? "text-slate-500" : "text-white/90")} />
+                                            </button>
+                                        </li>
+                                    )
+                                })}
+                            </ul>
                         </aside>
 
-                        <div className="bg-white px-9 py-7">
-                            {categoriesLoading ? (
-                                <div className="flex h-40 items-center justify-center text-sm text-[#8c8070]">Loading categories...</div>
-                            ) : activeCategory ? (
-                                activeChildren.length > 0 ? (
-                                    <div className="max-w-[840px]">
-                                        <div className="mb-5 flex items-center gap-4">
-                                            <h3 className="font-serif text-[26px] font-semibold tracking-[-0.02em] text-[#231f1a]">
-                                                {activeCategory.title}
-                                            </h3>
-                                            <div className="h-px flex-1 bg-[#e7ddd1]" />
-                                        </div>
-                                        <CategoryCardGrid
-                                            items={activeChildren}
-                                            activeId={activeChild?.id || null}
-                                            onHover={setActiveChildId}
-                                            onLinkClick={onLinkClick}
-                                        />
+                        <div className="flex h-full flex-col p-6">
+                            <h4 className="font-serif text-xl font-semibold text-slate-900">{selectedGroup.label}</h4>
+                            <div className="mt-4 max-h-[236px] overflow-x-auto overflow-y-auto pb-2">
+                                <div className="flex w-max min-w-full">
+                                    {submenuColumns.map((column, columnIndex) => (
+                                        <ul
+                                            key={`${selectedGroup.key}-${columnIndex}`}
+                                            className={`w-[190px] space-y-2 px-4 ${columnIndex < submenuColumns.length - 1 ? "border-r border-[#eef2f7]" : ""}`}
+                                        >
+                                            {column.map((item) => (
+                                                <li key={item}>
+                                                    <Link
+                                                        href={resolveMenuItemHref(item)}
+                                                        onClick={onLinkClick}
+                                                        onMouseEnter={() => {
+                                                            setActiveSubCategory(item)
+                                                            setHoverNonce((prev) => prev + 1)
+                                                        }}
+                                                        className={cn(
+                                                            "block whitespace-nowrap rounded px-1.5 py-0.5 text-sm transition-colors",
+                                                            activeSubCategory === item ? "bg-slate-100 text-teal-700" : "text-slate-600 hover:text-teal-700"
+                                                        )}
+                                                    >
+                                                        {item}
+                                                    </Link>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="mt-4 border-t border-[#eef2f7] pt-4">
+                                <div className="mb-2 flex items-center justify-between">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                        {activeSubCategory} Picks
+                                    </p>
+                                    {previewLoading ? <span className="text-xs text-slate-400">Loading...</span> : null}
+                                </div>
+
+                                {previewProducts.length > 0 ? (
+                                    <div className="flex flex-wrap gap-3">
+                                        {previewSlots.map((product, index) => {
+                                            if (!product) {
+                                                return (
+                                                    <div key={`preview-empty-${index}`} className="w-[118px]">
+                                                        <div className="aspect-square rounded-md border border-dashed border-[#edf1f6] bg-slate-50" />
+                                                    </div>
+                                                )
+                                            }
+                                            const image = parseMainImage(product.images)
+                                            return (
+                                                <Link
+                                                    key={product.id}
+                                                    href={`/product/${product.slug}`}
+                                                    onClick={onLinkClick}
+                                                    className="group block w-[118px]"
+                                                >
+                                                    <div className="aspect-square overflow-hidden rounded-md border border-[#edf1f6] bg-white">
+                                                        <img
+                                                            src={image}
+                                                            alt={product.title}
+                                                            className="h-full w-full object-contain p-1 transition-transform duration-300 group-hover:scale-105"
+                                                        />
+                                                    </div>
+                                                    <p className="mt-1 line-clamp-1 text-[11px] text-slate-600 group-hover:text-teal-700">
+                                                        {product.title}
+                                                    </p>
+                                                </Link>
+                                            )
+                                        })}
                                     </div>
-                                ) : null
-                            ) : (
-                                <div className="flex h-40 items-center justify-center text-sm text-[#8c8070]">No categories found.</div>
-                            )}
+                                ) : !previewLoading ? (
+                                    <p className="text-sm text-slate-400">No products found for this category.</p>
+                                ) : null}
+                            </div>
                         </div>
                     </div>
                 </div>
             )}
 
-            {activeTab === "information" && (
-                <div className="w-[900px] rounded-[22px] border border-[#dce3ed] bg-white p-8 shadow-[0_22px_50px_rgba(15,23,42,0.12)]">
-                    {infoLoading ? (
+            {activeTab === 'information' && (
+                <div className="w-[900px] p-8">
+                    {loading ? (
                         <div className="flex items-center justify-center h-40 text-slate-400 text-sm">Loading information...</div>
                     ) : infoItems.length === 0 ? (
                         <div className="flex items-center justify-center h-40 text-slate-400 text-sm">
@@ -214,7 +392,7 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
                         <div className="grid grid-cols-3 gap-8">
                             {infoItems.map((col) => (
                                 <div key={col.id} className="space-y-4">
-                                    <h4 className="mb-4 border-b border-slate-100 pb-2 font-serif text-lg font-semibold text-slate-900">
+                                    <h4 className="font-serif text-lg font-semibold text-slate-900 border-b border-slate-100 pb-2 mb-4">
                                         {col.label}
                                     </h4>
                                     <ul className="space-y-2">
@@ -224,20 +402,25 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
                                                     <Link
                                                         href={getSafeUrl(child.url)}
                                                         onClick={onLinkClick}
-                                                        className="block text-sm text-slate-600 transition-all hover:translate-x-1 hover:text-teal-700"
+                                                        className="block text-sm text-slate-600 hover:text-teal-700 hover:translate-x-1 transition-all"
                                                     >
                                                         {child.label}
                                                     </Link>
                                                 </li>
                                             ))
-                                        ) : getSafeUrl(col.url) !== "#" ? (
-                                            <li>
-                                                <Link href={getSafeUrl(col.url)} onClick={onLinkClick} className="text-sm text-slate-600 hover:text-teal-700">
-                                                    {col.label}
-                                                </Link>
-                                            </li>
-                                        ) : (
-                                            <li className="text-xs italic text-slate-300">No links</li>
+                                        ) : ( // Handle flat list if user didn't nest items? 
+                                            // Or if this item is a link itself? 
+                                            // Typically Mega Menu expects Roots as Columns and Children as Links.
+                                            // If root has no children, maybe render it as a link?
+                                            // For now, assume structure: Column Header -> Links.
+                                            // But if no children, show label as link if URL exists?
+                                            getSafeUrl(col.url) !== "#" ? (
+                                                <li>
+                                                    <Link href={getSafeUrl(col.url)} onClick={onLinkClick} className="text-sm text-slate-600 hover:text-teal-700">{col.label}</Link>
+                                                </li>
+                                            ) : (
+                                                <li className="text-xs text-slate-300 italic">No links</li>
+                                            )
                                         )}
                                     </ul>
                                 </div>
@@ -250,72 +433,8 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
     )
 }
 
-type CategoryCardGridProps = {
-    items: TreeCategory[]
-    activeId: string | null
-    onHover: (id: string | null) => void
-    onLinkClick: () => void
-    interactive?: boolean
-}
-
-function CategoryCardGrid({
-    items,
-    activeId,
-    onHover,
-    onLinkClick,
-    interactive = true,
-}: CategoryCardGridProps) {
-    return (
-        <div className="grid grid-cols-4 gap-5">
-            {items.filter((item) => (item.productCount ?? 0) > 0).map((item) => {
-                const active = interactive && item.id === activeId
-                return (
-                    <Link
-                        key={item.id}
-                        href={item.path || `/${item.slug}`}
-                        onClick={onLinkClick}
-                        onMouseEnter={() => interactive && onHover(item.id)}
-                        onFocus={() => interactive && onHover(item.id)}
-                        className={cn(
-                            "group min-w-0 max-w-[180px] overflow-hidden rounded-[2px] border border-[#e7ddd1] bg-white shadow-[0_6px_14px_rgba(43,37,30,0.05)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_10px_18px_rgba(43,37,30,0.08)]",
-                            active ? "border-[#d9c8b3] ring-1 ring-[#eadfce]" : ""
-                        )}
-                    >
-                        <div className="aspect-square overflow-hidden bg-[linear-gradient(145deg,#f7f1ea_0%,#efe5d8_55%,#e6d7c5_100%)]">
-                            <img
-                                src={normalizeMenuImage(item.image) || createMenuFallbackImage(item.title)}
-                                alt={item.title}
-                                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.035]"
-                            />
-                        </div>
-                        <div className="border-t border-[#eee5db] bg-white px-2.5 py-2">
-                            <p className="truncate font-serif text-[13px] font-semibold leading-4 text-[#231f1a]">{item.title}</p>
-                        </div>
-                    </Link>
-                )
-            })}
-        </div>
-    )
-}
-
-function normalizeCategoryTree(items: unknown): TreeCategory[] {
-    if (!Array.isArray(items)) return []
-    return items
-        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-        .map((item, index) => ({
-            id: typeof item.id === "string" ? item.id : `category-${index}`,
-            title: typeof item.title === "string" && item.title.trim().length > 0 ? item.title.trim() : "Category",
-            slug: typeof item.slug === "string" ? item.slug : "",
-            path: typeof item.path === "string" ? item.path : null,
-            image: typeof item.image === "string" ? item.image : null,
-            children: normalizeCategoryTree(item.children), productCount: typeof (item._count as Record<string,unknown>)?.products === "number" ? (item._count as Record<string,unknown>).products as number : 0,
-        }))
-        .filter((item) => item.slug.length > 0)
-}
-
-function normalizeMenuImage(image: string | null | undefined) {
-    if (!image || image.trim().length === 0) return ""
-    return getImageUrl(image.trim())
+function slugify(text: string) {
+    return text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '')
 }
 
 function getSafeUrl(url: string | null | undefined): string {
@@ -324,19 +443,6 @@ function getSafeUrl(url: string | null | undefined): string {
     return url
 }
 
-function createMenuFallbackImage(title: string) {
-    const encoded = encodeURIComponent(title)
-    return `data:image/svg+xml;charset=UTF-8,
-<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 900 900'>
-<defs>
-<linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>
-<stop offset='0%' stop-color='%23f3ede5'/>
-<stop offset='55%' stop-color='%23eadfd2'/>
-<stop offset='100%' stop-color='%23dfcfbc'/>
-</linearGradient>
-</defs>
-<rect width='900' height='900' fill='url(%23g)'/>
-<rect x='80' y='80' width='740' height='740' rx='18' fill='none' stroke='%23c8b7a3' stroke-width='3' opacity='0.65'/>
-<text x='450' y='470' text-anchor='middle' font-family='Georgia, serif' font-size='54' fill='%23776654'>${encoded}</text>
-</svg>`.split("\n").join("")
+function parseMainImage(images: string) {
+    return parseProductImages(images)[0] || "/placeholder.jpg"
 }

@@ -7,14 +7,12 @@ import { ChevronDown, Heart, LogIn, Package, Search, UserCircle2, UserPlus, X } 
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
-import { ForgotPasswordModal } from "@/components/storefront/forgot-password-modal"
 
 export function RugHouseDropdown() {
     const HOVER_OPEN_DELAY_MS = 400
     const [open, setOpen] = useState(false)
     const [guestOpen, setGuestOpen] = useState(false)
     const [guestModalMode, setGuestModalMode] = useState<null | "login" | "register">(null)
-    const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
     const [showRegisterSuccess, setShowRegisterSuccess] = useState(false)
     const [loading, setLoading] = useState(false)
     const [loginEmail, setLoginEmail] = useState("")
@@ -281,13 +279,9 @@ export function RugHouseDropdown() {
                                         placeholder="Password"
                                     />
                                 </div>
-                                <button
-                                    type="button"
-                                    className="inline-block text-sm text-teal-700 underline underline-offset-4"
-                                    onClick={() => setForgotPasswordOpen(true)}
-                                >
+                                <Link href="/info/help" className="inline-block text-sm text-teal-700 underline underline-offset-4">
                                     Forgotten Password
-                                </button>
+                                </Link>
                                 <button
                                     type="submit"
                                     disabled={loading}
@@ -299,12 +293,6 @@ export function RugHouseDropdown() {
                         </div>
                     </div>
                 ) : null}
-
-                <ForgotPasswordModal
-                    open={forgotPasswordOpen}
-                    onClose={() => setForgotPasswordOpen(false)}
-                    initialEmail={loginEmail}
-                />
 
                 {guestModalMode === "register" ? (
                     <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/55 p-4">
