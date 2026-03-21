@@ -27,6 +27,7 @@ type TreeCategory = {
     path?: string | null
     image?: string | null
     children?: TreeCategory[]
+    productCount?: number
 }
 
 export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkClick }: SharedMegaPanelProps) {
@@ -266,7 +267,7 @@ function CategoryCardGrid({
 }: CategoryCardGridProps) {
     return (
         <div className="grid grid-cols-4 gap-5">
-            {items.map((item) => {
+            {items.filter((item) => (item.productCount ?? 0) > 0).map((item) => {
                 const active = interactive && item.id === activeId
                 return (
                     <Link
@@ -307,7 +308,7 @@ function normalizeCategoryTree(items: unknown): TreeCategory[] {
             slug: typeof item.slug === "string" ? item.slug : "",
             path: typeof item.path === "string" ? item.path : null,
             image: typeof item.image === "string" ? item.image : null,
-            children: normalizeCategoryTree(item.children),
+            children: normalizeCategoryTree(item.children), productCount: typeof (item._count as Record<string,unknown>)?.products === "number" ? (item._count as Record<string,unknown>).products as number : 0,
         }))
         .filter((item) => item.slug.length > 0)
 }
