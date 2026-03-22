@@ -196,6 +196,7 @@ export function CategoryHoverProductCardClient({ product }: { product: ClientOve
         className="absolute bottom-3 left-1/2 z-30 h-9 -translate-x-1/2 rounded-md border border-white/70 bg-white/85 px-4 text-xs font-semibold tracking-wide text-slate-900 opacity-0 shadow-sm backdrop-blur-[1px] transition-all duration-300 hover:bg-white group-hover/card:opacity-100"
         onClick={() => {
           setActiveImageIndex(0)
+          setQty(1)
           setQuickViewOpen(true)
         }}
         aria-label="Quick view"
@@ -223,11 +224,11 @@ export function CategoryHoverProductCardClient({ product }: { product: ClientOve
       </button>
 
       <Dialog open={quickViewOpen} onOpenChange={setQuickViewOpen}>
-        <DialogContent className="w-[min(97vw,1280px)] max-w-[1280px] max-h-[88vh] overflow-hidden border-[#dce3ed] bg-white p-0">
+        <DialogContent className="z-[9999] w-[90vw] max-w-[680px] max-h-[80vh] overflow-hidden rounded-2xl border-[#dce3ed] bg-white p-0 shadow-xl [&>div]:bg-black/40 [&>button]:right-3 [&>button]:top-3 [&>button]:z-20 [&>button]:h-8 [&>button]:w-8 [&>button]:rounded-full [&>button]:border [&>button]:border-slate-200 [&>button]:bg-white [&>button]:opacity-100">
           <DialogTitle className="sr-only">Quick View - {product.title}</DialogTitle>
-          <div className="grid max-h-[88vh] grid-cols-1 md:grid-cols-[1fr_1.3fr]">
-            <div className="relative border-r border-slate-200 p-6">
-              <div className="group/quick relative aspect-[4/5] overflow-hidden rounded-md bg-slate-50">
+          <div className="grid max-h-[80vh] grid-cols-1 overflow-hidden md:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
+            <div className="relative border-b border-slate-200 p-4 md:border-b-0 md:border-r">
+              <div className="relative overflow-hidden rounded-lg bg-slate-50">
                 <img
                   src={getProductImageUrl(gallery[activeImageIndex], "large") || mainImage}
                   alt={buildProductImageAlt({
@@ -238,16 +239,8 @@ export function CategoryHoverProductCardClient({ product }: { product: ClientOve
                   })}
                   loading="lazy"
                   decoding="async"
-                  className="h-full w-full object-cover"
+                  className="aspect-[4/5] w-full object-cover"
                 />
-
-                <Link
-                  href={`/product/${product.slug}`}
-                  className="absolute inset-x-4 bottom-4 inline-flex h-10 items-center justify-center rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white opacity-0 transition-opacity duration-200 hover:bg-emerald-800 group-hover/quick:opacity-100"
-                  onClick={() => setQuickViewOpen(false)}
-                >
-                  View Details
-                </Link>
 
                 {gallery.length > 1 ? (
                   <>
@@ -272,18 +265,18 @@ export function CategoryHoverProductCardClient({ product }: { product: ClientOve
               </div>
             </div>
 
-            <div className="max-h-[88vh] overflow-y-auto p-4 sm:p-6">
-              <h3 className="text-3xl leading-[1.1] font-bold text-slate-900 sm:text-[42px]">{product.title}</h3>
-              <p className="mt-3 text-3xl font-bold text-emerald-700 sm:text-4xl">{formatPrice(product.price)}</p>
+            <div className="max-h-[80vh] overflow-y-auto p-4 sm:p-5">
+              <h3 className="pr-8 text-2xl leading-tight font-bold text-slate-900 sm:text-[32px]">{product.title}</h3>
+              <p className="mt-2 text-2xl font-bold text-emerald-700 sm:text-3xl">{formatPrice(product.price)}</p>
 
-              <p className="mt-4 line-clamp-5 text-slate-600 leading-7">
+              <p className="mt-3 line-clamp-5 text-sm leading-6 text-slate-600">
                 {fullDescription}
               </p>
               <p className="mt-1 text-sm text-slate-500">
                 Full description is available on <span className="font-semibold">Select / View Details</span>.
               </p>
 
-              <div className="mt-5 flex flex-wrap items-center gap-2">
+              <div className="mt-4 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   className="h-11 w-11 rounded border border-slate-200 bg-white text-xl text-slate-700 hover:bg-slate-50"
@@ -303,9 +296,12 @@ export function CategoryHoverProductCardClient({ product }: { product: ClientOve
                 >
                   +
                 </button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <button
                   type="button"
-                  className="h-11 min-w-[120px] flex-1 whitespace-nowrap rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60 sm:ml-2 sm:min-w-[140px] sm:flex-none sm:px-6"
+                  className="h-11 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={!canBuy}
                   onClick={() => addBasket(qty)}
                 >
@@ -313,7 +309,7 @@ export function CategoryHoverProductCardClient({ product }: { product: ClientOve
                 </button>
                 <button
                   type="button"
-                  className="h-11 min-w-[120px] flex-1 whitespace-nowrap rounded-md border border-slate-900 bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none sm:px-5"
+                  className="h-11 rounded-md border border-slate-900 bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={!canBuy}
                   onClick={handleBuyNow}
                 >
@@ -321,7 +317,15 @@ export function CategoryHoverProductCardClient({ product }: { product: ClientOve
                 </button>
               </div>
 
-              <div className="mt-5 border-t border-slate-200 pt-4 text-sm text-slate-700">
+              <Link
+                href={`/product/${product.slug}`}
+                className="mt-3 inline-flex h-11 w-full items-center justify-center rounded-md border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 hover:bg-slate-100"
+                onClick={() => setQuickViewOpen(false)}
+              >
+                View Details
+              </Link>
+
+              <div className="mt-4 border-t border-slate-200 pt-4 text-sm text-slate-700">
                 <span className="font-semibold text-slate-900">Categories:</span>{" "}
                 {product.categories?.length
                   ? product.categories.map((cat, i) => (

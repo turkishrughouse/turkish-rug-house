@@ -584,7 +584,7 @@ export async function renderCategoryPage({
         <div className="absolute inset-0 bg-slate-900/60" />
         <div className="container relative mx-auto px-6 py-14 md:py-16">
           <h1 className="font-serif text-4xl md:text-5xl font-bold text-white">{category.title}</h1>
-          {category.description ? <p className="mt-4 max-w-3xl text-slate-100/90 text-lg leading-relaxed">{category.description}</p> : null}
+          {category.description ? <p className="mt-4 max-w-3xl text-slate-100/90 text-lg leading-relaxed">{stripHtml(category.description)}</p> : null}
           {childCounts.length > 0 ? (
             <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {childCounts.filter((child) => child.productCount > 0).map((child) => (
@@ -784,7 +784,7 @@ export async function renderCategoryPage({
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-5">
                 <h2 className="text-2xl font-serif font-bold text-slate-900">{category.title}</h2>
                 {category.description ? (
-                  <p className="mt-3 max-w-4xl text-sm leading-7 text-slate-600">{category.description}</p>
+                  <p className="mt-3 max-w-4xl text-sm leading-7 text-slate-600">{stripHtml(category.description)}</p>
                 ) : null}
               </div>
 
@@ -877,10 +877,10 @@ export async function renderCategoryPage({
                         <Link key={product.id} href={`/product/${product.slug}`} className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 hover:bg-slate-50 sm:flex-row">
                           <div className="h-40 w-full overflow-hidden rounded-md border border-slate-200 sm:h-36 sm:w-36 sm:shrink-0"><img src={image} alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt, categories: product.categories })} loading="lazy" decoding="async" className="h-full w-full object-cover transition-transform duration-300 hover:scale-105" /></div>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-2xl font-serif font-bold text-slate-900">{product.title}</p>
+                            <p className="line-clamp-2 text-lg font-serif font-bold text-slate-900">{product.title}</p>
                             <p className="mt-1 text-sm text-slate-500">{product.categories?.map((c) => c.title).slice(0, 2).join(", ") || "Rug House Collection"}</p>
                             <div className="mt-3 flex items-center gap-2"><span className="text-2xl font-bold text-slate-900">{formatCurrency(product.price, currencySettings)}</span>{product.compareAtPrice && product.compareAtPrice > product.price ? <span className="text-base text-slate-400 line-through">{formatCurrency(product.compareAtPrice, currencySettings)}</span> : null}</div>
-                            <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">{product.description || "Premium hand-crafted rug with authentic weaving details and durable natural fibers."}</p>
+                            <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-600">{stripHtml(product.description) || "Premium hand-crafted rug with authentic weaving details and durable natural fibers."}</p>
                           </div>
                         </Link>
                       )
