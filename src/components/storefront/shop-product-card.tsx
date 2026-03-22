@@ -31,7 +31,8 @@ export function ShopProductCard({
   currencySettings?: CurrencySettings
 }) {
   const images = parseProductImageRecords(product.images)
-  const mainImage = getProductImageUrl(images[0], "large") || "/placeholder.jpg"
+  const cardImage = getProductImageUrl(images[0], "thumb") || getProductImageUrl(images[0], "large") || "/placeholder.jpg"
+  const storedImage = getProductImageUrl(images[0], "large") || "/placeholder.jpg"
   const mainImageAlt = buildProductImageAlt({ title: product.title, fallbackAlt: images[0]?.alt })
   const stockCount = Math.max(0, product.stockCount ?? 999)
   const canBuy = !catalogMode && (product.isStock ?? true) && stockCount > 0
@@ -60,7 +61,7 @@ export function ShopProductCard({
           </span>
         ) : null}
         <ResponsiveImage
-          src={mainImage}
+          src={cardImage}
           alt={mainImageAlt}
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
@@ -85,7 +86,7 @@ export function ShopProductCard({
                     title: product.title,
                     price: product.price,
                     compareAtPrice: product.compareAtPrice || null,
-                    image: mainImage,
+                    image: storedImage,
                     stockCount,
                     quantity: 1,
                   })
@@ -122,7 +123,7 @@ export function ShopProductCard({
                   productId: product.id,
                   slug: product.slug,
                   title: product.title,
-                  image: mainImage,
+                  image: storedImage,
                   price: product.price,
                 })
                 if (result.added) {
@@ -145,7 +146,7 @@ export function ShopProductCard({
                   productId: product.id,
                   slug: product.slug,
                   title: product.title,
-                  image: mainImage,
+                  image: storedImage,
                   price: product.price,
                 })
                 if (result.added) {

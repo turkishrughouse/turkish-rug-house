@@ -14,6 +14,8 @@ export type ProductImageRecord = {
   }
 }
 
+const VARIANT_FILENAME_PATTERN = /-(thumb|large|master)(\.[^/?#]+)$/i
+
 type ProductImageAltAttribute = {
   name: string
   values: string[]
@@ -37,19 +39,35 @@ function isProductImageRecord(value: unknown): value is ProductImageRecord {
 }
 
 function normalizeImageRecord(record: ProductImageRecord, index: number): ProductImageRecord {
+  const normalizedImageUrl = getImageUrl(record.image_url)
   return {
-    image_url: getImageUrl(record.image_url),
+    image_url: normalizedImageUrl,
     width: record.width ?? null,
     height: record.height ?? null,
     alt: typeof record.alt === "string" ? record.alt.trim() : "",
     sort_order: typeof record.sort_order === "number" ? record.sort_order : index,
     is_primary: record.is_primary ?? index === 0,
     variants: {
-      thumb: getImageUrl(record.variants?.thumb || record.image_url),
-      large: getImageUrl(record.variants?.large || record.image_url),
-      master: getImageUrl(record.variants?.master || record.image_url),
+      thumb: getImageUrl(record.variants?.thumb) || inferVariantUrl(normalizedImageUrl, "thumb") || normalizedImageUrl,
+      large: getImageUrl(record.variants?.large) || inferVariantUrl(normalizedImageUrl, "large") || normalizedImageUrl,
+      master: getImageUrl(record.variants?.master) || inferVariantUrl(normalizedImageUrl, "master") || normalizedImageUrl,
     },
   }
+}
+
+function inferVariantUrl(urlOrPath: string | null | undefined, preferredVariant: "thumb" | "large" | "master") {
+  const normalized = getImageUrl(urlOrPath)
+  if (!normalized) return ""
+
+  const queryIndex = normalized.search(/[?#]/)
+  const path = queryIndex >= 0 ? normalized.slice(0, queryIndex) : normalized
+  const suffix = queryIndex >= 0 ? normalized.slice(queryIndex) : ""
+
+  if (!VARIANT_FILENAME_PATTERN.test(path)) {
+    return normalized
+  }
+
+  return `${path.replace(VARIANT_FILENAME_PATTERN, `-${preferredVariant}$2`)}${suffix}`
 }
 
 function parseRawProductImages(value: unknown): Array<string | ProductImageRecord> {
@@ -130,18 +148,29 @@ export function getProductImageUrl(
   preferredVariant: "thumb" | "large" | "master" = "large"
 ) {
   if (!image) return ""
-  if (typeof image === "string") return getImageUrl(image)
-  return image.variants?.[preferredVariant] || image.image_url
+  if (typeof image === "string") return inferVariantUrl(image, preferredVariant)
+
+  const explicitVariant = image.variants?.[preferredVariant]
+  if (explicitVariant) return getImageUrl(explicitVariant)
+
+  return inferVariantUrl(image.image_url, preferredVariant)
 }
 
-export function parseProductImages(value: unknown): string[] {
-  return parseProductImageRecords(value).map((image) => getProductImageUrl(image, "large")).filter(Boolean)
+export function parseProductImages(
+  value: unknown,
+  preferredVariant: "thumb" | "large" | "master" = "large"
+): string[] {
+  return parseProductImageRecords(value).map((image) => getProductImageUrl(image, preferredVariant)).filter(Boolean)
 }
 
-export function pickPrimaryImage(featuredImage: string | null | undefined, imagesValue: unknown) {
-  const featured = typeof featuredImage === "string" ? getImageUrl(featuredImage.trim()) : ""
+export function pickPrimaryImage(
+  featuredImage: string | null | undefined,
+  imagesValue: unknown,
+  preferredVariant: "thumb" | "large" | "master" = "large"
+) {
+  const featured = typeof featuredImage === "string" ? getProductImageUrl(featuredImage.trim(), preferredVariant) : ""
   if (featured.length > 0) return featured
-  const parsed = parseProductImages(imagesValue)
+  const parsed = parseProductImages(imagesValue, preferredVariant)
   return parsed[0] || ""
 }
 

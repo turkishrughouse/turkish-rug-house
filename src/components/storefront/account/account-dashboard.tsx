@@ -94,7 +94,7 @@ type ReviewProduct = {
 }
 
 function parsePrimaryImage(images: string) {
-  return parseProductImages(images)[0] || "/placeholder.jpg"
+  return parseProductImages(images, "thumb")[0] || "/placeholder.jpg"
 }
 
 function getReadableTextColor(hex: string) {

@@ -27,7 +27,7 @@ type SuggestedProduct = {
 }
 
 function parseImages(images: string): string[] {
-  return parseProductImages(images)
+  return parseProductImages(images, "thumb")
 }
 
 export default function BasketPage() {

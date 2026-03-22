@@ -46,7 +46,8 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
     return arr.length ? arr : [{ image_url: "/placeholder.jpg", variants: { thumb: "/placeholder.jpg", large: "/placeholder.jpg", master: "/placeholder.jpg" } }]
   }, [product.images])
 
-  const mainImage = getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
+  const mainImage = getProductImageUrl(gallery[0], "thumb") || getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
+  const primaryLargeImage = getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
   const mainImageAlt = buildProductImageAlt({
     title: product.title,
     fallbackAlt: gallery[0]?.alt,
@@ -85,7 +86,7 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
       title: product.title,
       price: product.price,
       compareAtPrice: product.compareAtPrice || null,
-      image: getProductImageUrl(gallery[activeImageIndex], "large") || mainImage,
+      image: getProductImageUrl(gallery[activeImageIndex], "large") || primaryLargeImage,
       stockCount,
       quantity,
     })

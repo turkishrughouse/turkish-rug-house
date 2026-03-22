@@ -59,7 +59,7 @@ type NavProduct = {
 }
 
 function parseImages(images: string): string[] {
-  return parseProductImageRecords(images).map((image) => getProductImageUrl(image, "large"))
+  return parseProductImageRecords(images).map((image) => getProductImageUrl(image, "thumb"))
 }
 
 const richContentClassName = [

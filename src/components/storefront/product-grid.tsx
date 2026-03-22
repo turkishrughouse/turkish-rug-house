@@ -29,7 +29,7 @@ export function ProductGrid({ products }: ProductGridProps) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-10">
             {products.map((product) => {
                 const images = parseProductImageRecords(product.images)
-                const mainImage = getProductImageUrl(images[0], "large") || "/placeholder.jpg"
+                const mainImage = getProductImageUrl(images[0], "thumb") || getProductImageUrl(images[0], "large") || "/placeholder.jpg"
                 const imageAlt = buildProductImageAlt({ title: product.title, fallbackAlt: images[0]?.alt })
                 const stockCount = Math.max(0, product.stockCount ?? 999)
                 const isMarkedOutOfStock = product.isStock === false && stockCount > 0

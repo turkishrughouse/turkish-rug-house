@@ -29,7 +29,7 @@ type SearchResult = {
 }
 
 function parseFirstImage(images: string | undefined) {
-    return parseProductImages(images)[0] || ""
+    return parseProductImages(images, "thumb")[0] || ""
 }
 
 export function SearchBar() {

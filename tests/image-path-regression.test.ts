@@ -55,6 +55,17 @@ const persistedImages = [
 ]
 
 const persistedJson = JSON.stringify(persistedImages)
+const inferredMasterOnlyJson = JSON.stringify([
+  {
+    image_url: `${HISTORICAL_FOLDER}/image3-master.webp`,
+    alt: "Vintage Oushak Rug close-up",
+    sort_order: 0,
+    is_primary: true,
+  },
+])
+const inferredMasterOnlyStringJson = JSON.stringify([
+  `${HISTORICAL_FOLDER}/image4-master.webp`,
+])
 
 function test(name: string, fn: () => void) {
   try {
@@ -68,7 +79,7 @@ function test(name: string, fn: () => void) {
 
 function buildDetailGallery(images: string, _categories: ProductCategory[]): GalleryImage[] {
   const records = parseProductImageRecords(images)
-  return records.map((image) => ({
+  return records.map((image: { image_url: string; variants?: { thumb?: string; large?: string; master?: string } }) => ({
     src: getProductImageUrl(image, "large") || "/placeholder.jpg",
     zoomSrc: getProductImageUrl(image, "master") || getProductImageUrl(image, "large") || "/placeholder.jpg",
     thumbSrc: getProductImageUrl(image, "thumb") || getProductImageUrl(image, "large") || "/placeholder.jpg",
@@ -77,7 +88,7 @@ function buildDetailGallery(images: string, _categories: ProductCategory[]): Gal
 
 function buildSeoImages(images: string) {
   return parseProductImageRecords(images)
-    .map((image) => getProductImageUrl(image, "master") || getProductImageUrl(image, "large"))
+    .map((image: { image_url: string; variants?: { thumb?: string; large?: string; master?: string } }) => getProductImageUrl(image, "master") || getProductImageUrl(image, "large"))
     .filter(Boolean)
 }
 
@@ -126,7 +137,34 @@ test("product cards and list consumers use persisted large variant without categ
     `${HISTORICAL_FOLDER}/image1-large.webp`,
     `${HISTORICAL_FOLDER}/image2-large.webp`,
   ])
-  assert.ok(storefrontImages.every((url) => !url.includes("/large-oushak/")))
+  assert.ok(storefrontImages.every((url: string) => !url.includes("/large-oushak/")))
+})
+
+test("variant selection infers thumb and large siblings from persisted master paths without rewriting folders", () => {
+  const inferredGallery = buildDetailGallery(inferredMasterOnlyJson, [categoryA])
+  const thumbImages = parseProductImages(inferredMasterOnlyJson, "thumb")
+  const largeImages = parseProductImages(inferredMasterOnlyJson, "large")
+
+  assert.equal(inferredGallery[0]?.src, `${HISTORICAL_FOLDER}/image3-large.webp`)
+  assert.equal(inferredGallery[0]?.thumbSrc, `${HISTORICAL_FOLDER}/image3-thumb.webp`)
+  assert.equal(inferredGallery[0]?.zoomSrc, `${HISTORICAL_FOLDER}/image3-master.webp`)
+  assert.deepEqual(thumbImages, [`${HISTORICAL_FOLDER}/image3-thumb.webp`])
+  assert.deepEqual(largeImages, [`${HISTORICAL_FOLDER}/image3-large.webp`])
+  assert.ok(thumbImages.every((url: string) => !url.endsWith("-master.webp")))
+  assert.ok(largeImages.every((url: string) => !url.endsWith("-master.webp")))
+})
+
+test("string-based persisted master paths also resolve to storefront thumb and large variants", () => {
+  assert.deepEqual(parseProductImages(inferredMasterOnlyStringJson, "thumb"), [
+    `${HISTORICAL_FOLDER}/image4-thumb.webp`,
+  ])
+  assert.deepEqual(parseProductImages(inferredMasterOnlyStringJson, "large"), [
+    `${HISTORICAL_FOLDER}/image4-large.webp`,
+  ])
+  assert.equal(
+    getProductImageUrl(`${HISTORICAL_FOLDER}/image4-master.webp`, "large"),
+    `${HISTORICAL_FOLDER}/image4-large.webp`
+  )
 })
 
 test("seo and structured data image output uses persisted master paths", () => {
@@ -136,7 +174,7 @@ test("seo and structured data image output uses persisted master paths", () => {
     `${HISTORICAL_FOLDER}/image1-master.webp`,
     `${HISTORICAL_FOLDER}/image2-master.webp`,
   ])
-  assert.ok(seoImages.every((url) => !url.includes("/large-oushak/")))
+  assert.ok(seoImages.every((url: string) => !url.includes("/large-oushak/")))
 })
 
 test("legacy migration is blocked when persisted upload paths already exist", () => {
