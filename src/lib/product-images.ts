@@ -48,9 +48,9 @@ function normalizeImageRecord(record: ProductImageRecord, index: number): Produc
     sort_order: typeof record.sort_order === "number" ? record.sort_order : index,
     is_primary: record.is_primary ?? index === 0,
     variants: {
-      thumb: getImageUrl(record.variants?.thumb) || inferVariantUrl(normalizedImageUrl, "thumb") || normalizedImageUrl,
-      large: getImageUrl(record.variants?.large) || inferVariantUrl(normalizedImageUrl, "large") || normalizedImageUrl,
-      master: getImageUrl(record.variants?.master) || inferVariantUrl(normalizedImageUrl, "master") || normalizedImageUrl,
+      thumb: inferVariantUrl(record.variants?.thumb || normalizedImageUrl, "thumb") || normalizedImageUrl,
+      large: inferVariantUrl(record.variants?.large || normalizedImageUrl, "large") || normalizedImageUrl,
+      master: inferVariantUrl(record.variants?.master || normalizedImageUrl, "master") || normalizedImageUrl,
     },
   }
 }
@@ -151,7 +151,7 @@ export function getProductImageUrl(
   if (typeof image === "string") return inferVariantUrl(image, preferredVariant)
 
   const explicitVariant = image.variants?.[preferredVariant]
-  if (explicitVariant) return getImageUrl(explicitVariant)
+  if (explicitVariant) return inferVariantUrl(explicitVariant, preferredVariant) || getImageUrl(explicitVariant)
 
   return inferVariantUrl(image.image_url, preferredVariant)
 }
