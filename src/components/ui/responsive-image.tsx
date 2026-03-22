@@ -30,7 +30,7 @@ export function ResponsiveImage({
   unoptimized,
 }: ResponsiveImageProps) {
   const resolvedSrc = src && src.trim().length > 0 ? src : "/placeholder.jpg"
-  const shouldSkipOptimization = unoptimized ?? isRemoteSource(resolvedSrc)
+  const shouldSkipOptimization = unoptimized ?? (isRemoteSource(resolvedSrc) || resolvedSrc.startsWith("/uploads/"))
 
   if (fill) {
     return (

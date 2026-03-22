@@ -175,12 +175,15 @@ async function resolveCanonicalProductFolder(
   return `${baseFolder}/${normalizedSku}`
 }
 
-function replaceManagedUrlFolder(url: string | undefined, targetFolder: string) {
-  const storage = getStorageProvider()
-  const relativePath = storage.toRelativePath(url || "")
-  const fileName = relativePath ? path.posix.basename(relativePath) : ""
-  if (!fileName) return url || ""
-  return storage.getPublicUrl(`${targetFolder}/${fileName}`)
+function hasUsablePersistedImageUrl(url: string | null | undefined) {
+  const value = (url || "").trim()
+  if (!value) return false
+  if (/^https?:\/\//i.test(value)) return true
+  return Boolean(getStorageProvider().toRelativePath(value))
+}
+
+export function shouldPreservePersistedProductImagePaths(imageUrls: Array<string | null | undefined>) {
+  return imageUrls.some((url) => hasUsablePersistedImageUrl(url))
 }
 
 function extractFolderFromManagedUrl(url: string) {
@@ -275,6 +278,13 @@ export async function moveManagedAssetGroupToFolder(url: string, targetFolder: s
 }
 
 export async function relocateProductImagesToSkuFolders(imageUrls: string[], categoryIds: string[], sku: string | null | undefined) {
+  // Persisted Product.images paths are the source of truth.
+  // If a product already has usable persisted image URLs, never rebuild the
+  // directory from current category state or relocate the files.
+  if (shouldPreservePersistedProductImagePaths(imageUrls)) {
+    return imageUrls
+  }
+
   const targetFolder = await resolveCanonicalProductFolder(categoryIds, sku, imageUrls)
   if (!targetFolder || imageUrls.length === 0) {
     return imageUrls
@@ -316,21 +326,25 @@ export async function migrateAllProductsToCanonicalMediaFolders() {
     if (currentImages.length === 0) continue
 
     const currentUrls = currentImages.map((image) => image.image_url)
+    if (shouldPreservePersistedProductImagePaths(currentUrls)) {
+      continue
+    }
+
     const nextUrls = await relocateProductImagesToSkuFolders(currentUrls, categoryIds, sku)
     const didChange = nextUrls.some((url, index) => url !== currentUrls[index])
     if (!didChange) continue
 
-    const targetFolder = await resolveCanonicalProductFolder(categoryIds, sku, currentUrls)
-    if (!targetFolder) continue
-
+    // CRITICAL FIX: Do NOT mutate variant URLs based on current category assignments.
+    // Variant URLs must remain as-persisted to preserve historical image references.
+    // Only update image_url if files were actually relocated by relocateProductImagesToSkuFolders().
+    // Variant URLs (thumb/large/master) are owned by the persisted Product.images,
+    // NOT derived from a category-computed targetFolder.
     const nextImages = currentImages.map((image, index) => ({
       ...image,
       image_url: nextUrls[index] || image.image_url,
-      variants: {
-        thumb: replaceManagedUrlFolder(image.variants?.thumb || image.image_url, targetFolder),
-        large: replaceManagedUrlFolder(image.variants?.large || image.image_url, targetFolder),
-        master: replaceManagedUrlFolder(image.variants?.master || image.image_url, targetFolder),
-      },
+      // Keep variant URLs unchanged - they reference the same physical files
+      // in their persisted historical locations, regardless of current categories.
+      variants: image.variants ? { ...image.variants } : undefined,
     }))
 
     await prisma.product.update({

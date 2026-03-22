@@ -9,7 +9,7 @@ import { notifyNewProduct, notifyProductDiscount } from "@/lib/customer-messagin
 import { getSessionUser } from "@/lib/auth"
 import { syncProductToInventory } from "@/lib/inventory-sync"
 import { normalizeProductImageRecords } from "@/lib/product-images"
-import { ensureProductSkuFolders, migrateAllProductsToCanonicalMediaFolders, relocateProductImagesToSkuFolders } from "@/lib/media-folders"
+import { ensureProductSkuFolders, migrateAllProductsToCanonicalMediaFolders } from "@/lib/media-folders"
 import { addColumnIfMissing } from "@/lib/db-compat"
 
 type MaterialDelegate = {
@@ -642,7 +642,12 @@ export async function createProduct(data: ProductFormValues) {
         const uniqueSlug = await ensureUniqueProductSlug(
             buildSlugBaseWithSku(validated.slug || validated.title, validated.sku)
         )
-        const normalizedImages = await relocateProductImagesToSkuFolders(validated.images, validated.categoryIds, validated.sku)
+        // CRITICAL FIX: Use image URLs as-is without path mutation.
+        // Persisted image paths may exist under historical category folders.
+        // Calling relocateProductImagesToSkuFolders() would mutate URLs based on CURRENT categories,
+        // breaking images stored under different historical category paths.
+        // Only relocate during initial upload, never during product edits.
+        const normalizedImages = validated.images
         const categoryRows = validated.categoryIds.length > 0
             ? await db.category.findMany({
                 where: { id: { in: validated.categoryIds } },
@@ -775,7 +780,12 @@ export async function updateProduct(id: string, data: ProductFormValues) {
             buildSlugBaseWithSku(validated.slug || validated.title, validated.sku),
             id
         )
-        const normalizedImages = await relocateProductImagesToSkuFolders(validated.images, validated.categoryIds, validated.sku)
+        // CRITICAL FIX: Use image URLs as-is without path mutation.
+        // Persisted image paths may exist under historical category folders.
+        // Calling relocateProductImagesToSkuFolders() would mutate URLs based on CURRENT categories,
+        // breaking images stored under different historical category paths.
+        // Only relocate during initial upload, never during product edits.
+        const normalizedImages = validated.images
         const categoryRows = validated.categoryIds.length > 0
             ? await db.category.findMany({
                 where: { id: { in: validated.categoryIds } },
