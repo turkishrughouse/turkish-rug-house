@@ -101,6 +101,7 @@ export function ProductDetailView({
 }) {
   const router = useRouter()
   const { formatUsd } = useStorefrontCurrency()
+  const productImageStateKey = `${product.id}:${product.slug}:${product.images}`
   const gallery = useMemo(() => {
     const records = parseProductImageRecords(product.images)
     if (records.length === 0) {
@@ -157,7 +158,8 @@ export function ProductDetailView({
   })
 
   const thumbnailImages = gallery
-  const selectedGalleryImage = gallery[selectedImage] || gallery[0]
+  const activeImageIndex = selectedImage >= 0 && selectedImage < gallery.length ? selectedImage : 0
+  const selectedGalleryImage = gallery[activeImageIndex] || gallery[0]
 
   const discountActive = product.compareAtPrice && product.compareAtPrice > product.price
   const stockLimit = Math.max(0, product.stockCount)
@@ -212,6 +214,19 @@ export function ProductDetailView({
     return () => query.removeEventListener?.("change", sync)
   }, [])
 
+  useEffect(() => {
+    setSelectedImage(0)
+    setImageLightboxOpen(false)
+    setMainImageZoomActive(false)
+    setZoomBackgroundPosition("50% 50%")
+    setLightboxZoom(1)
+    setLightboxZoomOrigin("50% 50%")
+  }, [productImageStateKey])
+
+  useEffect(() => {
+    if (selectedImage < gallery.length) return
+    setSelectedImage(0)
+  }, [gallery.length, selectedImage])
 
   useEffect(() => {
     if (!imageLightboxOpen) return
@@ -440,7 +455,7 @@ export function ProductDetailView({
                     key={`${img.src}-${i}`}
                     type="button"
                     onClick={() => setSelectedImage(i)}
-                    className={`block h-14 w-14 sm:h-20 sm:w-20 rounded-md overflow-hidden border ${selectedImage === i ? "border-slate-900" : "border-[#dce3ed]"}`}
+                    className={`block h-14 w-14 sm:h-20 sm:w-20 rounded-md overflow-hidden border ${activeImageIndex === i ? "border-slate-900" : "border-[#dce3ed]"}`}
                   >
                     <ResponsiveImage
                       src={img.thumbSrc}
@@ -490,6 +505,7 @@ export function ProductDetailView({
                     </span>
                   ) : null}
                   <ResponsiveImage
+                    key={productImageStateKey}
                     src={selectedGalleryImage.src}
                     alt={selectedGalleryImage.alt}
                     width={selectedGalleryImage.width}
@@ -1024,6 +1040,7 @@ export function ProductDetailView({
                 }}
               >
                 <ResponsiveImage
+                  key={`${productImageStateKey}:${selectedGalleryImage.zoomSrc}:lightbox`}
                   src={selectedGalleryImage.zoomSrc}
                   alt={selectedGalleryImage.alt}
                   width={selectedGalleryImage.width}
