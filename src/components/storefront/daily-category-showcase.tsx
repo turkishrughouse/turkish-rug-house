@@ -1,5 +1,6 @@
 import Link from "next/link"
-import { CategoryHoverProductCard } from "@/components/storefront/category-hover-product-card"
+import { CategoryHoverProductCardServer } from "@/components/storefront/category-hover-product-card-server"
+import { type CurrencySettings } from "@/lib/storefront/currency"
 
 type ShowcaseCategory = {
   id: string
@@ -26,11 +27,13 @@ export function DailyCategoryShowcase({
   category,
   products,
   bannerImage,
+  currencySettings,
 }: {
   title?: string
   category: ShowcaseCategory | null
   products: ShowcaseProduct[]
   bannerImage?: string | null
+  currencySettings?: CurrencySettings
 }) {
   if (!category) return null
 
@@ -62,7 +65,7 @@ export function DailyCategoryShowcase({
 
           <div className="grid grid-cols-2 gap-3 border-l border-slate-200 p-3 sm:grid-cols-4">
             {products.slice(0, 8).map((product) => (
-              <CategoryHoverProductCard key={product.id} product={product} />
+              <CategoryHoverProductCardServer key={product.id} product={product} currencySettings={currencySettings} />
             ))}
           </div>
         </div>

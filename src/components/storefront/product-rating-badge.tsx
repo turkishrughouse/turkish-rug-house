@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Star } from "lucide-react"
 
 type Summary = { average: number; count: number }
@@ -58,13 +58,31 @@ function subscribeSummary(productId: string, cb: (summary: Summary) => void) {
 
 export function ProductRatingBadge({ productId }: { productId: string }) {
   const [summary, setSummary] = useState<Summary>({ average: 0, count: 0 })
+  const [visible, setVisible] = useState(false)
+  const ref = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
+    const node = ref.current
+    if (visible || !node || typeof IntersectionObserver === "undefined") return
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setVisible(true)
+        observer.disconnect()
+      }
+    }, { rootMargin: "200px" })
+
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [visible])
+
+  useEffect(() => {
+    if (!visible && typeof IntersectionObserver !== "undefined") return
     return subscribeSummary(productId, setSummary)
-  }, [productId])
+  }, [productId, visible])
 
   return (
-    <div className="absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white/95 px-2.5 py-1 text-xs font-semibold text-slate-800 shadow-sm backdrop-blur">
+    <div ref={ref} className="absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white/95 px-2.5 py-1 text-xs font-semibold text-slate-800 shadow-sm backdrop-blur">
       <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500" />
       <span>{summary.average.toFixed(1)}</span>
       <span className="text-slate-500">({summary.count})</span>

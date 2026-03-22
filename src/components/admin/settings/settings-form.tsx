@@ -148,23 +148,51 @@ export function SettingsForm({ initialSettings, initialAdminLocale, currencyDiag
     setSupplierDraft({ ...supplier })
   }
 
+  const openCreateSupplier = () => {
+    setEditingSupplier(null)
+    setSupplierDraft({
+      name: "",
+      number: "",
+      company: "",
+      phone: "",
+      note: "",
+      quantity: 0,
+      soldOut: 0,
+    })
+  }
+
   const closeSupplierEditor = () => {
     setEditingSupplier(null)
     setSupplierDraft(null)
   }
 
   const saveSupplierEdit = async () => {
-    if (!editingSupplier || !supplierDraft) return
+    if (!supplierDraft) return
+
+    const normalizedDraft = {
+      ...supplierDraft,
+      name: supplierDraft.name.trim(),
+      number: supplierDraft.number.trim().toUpperCase(),
+      company: supplierDraft.company.trim(),
+      phone: supplierDraft.phone.trim(),
+      note: supplierDraft.note.trim(),
+    }
+
+    if (!normalizedDraft.number) {
+      toast.error("Supplier number/prefix zorunlu")
+      return
+    }
+
     setSavingSupplier(true)
     try {
       const res = await fetch("/api/admin/suppliers", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ original: editingSupplier, updated: supplierDraft }),
+        body: JSON.stringify({ original: editingSupplier, updated: normalizedDraft }),
       })
       const json = await res.json().catch(() => ({} as { error?: string }))
       if (!res.ok) throw new Error(json.error || "Failed to update supplier")
-      toast.success("Supplier guncellendi")
+      toast.success(editingSupplier ? "Supplier guncellendi" : "Supplier eklendi")
       closeSupplierEditor()
       await loadSuppliers()
     } catch (error) {
@@ -445,9 +473,18 @@ export function SettingsForm({ initialSettings, initialAdminLocale, currencyDiag
 
         <TabsContent value="supplier" className="space-y-5">
           <div className={cardSurface}>
-            <div className="p-5">
-              <h3 className="text-lg font-semibold text-slate-900">Supplier</h3>
-              <p className="mt-1 text-sm text-slate-500">Urunlerde tanimli tedarikciler burada merkezi olarak listelenir. Frontend&apos;e yansimaz, quantity SKU prefix&apos;ine gore otomatik hesaplanir.</p>
+            <div className="flex flex-wrap items-center justify-between gap-3 p-5">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Supplier</h3>
+                <p className="mt-1 text-sm text-slate-500">Supplier kayitlari burada merkezi olarak yonetilir. Frontend&apos;e yansimaz, urun eslesmesi ve quantity SKU prefix&apos;ine gore otomatik hesaplanir.</p>
+              </div>
+              <Button
+                type="button"
+                className="rounded-md bg-[#2271b1] px-4 text-sm font-medium text-white hover:bg-[#135e96]"
+                onClick={openCreateSupplier}
+              >
+                Supplier Ekle
+              </Button>
             </div>
             <div className="border-t border-[#edf1f7] p-5">
               {loadingSuppliers ? (
@@ -456,7 +493,7 @@ export function SettingsForm({ initialSettings, initialAdminLocale, currencyDiag
                 </div>
               ) : suppliers.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-[#dce3ed] bg-[#f8fafc] px-4 py-6 text-sm text-slate-500">
-                  Henuz urunlere bagli supplier kaydi bulunmuyor.
+                  Henuz merkezi supplier kaydi bulunmuyor.
                 </div>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -749,11 +786,11 @@ export function SettingsForm({ initialSettings, initialAdminLocale, currencyDiag
         </Button>
       </div>
 
-      <Dialog open={Boolean(editingSupplier)} onOpenChange={(open) => !open && closeSupplierEditor()}>
+      <Dialog open={Boolean(supplierDraft)} onOpenChange={(open) => !open && closeSupplierEditor()}>
         <DialogContent className="border-[#dce3ed] bg-white sm:max-w-[560px]">
           <DialogHeader>
-            <DialogTitle>Supplier Duzenle</DialogTitle>
-            <DialogDescription>Bu supplier kaydi bagli oldugu urunlerde toplu guncellenir.</DialogDescription>
+            <DialogTitle>{editingSupplier ? "Supplier Duzenle" : "Supplier Ekle"}</DialogTitle>
+            <DialogDescription>Supplier prefix kayitlari burada merkezi olarak tutulur ve urunlere SKU prefix&apos;ine gore otomatik baglanir.</DialogDescription>
           </DialogHeader>
           {supplierDraft ? (
             <div className="grid gap-4">
@@ -767,7 +804,7 @@ export function SettingsForm({ initialSettings, initialAdminLocale, currencyDiag
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="grid gap-2">
-                  <Label>Number</Label>
+                  <Label>Number / Prefix</Label>
                   <Input value={supplierDraft.number} onChange={(e) => setSupplierDraft((prev) => prev ? { ...prev, number: e.target.value.toUpperCase() } : prev)} className={inputSurface} />
                 </div>
                 <div className="grid gap-2">
@@ -784,7 +821,7 @@ export function SettingsForm({ initialSettings, initialAdminLocale, currencyDiag
           <DialogFooter>
             <Button type="button" variant="outline" onClick={closeSupplierEditor}>Vazgec</Button>
             <Button type="button" onClick={saveSupplierEdit} disabled={savingSupplier}>
-              {savingSupplier ? "Kaydediliyor..." : "Kaydet"}
+              {savingSupplier ? "Kaydediliyor..." : editingSupplier ? "Kaydet" : "Supplier Ekle"}
             </Button>
           </DialogFooter>
         </DialogContent>

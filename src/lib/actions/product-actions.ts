@@ -11,6 +11,8 @@ import { syncProductToInventory } from "@/lib/inventory-sync"
 import { normalizeProductImageRecords } from "@/lib/product-images"
 import { ensureProductSkuFolders, migrateAllProductsToCanonicalMediaFolders } from "@/lib/media-folders"
 import { addColumnIfMissing } from "@/lib/db-compat"
+import { normalizeSuppliers, type SupplierRecord } from "@/lib/supplier-prefix"
+import { syncProductSupplierBySku } from "@/lib/supplier-registry"
 
 type MaterialDelegate = {
     findMany: (...args: any[]) => Promise<any[]>
@@ -143,14 +145,6 @@ type CustomAttribute = {
     visible: boolean
 }
 
-type SupplierRecord = {
-    name: string
-    number: string
-    company: string
-    phone: string
-    note: string
-}
-
 function slugifyText(input: string) {
     const normalized = input
         .toLowerCase()
@@ -252,22 +246,6 @@ function normalizeCustomAttributes(input: unknown): CustomAttribute[] {
         .filter((value): value is CustomAttribute => Boolean(value))
 }
 
-function normalizeSuppliers(input: unknown): SupplierRecord[] {
-    if (!Array.isArray(input)) return []
-    return input
-        .map((item) => {
-            if (!item || typeof item !== "object") return null
-            const name = typeof (item as { name?: unknown }).name === "string" ? (item as { name: string }).name.trim() : ""
-            const number = typeof (item as { number?: unknown }).number === "string" ? (item as { number: string }).number.trim().toUpperCase() : ""
-            const company = typeof (item as { company?: unknown }).company === "string" ? (item as { company: string }).company.trim() : ""
-            const phone = typeof (item as { phone?: unknown }).phone === "string" ? (item as { phone: string }).phone.trim() : ""
-            const note = typeof (item as { note?: unknown }).note === "string" ? (item as { note: string }).note.trim() : ""
-            if (!name && !number && !company) return null
-            return { name, number, company, phone, note }
-        })
-        .filter((value): value is SupplierRecord => Boolean(value))
-}
-
 async function findConflictingProductSku(sku: string, currentProductId?: string) {
     await ensureSkuColumn()
     await ensureDeletedAtColumn()
@@ -343,13 +321,6 @@ async function getSuppliersByProductId(productId: string): Promise<SupplierRecor
     } catch {
         return []
     }
-}
-
-async function setSuppliersByProductId(productId: string, suppliers: SupplierRecord[] | undefined) {
-    await ensureSuppliersColumn()
-    const normalized = normalizeSuppliers(suppliers || [])
-    const payload = normalized.length > 0 ? JSON.stringify(normalized) : null
-    await db.$executeRaw`UPDATE "Product" SET "suppliers" = ${payload} WHERE "id" = ${productId}`
 }
 
 export async function getProducts(
@@ -690,7 +661,7 @@ export async function createProduct(data: ProductFormValues) {
         await setFeaturedByProductId(created.id, validated.isFeatured)
         await setShortDescriptionByProductId(created.id, validated.shortDescription)
         await setCustomAttributesByProductId(created.id, validated.customAttributes)
-        await setSuppliersByProductId(created.id, validated.suppliers)
+        const resolvedSuppliers = await syncProductSupplierBySku(created.id, validated.sku || null)
         await ensureProductSkuFolders(validated.categoryIds, validated.sku || null)
         await setProductCreatorByProductId(created.id, {
             id: actor?.id || null,
@@ -736,7 +707,7 @@ export async function createProduct(data: ProductFormValues) {
                     seoKeywords: seo.seoKeywords,
                     images: normalizedImages,
                     customAttributes: validated.customAttributes,
-                    suppliers: validated.suppliers,
+                    suppliers: resolvedSuppliers,
                     categories: categoryRows.map((c) => ({ id: c.id, slug: c.slug, title: c.title })),
                 },
             })
@@ -832,7 +803,7 @@ export async function updateProduct(id: string, data: ProductFormValues) {
         await setFeaturedByProductId(id, validated.isFeatured)
         await setShortDescriptionByProductId(id, validated.shortDescription)
         await setCustomAttributesByProductId(id, validated.customAttributes)
-        await setSuppliersByProductId(id, validated.suppliers)
+        const resolvedSuppliers = await syncProductSupplierBySku(id, validated.sku || null)
         await ensureProductSkuFolders(validated.categoryIds, validated.sku || null)
 
         const hadDiscount = Boolean(
@@ -877,7 +848,7 @@ export async function updateProduct(id: string, data: ProductFormValues) {
                     seoKeywords: seo.seoKeywords,
                     images: normalizedImages,
                     customAttributes: validated.customAttributes,
-                    suppliers: validated.suppliers,
+                    suppliers: resolvedSuppliers,
                     categories: categoryRows.map((c) => ({ id: c.id, slug: c.slug, title: c.title })),
                 },
             })
@@ -950,7 +921,7 @@ export async function duplicateProduct(id: string) {
         await setFeaturedByProductId(newProduct.id, Boolean(original.isFeatured))
         await setShortDescriptionByProductId(newProduct.id, original.shortDescription || null)
         await setCustomAttributesByProductId(newProduct.id, original.customAttributes || [])
-        await setSuppliersByProductId(newProduct.id, original.suppliers || [])
+        await syncProductSupplierBySku(newProduct.id, original.sku || null)
         await setProductCreatorByProductId(newProduct.id, {
             id: actor?.id || null,
             name: actor?.name || actor?.email || "Unknown",

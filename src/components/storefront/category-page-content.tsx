@@ -7,7 +7,7 @@ import { getProducts, getProductOptions } from "@/lib/actions/product-actions"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { formatCurrency } from "@/lib/storefront/currency"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
-import { CategoryHoverProductCard } from "@/components/storefront/category-hover-product-card"
+import { CategoryHoverProductCardServer } from "@/components/storefront/category-hover-product-card-server"
 import { fetchCategoryPathRows, getCategoryPathById, resolveCategoryByPath } from "@/lib/category-paths"
 
 type SearchParams = { [key: string]: string | string[] | undefined }
@@ -885,7 +885,7 @@ export async function renderCategoryPage({
                         </Link>
                       )
                     }
-                    return <CategoryHoverProductCard key={product.id} product={product} />
+                    return <CategoryHoverProductCardServer key={product.id} product={product} currencySettings={currencySettings} />
                   })}
                 </div>
               )}

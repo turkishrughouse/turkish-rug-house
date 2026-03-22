@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { getProducts } from "@/lib/actions/product-actions"
-import { ShopProductCard } from "@/components/storefront/shop-product-card"
+import { ShopProductCardServer } from "@/components/storefront/shop-product-card-server"
 import { getSiteSettings } from "@/lib/site-settings"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
 
@@ -78,7 +78,7 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
         ) : (
           <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
             {visibleProducts.map((product) => (
-              <ShopProductCard
+              <ShopProductCardServer
                 key={product.id}
                 product={product}
                 catalogMode={siteSettings.showCatalogMode === "catalog"}

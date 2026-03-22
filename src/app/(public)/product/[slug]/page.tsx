@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client"
 import { cache } from "react"
 import { prisma } from "@/lib/db"
 import { ProductDetailView } from "@/components/storefront/product-detail-view"
+import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
 import { fetchCategoryPathRows, getCategoryPathById, type CategoryPathRow } from "@/lib/category-paths"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 
@@ -419,6 +420,12 @@ export default async function ProductPage({ params }: Props) {
   })
 
   const shippingContent = shippingPage?.content || shippingPage?.excerpt || null
+  const currencySnapshot = await getStorefrontCurrencySnapshot()
+  const currencySettings = {
+    selectedCurrency: currencySnapshot.selectedCurrency,
+    usdToEurRate: currencySnapshot.usdToEurRate,
+    locale: currencySnapshot.locale,
+  }
   const productImageRecords = parseProductImageRecords(product.images)
   const productImageUrls = productImageRecords
     .map((image) => getProductImageUrl(image, "master") || getProductImageUrl(image, "large"))
@@ -462,6 +469,7 @@ export default async function ProductPage({ params }: Props) {
         previousProduct={serializedPrevious}
         nextProduct={serializedNext}
         shippingContent={shippingContent}
+        currencySettings={currencySettings}
       />
     </>
   )

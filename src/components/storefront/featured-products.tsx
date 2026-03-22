@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
-import { CategoryHoverProductCard } from "@/components/storefront/category-hover-product-card"
+import { CategoryHoverProductCardServer } from "@/components/storefront/category-hover-product-card-server"
+import { type CurrencySettings } from "@/lib/storefront/currency"
 
 interface Product {
     id: string
@@ -18,9 +19,10 @@ interface Product {
 interface FeaturedProductsProps {
     products: Product[]
     title?: string
+    currencySettings?: CurrencySettings
 }
 
-export function FeaturedProducts({ products, title = "Featured Rugs" }: FeaturedProductsProps) {
+export function FeaturedProducts({ products, title = "Featured Rugs", currencySettings }: FeaturedProductsProps) {
     if (products.length === 0) return null
 
     return (
@@ -36,7 +38,7 @@ export function FeaturedProducts({ products, title = "Featured Rugs" }: Featured
 
             <div className="grid grid-cols-2 items-start gap-4 md:grid-cols-3 lg:grid-cols-4 lg:gap-5">
                 {products.slice(0, 8).map((product) => (
-                    <CategoryHoverProductCard key={product.id} product={product} />
+                    <CategoryHoverProductCardServer key={product.id} product={product} currencySettings={currencySettings} />
                 ))}
             </div>
         </section>

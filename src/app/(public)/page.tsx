@@ -9,6 +9,7 @@ import { getProducts } from "@/lib/actions/product-actions"
 import { getPublishedBlogPosts } from "@/lib/blog"
 import { getSiteSettings } from "@/lib/site-settings"
 import { parseProductImages } from "@/lib/product-images"
+import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
 
 export const revalidate = 300
 
@@ -66,11 +67,17 @@ function resolveHomepageCategoryAlias<T extends { slug: string; title: string }>
 }
 
 export default async function HomePage() {
-  const [categories, siteSettings, latestBlogPosts] = await Promise.all([
+  const [categories, siteSettings, latestBlogPosts, currencySnapshot] = await Promise.all([
     getCategories(),
     getSiteSettings(),
     getPublishedBlogPosts(4),
+    getStorefrontCurrencySnapshot(),
   ])
+  const currencySettings = {
+    selectedCurrency: currencySnapshot.selectedCurrency,
+    usdToEurRate: currencySnapshot.usdToEurRate,
+    locale: currencySnapshot.locale,
+  }
 
   const rawCategories = categories as Array<{
     id: string
@@ -299,7 +306,7 @@ export default async function HomePage() {
         }}
       />
 
-      <FeaturedProducts products={featuredProducts} title="Featured Rugs" />
+      <FeaturedProducts products={featuredProducts} title="Featured Rugs" currencySettings={currencySettings} />
 
       <HomeFeaturesStrip items={siteSettings.homeFeatureItems} />
 
@@ -310,6 +317,7 @@ export default async function HomePage() {
           category={section.category}
           products={section.products}
           bannerImage={section.bannerImage}
+          currencySettings={currencySettings}
         />
       ))}
 

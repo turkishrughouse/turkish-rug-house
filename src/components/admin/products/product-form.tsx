@@ -27,7 +27,6 @@ import {
     Package,
     Truck,
     Link2,
-    Building2,
     SlidersHorizontal,
     Settings,
     Sparkles,
@@ -73,6 +72,7 @@ import { cn } from "@/lib/utils"
 import { MediaPickerDialog } from "@/components/admin/media/media-picker-dialog"
 import type { AdminLanguage } from "@/lib/admin/i18n"
 import { parseProductImages } from "@/lib/product-images"
+import { matchSupplierBySkuPrefix, type SupplierRecord } from "@/lib/supplier-prefix"
 
 type SelectOption = { id: string, name?: string, title?: string }
 
@@ -229,9 +229,7 @@ interface ProductFormProps {
 
 type ProductRelation = { id: string }
 type CustomAttributeInput = { name: string; values: string[]; visible: boolean }
-type SupplierInput = { name: string; number: string; company: string; phone: string; note: string }
 const EMPTY_CUSTOM_ATTRIBUTES: CustomAttributeInput[] = []
-const EMPTY_SUPPLIERS: SupplierInput[] = []
 
 type ProductFormInitialData = {
     id: string
@@ -259,10 +257,9 @@ type ProductFormInitialData = {
     ages: ProductRelation[]
     materials: ProductRelation[]
     customAttributes?: CustomAttributeInput[]
-    suppliers?: SupplierInput[]
 }
 
-type ProductDataTab = "general" | "inventory" | "shipping" | "linked" | "supplier" | "attributes" | "advanced" | "more"
+type ProductDataTab = "general" | "inventory" | "shipping" | "linked" | "attributes" | "advanced" | "more"
 type ProductMediaPickerTarget = "featured" | "gallery"
 
 const PRODUCT_DATA_TABS: Array<{
@@ -274,7 +271,6 @@ const PRODUCT_DATA_TABS: Array<{
     { key: "inventory", label: { en: "Inventory", tr: "Envanter" }, icon: Package },
     { key: "shipping", label: { en: "Shipping", tr: "Kargo" }, icon: Truck },
     { key: "linked", label: { en: "Linked Products", tr: "Bagli Ürünler" }, icon: Link2 },
-    { key: "supplier", label: { en: "Suppliers", tr: "Tedarikciler" }, icon: Building2 },
     { key: "attributes", label: { en: "Attributes", tr: "Özellikler" }, icon: SlidersHorizontal },
     { key: "advanced", label: { en: "Advanced", tr: "Gelismis" }, icon: Settings },
     { key: "more", label: { en: "Get more options", tr: "Daha fazla seçenek" }, icon: Sparkles },
@@ -812,8 +808,8 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
     const [imagePreviewOpen, setImagePreviewOpen] = useState(false)
     const [imagePreviewIndex, setImagePreviewIndex] = useState(0)
     const [tagInput, setTagInput] = useState("")
-    const [supplierDialogOpen, setSupplierDialogOpen] = useState(false)
-    const [supplierDraft, setSupplierDraft] = useState<SupplierInput>({ name: "", number: "", company: "", phone: "", note: "" })
+    const [supplierRegistry, setSupplierRegistry] = useState<SupplierRecord[]>([])
+    const [loadingSupplierRegistry, setLoadingSupplierRegistry] = useState(false)
 
     const defaultValues: Partial<ProductFormValues> = initialData ? {
         title: initialData.title,
@@ -835,7 +831,6 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         shortDescription: initialData.shortDescription || "",
         seoKeywords: initialData.seoKeywords || "",
         customAttributes: initialData.customAttributes || [],
-        suppliers: initialData.suppliers || [],
         images: initialImages,
         categoryIds: initialData.categories.map((c) => c.id),
         typeIds: initialData.types.map((t) => t.id),
@@ -860,7 +855,6 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         shortDescription: "",
         seoKeywords: "",
         customAttributes: [],
-        suppliers: [],
         images: [],
         categoryIds: [],
         typeIds: [],
@@ -879,11 +873,11 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
     const { register, handleSubmit, setValue, watch, formState: { errors } } = form
     const title = watch("title")
     const slugValue = watch("slug") || ""
+    const skuValue = watch("sku") || ""
     const seoTitleValue = watch("seoTitle") || ""
     const seoKeywordsValue = watch("seoKeywords") || ""
 
     const customAttributeItems = watch("customAttributes") ?? EMPTY_CUSTOM_ATTRIBUTES
-    const supplierItems = watch("suppliers") ?? EMPTY_SUPPLIERS
     const selectedCategoryIds = watch("categoryIds")
     const selectedTypeIds = watch("typeIds") || []
     const selectedStyleIds = watch("styleIds") || []
@@ -957,6 +951,10 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         () => filterOptionsByCategory(options.materials, selectedCategoryIds || [], options.categoryAttributeMap, "materialIds"),
         [options.materials, options.categoryAttributeMap, selectedCategoryIds]
     )
+    const matchedSupplier = useMemo(
+        () => matchSupplierBySkuPrefix(skuValue, supplierRegistry),
+        [skuValue, supplierRegistry]
+    )
 
     useEffect(() => {
         if (!isSlugAutoSync) return
@@ -971,6 +969,36 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         if ((form.getValues("seoTitle") || "") === nextSeoTitle) return
         setValue("seoTitle", nextSeoTitle, { shouldValidate: true, shouldDirty: true })
     }, [title, isSeoTitleAutoSync, form, setValue])
+
+    useEffect(() => {
+        let cancelled = false
+
+        const loadSupplierRegistry = async () => {
+            setLoadingSupplierRegistry(true)
+            try {
+                const res = await fetch("/api/admin/suppliers", { cache: "no-store" })
+                const json = await res.json().catch(() => ({ suppliers: [] as SupplierRecord[] }))
+                if (!res.ok) return
+                if (!cancelled) {
+                    setSupplierRegistry(Array.isArray(json.suppliers) ? json.suppliers : [])
+                }
+            } catch {
+                if (!cancelled) {
+                    setSupplierRegistry([])
+                }
+            } finally {
+                if (!cancelled) {
+                    setLoadingSupplierRegistry(false)
+                }
+            }
+        }
+
+        void loadSupplierRegistry()
+
+        return () => {
+            cancelled = true
+        }
+    }, [])
 
     const handleCategoryCreated = (newCategory: Category) => {
         setCategories((prev) => [...prev, newCategory])
@@ -994,38 +1022,6 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         const current = form.getValues("customAttributes") || []
         const next = current.filter((_, idx) => idx !== index)
         setValue("customAttributes", next, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
-    }
-
-    const addSupplier = () => {
-        const name = (supplierDraft.name || "").trim()
-        const number = (supplierDraft.number || "").trim().toUpperCase()
-        const company = (supplierDraft.company || "").trim()
-        const phone = (supplierDraft.phone || "").trim()
-        const note = (supplierDraft.note || "").trim()
-        if (!name && !company && !number) {
-            toast.error(tx("Supplier name, company, or number is required", "Tedarikçi adı, şirket veya number zorunlu"))
-            return
-        }
-        const current = form.getValues("suppliers") || []
-        setValue("suppliers", [
-            ...current,
-            {
-                name,
-                number,
-                company,
-                phone,
-                note,
-            },
-        ], { shouldDirty: true, shouldTouch: true, shouldValidate: true })
-        setSupplierDraft({ name: "", number: "", company: "", phone: "", note: "" })
-        setSupplierDialogOpen(false)
-        toast.success(tx("Supplier added", "Tedarikçi eklendi"))
-    }
-
-    const removeSupplier = (index: number) => {
-        const current = form.getValues("suppliers") || []
-        const next = current.filter((_, idx) => idx !== index)
-        setValue("suppliers", next, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
     }
 
     const syncImageState = (nextFeatured: string | null, nextGallery: string[]) => {
@@ -1079,15 +1075,6 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                 visible: item.visible !== false,
             }))
             .filter((item) => item.name.length > 0 && item.values.length > 0)
-        data.suppliers = (data.suppliers || [])
-            .map((item) => ({
-                name: (item.name || "").trim(),
-                number: (item.number || "").trim().toUpperCase(),
-                company: (item.company || "").trim(),
-                phone: (item.phone || "").trim(),
-                note: (item.note || "").trim(),
-            }))
-            .filter((item) => item.name.length > 0 || item.company.length > 0 || item.number.length > 0)
 
         if (!data.slug && data.title) {
             data.slug = toSlug(data.title)
@@ -1393,11 +1380,25 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                         <div className="max-w-[760px] space-y-4">
                                             <div className="grid items-center gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                                 <Label className="text-sm font-medium text-slate-700">SKU</Label>
-                                                <Input
-                                                    {...register("sku")}
-                                                    className="h-11 rounded-sm border-[#8c8f94]"
-                                                    placeholder="TRH-SKU-001"
-                                                />
+                                                <div className="space-y-2">
+                                                    <Input
+                                                        {...register("sku")}
+                                                        className="h-11 rounded-sm border-[#8c8f94]"
+                                                        placeholder="TRH-SKU-001"
+                                                    />
+                                                    <div className="rounded-sm border border-[#dcdcde] bg-[#f6f7f7] px-3 py-2 text-xs text-slate-600">
+                                                        {loadingSupplierRegistry
+                                                            ? tx("Checking supplier prefix...", "Supplier prefix kontrol ediliyor...")
+                                                            : matchedSupplier
+                                                                ? tx(
+                                                                    `Supplier will be assigned automatically: ${matchedSupplier.company || matchedSupplier.name || matchedSupplier.number} (${matchedSupplier.number})`,
+                                                                    `Supplier otomatik atanacak: ${matchedSupplier.company || matchedSupplier.name || matchedSupplier.number} (${matchedSupplier.number})`
+                                                                )
+                                                                : skuValue.trim().length > 0
+                                                                    ? tx("No supplier prefix match found. Supplier will stay empty.", "Bu SKU icin supplier prefix eslesmesi bulunmadi. Supplier bos kalacak.")
+                                                                    : tx("Supplier is matched automatically from Settings > Supplier by SKU prefix.", "Supplier, Settings > Supplier altindaki prefix kaydina gore otomatik eslesir.")}
+                                                    </div>
+                                                </div>
                                             </div>
 
                                             <div className="grid items-center gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
@@ -1500,49 +1501,6 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                                     placeholder={tx("Search for a product...", "Ürün ara...")}
                                                 />
                                             </div>
-                                        </div>
-                                    ) : null}
-
-                                    {activeProductDataTab === "supplier" ? (
-                                        <div className="space-y-5">
-                                            <div className="flex flex-wrap items-center justify-between gap-3">
-                                                <div>
-                                                    <h3 className="text-base font-semibold text-slate-900">{tx("Suppliers", "Tedarikçiler")}</h3>
-                                                    <p className="mt-1 text-sm text-slate-500">{tx("Supplier records stay only in admin. Quantity is tracked in settings.", "Tedarikçi kayıtları sadece adminde kalır. Quantity bilgisi settings tarafında takip edilir.")}</p>
-                                                </div>
-                                                <Button
-                                                    type="button"
-                                                    className="rounded-sm bg-[#2271b1] text-white hover:bg-[#135e96]"
-                                                    onClick={() => setSupplierDialogOpen(true)}
-                                                >
-                                                    {tx("Add supplier", "Tedarikçi Ekle")}
-                                                </Button>
-                                            </div>
-
-                                            {supplierItems.length === 0 ? (
-                                                <div className="rounded-sm border border-dashed border-[#c3c4c7] bg-[#f6f7f7] px-4 py-6 text-sm text-slate-500">
-                                                    {tx("No supplier added yet.", "Henüz tedarikçi eklenmedi.")}
-                                                </div>
-                                            ) : (
-                                                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                                                    {supplierItems.map((supplier, index) => (
-                                                        <div key={`${supplier.name}-${index}`} className="rounded-sm border border-[#dcdcde] bg-[#f8fafc] p-4">
-                                                            <div className="flex items-start justify-between gap-3">
-                                                                <div>
-                                                                    <h4 className="text-sm font-semibold text-slate-900">{supplier.company || supplier.name || supplier.number || tx("Company not set", "Şirket belirtilmedi")}</h4>
-                                                                </div>
-                                                                <button
-                                                                    type="button"
-                                                                    className="text-xs font-medium text-red-600 hover:underline"
-                                                                    onClick={() => removeSupplier(index)}
-                                                                >
-                                                                    {tx("Remove", "Kaldır")}
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
                                         </div>
                                     ) : null}
 
@@ -2084,48 +2042,6 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                 }}
             />
         ) : null}
-        <Dialog open={supplierDialogOpen} onOpenChange={setSupplierDialogOpen}>
-            <DialogContent className="sm:max-w-[520px]">
-                <DialogHeader>
-                    <DialogTitle>{tx("Add supplier", "Tedarikçi Ekle")}</DialogTitle>
-                    <DialogDescription>{tx("Supplier data stays only in the admin panel.", "Tedarikçi verisi sadece admin panelinde kalır.")}</DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-2">
-                    <div className="space-y-1.5">
-                        <Label>{tx("Supplier name", "Tedarikçi adı")}</Label>
-                        <Input value={supplierDraft.name} onChange={(event) => setSupplierDraft((prev) => ({ ...prev, name: event.target.value }))} />
-                    </div>
-                    <div className="space-y-1.5">
-                        <Label>{tx("Number", "Number")}</Label>
-                        <Input value={supplierDraft.number} onChange={(event) => setSupplierDraft((prev) => ({ ...prev, number: event.target.value.toUpperCase() }))} />
-                    </div>
-                    <div className="space-y-1.5">
-                        <Label>{tx("Company", "Şirket")}</Label>
-                        <Input value={supplierDraft.company} onChange={(event) => setSupplierDraft((prev) => ({ ...prev, company: event.target.value }))} />
-                    </div>
-                    <div className="space-y-1.5">
-                        <Label>{tx("Phone", "Telefon")}</Label>
-                        <Input value={supplierDraft.phone} onChange={(event) => setSupplierDraft((prev) => ({ ...prev, phone: event.target.value }))} />
-                    </div>
-                    <div className="space-y-1.5">
-                        <Label>{tx("Note", "Not")}</Label>
-                        <textarea
-                            value={supplierDraft.note}
-                            onChange={(event) => setSupplierDraft((prev) => ({ ...prev, note: event.target.value }))}
-                            className="min-h-[110px] w-full rounded-sm border border-[#8c8f94] px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#2271b1]"
-                        />
-                    </div>
-                </div>
-                <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setSupplierDialogOpen(false)}>
-                        {tx("Cancel", "İptal")}
-                    </Button>
-                    <Button type="button" onClick={addSupplier}>
-                        {tx("Add supplier", "Tedarikçi Ekle")}
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
         <Dialog open={imagePreviewOpen} onOpenChange={setImagePreviewOpen}>
             <DialogContent className="!left-1/2 !top-1/2 !translate-x-[-50%] !translate-y-[-50%] w-[90vw] max-w-5xl border-none bg-black/95 p-0 text-white">
                 <div className="relative flex min-h-[70vh] items-center justify-center px-16 py-10">

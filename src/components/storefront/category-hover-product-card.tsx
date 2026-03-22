@@ -9,6 +9,7 @@ import { toast } from "sonner"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { addToCart } from "@/lib/storefront/cart"
 import { addEngagementItem } from "@/lib/storefront/engagement"
+import { formatCurrency, type CurrencySettings } from "@/lib/storefront/currency"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
 
@@ -25,6 +26,12 @@ type ProductCardData = {
   categories?: Array<{ id: string; title: string; slug: string }>
 }
 
+type ClientOverlayProduct = ProductCardData & {
+  mainImage?: string
+  primaryLargeImage?: string
+  currencySettings?: CurrencySettings
+}
+
 function parseImages(images: string) {
   return parseProductImageRecords(images)
 }
@@ -35,17 +42,13 @@ function stripHtml(input: string | null | undefined) {
 }
 
 export function CategoryHoverProductCard({ product }: { product: ProductCardData }) {
-  const router = useRouter()
   const { formatUsd } = useStorefrontCurrency()
-  const [quickViewOpen, setQuickViewOpen] = useState(false)
-  const [activeImageIndex, setActiveImageIndex] = useState(0)
-  const [qty, setQty] = useState(1)
-
   const gallery = useMemo(() => {
     const arr = parseImages(product.images)
-    return arr.length ? arr : [{ image_url: "/placeholder.jpg", variants: { thumb: "/placeholder.jpg", large: "/placeholder.jpg", master: "/placeholder.jpg" } }]
+    return arr.length
+      ? arr
+      : [{ image_url: "/placeholder.jpg", variants: { thumb: "/placeholder.jpg", large: "/placeholder.jpg", master: "/placeholder.jpg" } }]
   }, [product.images])
-
   const mainImage = getProductImageUrl(gallery[0], "thumb") || getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
   const primaryLargeImage = getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
   const mainImageAlt = buildProductImageAlt({
@@ -54,7 +57,6 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
     categories: product.categories,
   })
   const stockCount = Math.max(0, product.stockCount ?? 999)
-  const canBuy = (product.isStock ?? true) && stockCount > 0
   const isMarkedOutOfStock = product.isStock === false && stockCount > 0
   const isSold = stockCount <= 0
   const hasDiscount = Boolean(product.compareAtPrice && product.compareAtPrice > product.price)
@@ -64,8 +66,83 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
   const shortDescription = (
     stripHtml(product.description) || "Premium handcrafted product with quality materials and authentic details."
   ).slice(0, 140)
-  const fullDescription = stripHtml(product.description) || "Premium handcrafted product with quality materials and authentic details."
   const categoryText = product.categories?.slice(0, 2).map((c) => c.title).join(", ") || "Rug House"
+
+  return (
+    <div className="group/card relative z-10 self-start origin-top rounded-xl border border-slate-200 bg-white p-3 transition-all duration-300 hover:z-30 hover:scale-[1.035] hover:shadow-2xl">
+      <div className="relative">
+        <Link href={`/product/${product.slug}`} className="block">
+          <div className="relative aspect-square overflow-hidden rounded-md bg-slate-100">
+            {isMarkedOutOfStock ? (
+              <span className="pointer-events-none absolute left-2 top-2 z-20 rounded-sm bg-red-600 px-2 py-1 text-[10px] font-semibold tracking-[0.08em] text-white">
+                OUT OF STOCK
+              </span>
+            ) : isSold ? (
+              <span className="pointer-events-none absolute -left-9 top-4 z-20 w-28 -rotate-45 bg-red-600 px-0.5 py-1 text-center text-[10px] font-semibold tracking-[0.18em] text-white">
+                SOLD
+              </span>
+            ) : hasDiscount && discountPercent > 0 ? (
+              <span className="pointer-events-none absolute -left-9 top-4 z-20 w-28 -rotate-45 bg-yellow-300 px-0.5 py-1 text-center text-[10px] font-semibold tracking-[0.05em] text-slate-900">
+                {discountPercent}% OFF
+              </span>
+            ) : null}
+            <img
+              src={mainImage}
+              alt={mainImageAlt}
+              loading="lazy"
+              decoding="async"
+              className="h-full w-full object-contain object-center transition-transform duration-300 group-hover/card:scale-105"
+            />
+            <div className="pointer-events-none absolute inset-0 bg-black/20 opacity-0 transition-opacity duration-300 group-hover/card:opacity-100" />
+          </div>
+        </Link>
+
+        <CategoryHoverProductCardClient
+          product={{
+            ...product,
+            stockCount,
+            mainImage,
+            primaryLargeImage,
+          }}
+        />
+      </div>
+
+      <div className="pt-3 text-center">
+        <p className="truncate text-lg font-serif font-bold text-slate-900">{product.title}</p>
+        <p className="mt-1 text-sm text-slate-500">{categoryText}</p>
+        <div className="mt-2 flex items-center justify-center gap-2">
+          <span className="text-xl font-bold text-emerald-700">{formatUsd(product.price)}</span>
+          {product.compareAtPrice && product.compareAtPrice > product.price ? (
+            <span className="text-sm text-slate-400 line-through">{formatUsd(product.compareAtPrice)}</span>
+          ) : null}
+        </div>
+        <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-600">{shortDescription}</p>
+      </div>
+    </div>
+  )
+}
+
+export function CategoryHoverProductCardClient({ product }: { product: ClientOverlayProduct }) {
+  const router = useRouter()
+  const currency = useStorefrontCurrency()
+  const [quickViewOpen, setQuickViewOpen] = useState(false)
+  const [activeImageIndex, setActiveImageIndex] = useState(0)
+  const [qty, setQty] = useState(1)
+
+  const gallery = useMemo(() => {
+    const arr = parseImages(product.images)
+    return arr.length
+      ? arr
+      : [{ image_url: "/placeholder.jpg", variants: { thumb: "/placeholder.jpg", large: "/placeholder.jpg", master: "/placeholder.jpg" } }]
+  }, [product.images])
+
+  const stockCount = Math.max(0, product.stockCount ?? 999)
+  const canBuy = (product.isStock ?? true) && stockCount > 0
+  const mainImage = product.mainImage || getProductImageUrl(gallery[0], "thumb") || getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
+  const primaryLargeImage = product.primaryLargeImage || getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
+  const fullDescription = stripHtml(product.description) || "Premium handcrafted product with quality materials and authentic details."
+  const formatPrice = (amount: number) =>
+    product.currencySettings ? formatCurrency(amount, product.currencySettings) : currency.formatUsd(amount)
 
   const nextImage = () => {
     setActiveImageIndex((prev) => (prev + 1) % gallery.length)
@@ -114,78 +191,36 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
 
   return (
     <>
-      <div className="group/card relative z-10 self-start origin-top rounded-xl border border-slate-200 bg-white p-3 transition-all duration-300 hover:z-30 hover:scale-[1.035] hover:shadow-2xl">
-        <div className="relative">
-          <Link href={`/product/${product.slug}`} className="block">
-            <div className="relative aspect-square overflow-hidden rounded-md bg-slate-100">
-              {isMarkedOutOfStock ? (
-                <span className="pointer-events-none absolute left-2 top-2 z-20 rounded-sm bg-red-600 px-2 py-1 text-[10px] font-semibold tracking-[0.08em] text-white">
-                  OUT OF STOCK
-                </span>
-              ) : isSold ? (
-                <span className="pointer-events-none absolute -left-9 top-4 z-20 w-28 -rotate-45 bg-red-600 px-0.5 py-1 text-center text-[10px] font-semibold tracking-[0.18em] text-white">
-                  SOLD
-                </span>
-              ) : hasDiscount && discountPercent > 0 ? (
-                <span className="pointer-events-none absolute -left-9 top-4 z-20 w-28 -rotate-45 bg-yellow-300 px-0.5 py-1 text-center text-[10px] font-semibold tracking-[0.05em] text-slate-900">
-                  {discountPercent}% OFF
-                </span>
-              ) : null}
-              <img
-                src={mainImage}
-                alt={mainImageAlt}
-                loading="lazy"
-                decoding="async"
-                className="h-full w-full object-contain object-center transition-transform duration-300 group-hover/card:scale-105"
-              />
-              <div className="pointer-events-none absolute inset-0 bg-black/20 opacity-0 transition-opacity duration-300 group-hover/card:opacity-100" />
-            </div>
-          </Link>
+      <button
+        type="button"
+        className="absolute bottom-3 left-1/2 z-30 h-9 -translate-x-1/2 rounded-md border border-white/70 bg-white/85 px-4 text-xs font-semibold tracking-wide text-slate-900 opacity-0 shadow-sm backdrop-blur-[1px] transition-all duration-300 hover:bg-white group-hover/card:opacity-100"
+        onClick={() => {
+          setActiveImageIndex(0)
+          setQuickViewOpen(true)
+        }}
+        aria-label="Quick view"
+      >
+        Quick View
+      </button>
 
-          <button
-            type="button"
-            className="absolute bottom-3 left-1/2 z-30 h-9 -translate-x-1/2 rounded-md border border-white/70 bg-white/85 px-4 text-xs font-semibold tracking-wide text-slate-900 opacity-0 shadow-sm backdrop-blur-[1px] transition-all duration-300 hover:bg-white group-hover/card:opacity-100"
-            onClick={() => {
-              setActiveImageIndex(0)
-              setQuickViewOpen(true)
-            }}
-            aria-label="Quick view"
-          >
-            Quick View
-          </button>
-
-          <button
-            type="button"
-            className="absolute right-3 top-3 z-30 inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/60 bg-white/80 text-slate-700 opacity-0 transition-all duration-300 hover:bg-white group-hover/card:opacity-100"
-            onClick={() => {
-              const result = addEngagementItem("rughouse_wishlist", {
-                productId: product.id,
-                slug: product.slug,
-                title: product.title,
-                image: mainImage,
-                price: product.price,
-              })
-              if (result.added) toast.success("Added to wishlist")
-              else toast.info("Already in wishlist")
-            }}
-            aria-label="Add to wishlist"
-          >
-            <Heart className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="pt-3 text-center">
-          <p className="truncate text-lg font-serif font-bold text-slate-900">{product.title}</p>
-          <p className="mt-1 text-sm text-slate-500">{categoryText}</p>
-          <div className="mt-2 flex items-center justify-center gap-2">
-            <span className="text-xl font-bold text-emerald-700">{formatUsd(product.price)}</span>
-            {product.compareAtPrice && product.compareAtPrice > product.price ? (
-              <span className="text-sm text-slate-400 line-through">{formatUsd(product.compareAtPrice)}</span>
-            ) : null}
-          </div>
-          <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-600">{shortDescription}</p>
-        </div>
-      </div>
+      <button
+        type="button"
+        className="absolute right-3 top-3 z-30 inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/60 bg-white/80 text-slate-700 opacity-0 transition-all duration-300 hover:bg-white group-hover/card:opacity-100"
+        onClick={() => {
+          const result = addEngagementItem("rughouse_wishlist", {
+            productId: product.id,
+            slug: product.slug,
+            title: product.title,
+            image: mainImage,
+            price: product.price,
+          })
+          if (result.added) toast.success("Added to wishlist")
+          else toast.info("Already in wishlist")
+        }}
+        aria-label="Add to wishlist"
+      >
+        <Heart className="h-4 w-4" />
+      </button>
 
       <Dialog open={quickViewOpen} onOpenChange={setQuickViewOpen}>
         <DialogContent className="w-[min(97vw,1280px)] max-w-[1280px] max-h-[88vh] overflow-hidden border-[#dce3ed] bg-white p-0">
@@ -235,12 +270,11 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
                   </>
                 ) : null}
               </div>
-
             </div>
 
             <div className="max-h-[88vh] overflow-y-auto p-4 sm:p-6">
               <h3 className="text-3xl leading-[1.1] font-bold text-slate-900 sm:text-[42px]">{product.title}</h3>
-              <p className="mt-3 text-3xl font-bold text-emerald-700 sm:text-4xl">{formatUsd(product.price)}</p>
+              <p className="mt-3 text-3xl font-bold text-emerald-700 sm:text-4xl">{formatPrice(product.price)}</p>
 
               <p className="mt-4 line-clamp-5 text-slate-600 leading-7">
                 {fullDescription}
@@ -291,13 +325,13 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
                 <span className="font-semibold text-slate-900">Categories:</span>{" "}
                 {product.categories?.length
                   ? product.categories.map((cat, i) => (
-                    <span key={cat.id}>
-                      <Link href={`/category/${cat.slug}`} className="hover:underline" onClick={() => setQuickViewOpen(false)}>
-                        {cat.title}
-                      </Link>
-                      {i < product.categories!.length - 1 ? ", " : ""}
-                    </span>
-                  ))
+                      <span key={cat.id}>
+                        <Link href={`/category/${cat.slug}`} className="hover:underline" onClick={() => setQuickViewOpen(false)}>
+                          {cat.title}
+                        </Link>
+                        {i < (product.categories?.length || 0) - 1 ? ", " : ""}
+                      </span>
+                    ))
                   : "Uncategorized"}
               </div>
 

@@ -2,11 +2,20 @@
 
 import * as React from "react"
 import { useState, useRef } from "react"
+import dynamic from "next/dynamic"
 import { SearchBar } from "./search-bar"
-import { RugHouseDropdown } from "./rug-house-dropdown"
-import { SharedMegaPanel } from "./shared-mega-panel"
 import { Button } from "@/components/ui/button"
 import { ChevronDown } from "lucide-react"
+
+const RugHouseDropdown = dynamic(
+    () => import("./rug-house-dropdown").then((mod) => mod.RugHouseDropdown),
+    { ssr: false }
+)
+
+const SharedMegaPanel = dynamic(
+    () => import("./shared-mega-panel").then((mod) => mod.SharedMegaPanel),
+    { ssr: false }
+)
 
 export function DiscoveryCapsule() {
     const HOVER_OPEN_DELAY_MS = 400

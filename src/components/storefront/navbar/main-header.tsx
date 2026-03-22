@@ -17,52 +17,29 @@ type MobileMenuItem = {
     children: MobileMenuItem[]
 }
 
-const normalizeMenuHref = (input?: string) => {
-    const value = (input || "").trim()
-    if (!value) return "#"
-    if (value.startsWith("/")) return value
-    if (value.startsWith("http://") || value.startsWith("https://")) return value
-    return `/${value.replace(/^\/+/, "")}`
-}
-
-const mapMenuTree = (items: unknown): MobileMenuItem[] => {
-    if (!Array.isArray(items)) return []
-    return items
-        .filter((item): item is { id?: unknown; label?: unknown; url?: unknown; children?: unknown } => Boolean(item))
-        .map((item, index) => ({
-            id: typeof item.id === "string" ? item.id : `menu-${index}`,
-            label: typeof item.label === "string" ? item.label : "Untitled",
-            url: normalizeMenuHref(typeof item.url === "string" ? item.url : "#"),
-            children: mapMenuTree(item.children),
-        }))
-}
-
-const mapCategoryTreeToMenu = (items: unknown): MobileMenuItem[] => {
-    if (!Array.isArray(items)) return []
-    return items.map((item, index) => {
-        const node = item as { id?: string; title?: string; slug?: string; children?: unknown[] }
-        return {
-            id: node.id || `cat-${index}`,
-            label: node.title || "Category",
-            url: node.slug ? `/category/${node.slug}` : "#",
-            children: mapCategoryTreeToMenu(node.children || []),
-        }
-    })
-}
-
-export function MainHeader() {
+export function MainHeader({
+    initialBrandPrimary,
+    initialBrandSecondary,
+    initialMaintenanceMode,
+    initialCurrencySettings,
+    initialSendPasswordSetupLink,
+    initialMobileCategoriesMenu,
+    initialMobilePagesMenu,
+}: {
+    initialBrandPrimary: string
+    initialBrandSecondary: string
+    initialMaintenanceMode: boolean
+    initialCurrencySettings: CurrencySettings
+    initialSendPasswordSetupLink: boolean
+    initialMobileCategoriesMenu: MobileMenuItem[]
+    initialMobilePagesMenu: MobileMenuItem[]
+}) {
     const router = useRouter()
     const appleEnabled = process.env.NEXT_PUBLIC_ENABLE_APPLE_LOGIN === "true"
-    const [brandPrimary, setBrandPrimary] = useState("Turkish")
-    const [brandSecondary, setBrandSecondary] = useState("Rug House")
-    const [maintenanceMode, setMaintenanceMode] = useState(false)
-    const [currencySettings, setCurrencySettings] = useState<CurrencySettings>({
-        defaultCurrency: "USD",
-        currencyPosition: "left",
-        thousandSeparator: ".",
-        decimalSeparator: ",",
-        numberOfDecimals: 2,
-    })
+    const [brandPrimary] = useState(initialBrandPrimary)
+    const [brandSecondary] = useState(initialBrandSecondary)
+    const [maintenanceMode] = useState(initialMaintenanceMode)
+    const [currencySettings] = useState<CurrencySettings>(initialCurrencySettings)
     const [cartCount, setCartCount] = useState(0)
     const [cartTotal, setCartTotal] = useState(0)
     const [compareCount, setCompareCount] = useState(0)
@@ -70,8 +47,8 @@ export function MainHeader() {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
     const [mobileMenuTab, setMobileMenuTab] = useState<"categories" | "pages">("categories")
     const [mobileSearch, setMobileSearch] = useState("")
-    const [mobileCategoriesMenu, setMobileCategoriesMenu] = useState<MobileMenuItem[]>([])
-    const [mobilePagesMenu, setMobilePagesMenu] = useState<MobileMenuItem[]>([])
+    const [mobileCategoriesMenu] = useState<MobileMenuItem[]>(initialMobileCategoriesMenu)
+    const [mobilePagesMenu] = useState<MobileMenuItem[]>(initialMobilePagesMenu)
     const [mobileOpenItems, setMobileOpenItems] = useState<Record<string, boolean>>({})
     const [cartPreviewOpen, setCartPreviewOpen] = useState(false)
     const [loginDrawerOpen, setLoginDrawerOpen] = useState(false)
@@ -83,7 +60,7 @@ export function MainHeader() {
     const [loginEmail, setLoginEmail] = useState("")
     const [loginPassword, setLoginPassword] = useState("")
     const [loginLoading, setLoginLoading] = useState(false)
-    const [sendPasswordSetupLink, setSendPasswordSetupLink] = useState(true)
+    const [sendPasswordSetupLink] = useState(initialSendPasswordSetupLink)
     const cartPreviewTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     const refreshCart = () => {
@@ -93,30 +70,6 @@ export function MainHeader() {
         setCartCount(summary.count)
         setCartTotal(summary.total)
     }
-
-    useEffect(() => {
-        const load = async () => {
-            try {
-                const res = await fetch("/api/public/settings", { cache: "no-store" })
-                if (!res.ok) return
-                const json = await res.json()
-                setBrandPrimary(json.brandPrimary || "Turkish")
-                setBrandSecondary(json.brandSecondary || "Rug House")
-                setMaintenanceMode(Boolean(json.maintenanceMode))
-                setCurrencySettings({
-                    defaultCurrency: json.defaultCurrency || "USD",
-                    currencyPosition: json.currencyPosition || "left",
-                    thousandSeparator: json.thousandSeparator || ".",
-                    decimalSeparator: json.decimalSeparator || ",",
-                    numberOfDecimals: typeof json.numberOfDecimals === "number" ? json.numberOfDecimals : 2,
-                })
-                setSendPasswordSetupLink(json.sendPasswordSetupLink !== false)
-            } catch {
-                // keep defaults
-            }
-        }
-        load()
-    }, [])
 
     useEffect(() => {
         const eventName = getCartUpdateEventName()
@@ -153,36 +106,6 @@ export function MainHeader() {
             window.removeEventListener("storage", readEngagement)
             window.removeEventListener("rughouse:engagement-updated", readEngagement as EventListener)
         }
-    }, [])
-
-    useEffect(() => {
-        const loadMobileMenus = async () => {
-            try {
-                const [categoriesRes, pagesRes] = await Promise.all([
-                    fetch("/api/public/menus/PRIMARY_HEADER", { cache: "no-store" }),
-                    fetch("/api/public/menus/HEADER_INFORMATION", { cache: "no-store" }),
-                ])
-
-                const categoriesJson = categoriesRes.ok ? await categoriesRes.json() : null
-                let pagesJson = pagesRes.ok ? await pagesRes.json() : null
-                if (!pagesJson?.items || pagesJson.items.length === 0) {
-                    const footerPagesRes = await fetch("/api/public/menus/INFORMATION_FOOTER", { cache: "no-store" })
-                    pagesJson = footerPagesRes.ok ? await footerPagesRes.json() : null
-                }
-                let nextCategories = mapMenuTree(categoriesJson?.items)
-                if (nextCategories.length === 0) {
-                    const categoriesTreeRes = await fetch("/api/categories?tree=true", { cache: "no-store" })
-                    const categoriesTreeJson = categoriesTreeRes.ok ? await categoriesTreeRes.json() : null
-                    nextCategories = mapCategoryTreeToMenu(categoriesTreeJson)
-                }
-                setMobileCategoriesMenu(nextCategories)
-                setMobilePagesMenu(mapMenuTree(pagesJson?.items))
-            } catch {
-                setMobileCategoriesMenu([])
-                setMobilePagesMenu([])
-            }
-        }
-        void loadMobileMenus()
     }, [])
 
     useEffect(() => {
