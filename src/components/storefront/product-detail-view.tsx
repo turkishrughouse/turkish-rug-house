@@ -152,12 +152,10 @@ export function ProductDetailView({
             </div>
 
             {showUrgency || product.sku ? (
-              <div className="mt-6 flex flex-wrap items-center gap-2 text-sm">
-                {showUrgency ? (
-                  <div className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-medium text-amber-800">
-                    Only one available
-                  </div>
-                ) : null}
+              <div className="mt-6 flex items-center justify-between gap-3 text-sm">
+                <div className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-medium text-amber-800">
+                  {showUrgency ? "Only one available" : "Available"}
+                </div>
                 {product.sku ? (
                   <div className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-medium text-slate-700">
                     SKU: <span className="ml-1 text-slate-900">{product.sku}</span>
@@ -279,10 +277,6 @@ function buildProductSpecificationRows(product: ProductDetailData) {
       return value ? { label: item.label, value } : null
     })
     .filter((item): item is { label: string; value: string } => Boolean(item))
-
-  if (product.sku) {
-    rows.push({ label: "SKU", value: product.sku })
-  }
 
   return rows
 }

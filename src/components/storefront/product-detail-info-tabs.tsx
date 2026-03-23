@@ -4,6 +4,20 @@ import { useState } from "react"
 
 import { richContentClassName, type ProductDetailData } from "@/components/storefront/product-detail-shared"
 
+const DEFAULT_SHIPPING_RETURNS_HTML = `
+  <p>Each rug is carefully prepared and shipped from our collection with attention to detail and preservation.</p>
+  <p><strong>Shipping</strong></p>
+  <p>All orders are securely packaged to protect the rug during transit. We work with trusted international carriers to ensure safe and timely delivery worldwide.</p>
+  <p>Processing typically takes 1-3 business days. Delivery times may vary depending on your location, but most orders arrive within 3-7 business days.</p>
+  <p>Once your order is shipped, you will receive tracking information so you can follow your delivery at every step.</p>
+  <p><strong>Returns</strong></p>
+  <p>We want you to feel confident in your purchase.</p>
+  <p>If for any reason the rug does not meet your expectations, you may request a return within 14 days of delivery.</p>
+  <p>Returned items must be in their original condition. Once received and inspected, refunds are processed promptly.</p>
+  <p><strong>Notes</strong></p>
+  <p>Because each rug is handmade and one of a kind, slight variations are part of its character and authenticity.</p>
+`
+
 export function ProductDetailInfoTabs({
   product,
   bottomDescriptionHtml,
@@ -18,6 +32,7 @@ export function ProductDetailInfoTabs({
   canExpandShipping: boolean
 }) {
   void product
+  void shippingHtml
   const [expandedBottomDesc, setExpandedBottomDesc] = useState(false)
   const [expandedShipping, setExpandedShipping] = useState(false)
   const [activeInfoTab, setActiveInfoTab] = useState<"description" | "shipping">("description")
@@ -48,7 +63,7 @@ export function ProductDetailInfoTabs({
             <div>
               <div
                 className={`${richContentClassName} ${!expandedShipping && canExpandShipping ? "line-clamp-10" : ""}`}
-                dangerouslySetInnerHTML={{ __html: shippingHtml }}
+                dangerouslySetInnerHTML={{ __html: DEFAULT_SHIPPING_RETURNS_HTML }}
               />
               {canExpandShipping ? (
                 <button type="button" onClick={() => setExpandedShipping((prev) => !prev)} className="mt-2 text-sm font-medium text-emerald-700 hover:underline">
