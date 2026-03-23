@@ -101,13 +101,15 @@ export function ProductDetailView({
               isSold={isSold}
             />
 
-            <ProductDetailInfoTabs
-              product={product}
-              bottomDescriptionHtml={bottomDescriptionHtml}
-              canExpandBottomDescription={canExpandBottomDescription}
-              shippingHtml={shippingHtml}
-              canExpandShipping={canExpandShipping}
-            />
+            <div className="hidden xl:block">
+              <ProductDetailInfoTabs
+                product={product}
+                bottomDescriptionHtml={bottomDescriptionHtml}
+                canExpandBottomDescription={canExpandBottomDescription}
+                shippingHtml={shippingHtml}
+                canExpandShipping={canExpandShipping}
+              />
+            </div>
           </section>
 
           <section>
@@ -137,6 +139,16 @@ export function ProductDetailView({
                 </div>
               </div>
             ) : null}
+
+            <div className="xl:hidden">
+              <ProductDetailInfoTabs
+                product={product}
+                bottomDescriptionHtml={bottomDescriptionHtml}
+                canExpandBottomDescription={canExpandBottomDescription}
+                shippingHtml={shippingHtml}
+                canExpandShipping={canExpandShipping}
+              />
+            </div>
 
             {showUrgency || product.sku ? (
               <div className="mt-6 flex flex-wrap items-center gap-2 text-sm">

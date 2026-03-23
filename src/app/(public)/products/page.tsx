@@ -149,7 +149,7 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
 
       <div className="container mx-auto px-6 py-10">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          <aside className="lg:col-span-3">
+          <aside className="hidden lg:col-span-3 lg:block">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-6">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filters</h2>
@@ -268,6 +268,121 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
           </aside>
 
           <section className="lg:col-span-9">
+            <div className="mb-5 lg:hidden">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filters</h2>
+                  <p className="text-xs text-slate-500">{visibleProducts.length} products</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Category</summary>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {options.categories.filter((category) => (categoryCountMap.get(category.slug) || 0) > 0).map((category) => {
+                        const active = selectedCategories.includes(category.slug)
+                        const count = categoryCountMap.get(category.slug) || 0
+                        return (
+                          <Link key={category.id} href={`/products${buildQuery((p) => {
+                            const next = p.getAll("category")
+                            p.delete("category")
+                            if (next.includes(category.slug)) next.filter((item) => item !== category.slug).forEach((item) => p.append("category", item))
+                            else {
+                              next.forEach((item) => p.append("category", item))
+                              p.append("category", category.slug)
+                            }
+                          })}`} className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}>
+                            <span className="block truncate">{category.title}</span>
+                            <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  </details>
+                  <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Style</summary>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {options.styles.filter((style) => (styleCountMap.get(style.slug) || 0) > 0).map((style) => {
+                        const active = selectedStyles.includes(style.slug)
+                        const count = styleCountMap.get(style.slug) || 0
+                        return (
+                          <Link key={style.id} href={`/products${buildQuery((p) => {
+                            const next = p.getAll("style")
+                            p.delete("style")
+                            if (next.includes(style.slug)) next.filter((item) => item !== style.slug).forEach((item) => p.append("style", item))
+                            else {
+                              next.forEach((item) => p.append("style", item))
+                              p.append("style", style.slug)
+                            }
+                          })}`} className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}>
+                            <span className="block truncate">{style.name}</span>
+                            <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  </details>
+                  <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Size</summary>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {options.sizes.filter((size) => (sizeCountMap.get(size.slug) || 0) > 0).map((size) => {
+                        const active = selectedSizes.includes(size.slug)
+                        const count = sizeCountMap.get(size.slug) || 0
+                        return (
+                          <Link key={size.id} href={`/products${buildQuery((p) => {
+                            const next = p.getAll("size")
+                            p.delete("size")
+                            if (next.includes(size.slug)) next.filter((item) => item !== size.slug).forEach((item) => p.append("size", item))
+                            else {
+                              next.forEach((item) => p.append("size", item))
+                              p.append("size", size.slug)
+                            }
+                          })}`} className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}>
+                            <span className="block truncate">{size.name}</span>
+                            <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  </details>
+                  <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Color</summary>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {options.colors.filter((color) => (colorCountMap.get(color.slug) || 0) > 0).map((color) => {
+                        const active = selectedColors.includes(color.slug)
+                        const count = colorCountMap.get(color.slug) || 0
+                        return (
+                          <Link key={color.id} href={`/products${buildQuery((p) => {
+                            const next = p.getAll("color")
+                            p.delete("color")
+                            if (next.includes(color.slug)) next.filter((item) => item !== color.slug).forEach((item) => p.append("color", item))
+                            else {
+                              next.forEach((item) => p.append("color", item))
+                              p.append("color", color.slug)
+                            }
+                          })}`} className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}>
+                            <span className="flex items-center gap-2 truncate"><span className="h-2.5 w-2.5 rounded-full border border-slate-300" style={{ backgroundColor: color.hex || "#d1d5db" }} />{color.name}</span>
+                            <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  </details>
+                  <details className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Price</summary>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {pricePresets.map((preset) => {
+                        const active = priceMin === preset.min && priceMaxRaw === preset.max
+                        return (
+                          <Link key={preset.label} href={`/products${buildQuery((p) => { p.set("priceMin", String(preset.min)); p.set("priceMax", String(preset.max)) })}`} className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}>
+                            {preset.label}
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  </details>
+                </div>
+              </div>
+            </div>
             {activeFilterChips.length > 0 ? (
               <div className="mb-5 rounded-2xl border border-slate-200 bg-white px-4 py-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

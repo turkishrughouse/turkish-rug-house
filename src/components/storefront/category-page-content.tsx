@@ -598,7 +598,7 @@ export async function renderCategoryPage({
 
       <div className="container mx-auto px-6 py-10">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          <aside className="lg:col-span-3">
+          <aside className="hidden lg:col-span-3 lg:block">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-6">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filters</h2>
@@ -784,6 +784,165 @@ export async function renderCategoryPage({
                 {category.description ? (
                   <p className="mt-3 max-w-4xl text-sm leading-7 text-slate-600">{stripHtml(category.description)}</p>
                 ) : null}
+              </div>
+
+              <div className="mt-5 lg:hidden">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h2 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filters</h2>
+                    <p className="text-xs text-slate-500">{products.length} products</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Color</summary>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {options.colors.filter((color) => (colorCountMap.get(color.slug) || 0) > 0).map((color) => {
+                          const active = selectedColors.includes(color.slug)
+                          const count = colorCountMap.get(color.slug) || 0
+                          return (
+                            <Link
+                              key={color.id}
+                              href={`${categoryPath}${buildQuery((p) => {
+                                const existing = p.getAll("color")
+                                p.delete("color")
+                                if (existing.includes(color.slug)) existing.filter((item) => item !== color.slug).forEach((item) => p.append("color", item))
+                                else {
+                                  existing.forEach((item) => p.append("color", item))
+                                  p.append("color", color.slug)
+                                }
+                              })}`}
+                              className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
+                            >
+                              <span className="flex items-center gap-2 truncate"><span className="h-2.5 w-2.5 rounded-full border border-slate-300" style={{ backgroundColor: color.hex || "#d1d5db" }} />{color.name}</span>
+                              <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    </details>
+                    <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Style</summary>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {options.styles.filter((style) => (styleCountMap.get(style.slug) || 0) > 0).map((style) => {
+                          const active = selectedStyles.includes(style.slug)
+                          const count = styleCountMap.get(style.slug) || 0
+                          return (
+                            <Link
+                              key={style.id}
+                              href={`${categoryPath}${buildQuery((p) => {
+                                const existing = p.getAll("style")
+                                p.delete("style")
+                                if (existing.includes(style.slug)) existing.filter((item) => item !== style.slug).forEach((item) => p.append("style", item))
+                                else {
+                                  existing.forEach((item) => p.append("style", item))
+                                  p.append("style", style.slug)
+                                }
+                              })}`}
+                              className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
+                            >
+                              <span className="block truncate">{style.name}</span>
+                              <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    </details>
+                    <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Size</summary>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {options.sizes.filter((size) => (sizeCountMap.get(size.slug) || 0) > 0).map((size) => {
+                          const active = selectedSizes.includes(size.slug)
+                          const count = sizeCountMap.get(size.slug) || 0
+                          return (
+                            <Link
+                              key={size.id}
+                              href={`${categoryPath}${buildQuery((p) => {
+                                const existing = p.getAll("size")
+                                p.delete("size")
+                                if (existing.includes(size.slug)) existing.filter((item) => item !== size.slug).forEach((item) => p.append("size", item))
+                                else {
+                                  existing.forEach((item) => p.append("size", item))
+                                  p.append("size", size.slug)
+                                }
+                              })}`}
+                              className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
+                            >
+                              <span className="block truncate">{size.name}</span>
+                              <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    </details>
+                    <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Age</summary>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {options.ages.filter((age) => (ageCountMap.get(age.slug) || 0) > 0).map((age) => {
+                          const active = selectedAges.includes(age.slug)
+                          const count = ageCountMap.get(age.slug) || 0
+                          return (
+                            <Link
+                              key={age.id}
+                              href={`${categoryPath}${buildQuery((p) => {
+                                const existing = p.getAll("age")
+                                p.delete("age")
+                                if (existing.includes(age.slug)) existing.filter((item) => item !== age.slug).forEach((item) => p.append("age", item))
+                                else {
+                                  existing.forEach((item) => p.append("age", item))
+                                  p.append("age", age.slug)
+                                }
+                              })}`}
+                              className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
+                            >
+                              <span className="block truncate">{age.name}</span>
+                              <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    </details>
+                    <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Material</summary>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {options.materials.filter((material) => (materialCountMap.get(material.slug) || 0) > 0).map((material) => {
+                          const active = selectedMaterials.includes(material.slug)
+                          const count = materialCountMap.get(material.slug) || 0
+                          return (
+                            <Link
+                              key={material.id}
+                              href={`${categoryPath}${buildQuery((p) => {
+                                const existing = p.getAll("material")
+                                p.delete("material")
+                                if (existing.includes(material.slug)) existing.filter((item) => item !== material.slug).forEach((item) => p.append("material", item))
+                                else {
+                                  existing.forEach((item) => p.append("material", item))
+                                  p.append("material", material.slug)
+                                }
+                              })}`}
+                              className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
+                            >
+                              <span className="block truncate">{material.name}</span>
+                              <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    </details>
+                    <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Price</summary>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {pricePresets.map((preset) => {
+                          const active = priceMin === preset.min && priceMaxRaw === preset.max
+                          return (
+                            <Link key={preset.label} href={`${categoryPath}${buildQuery((p) => { p.set("priceMin", String(preset.min)); p.set("priceMax", String(preset.max)) })}`} className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}>
+                              {preset.label}
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    </details>
+                  </div>
+                </div>
               </div>
 
               {activeFilterChips.length > 0 ? (
