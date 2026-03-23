@@ -17,7 +17,20 @@ const SharedMegaPanel = dynamic(
     { ssr: false }
 )
 
-export function DiscoveryCapsule() {
+type DiscoveryMenuNode = {
+    id: string
+    label: string
+    url: string
+    children: DiscoveryMenuNode[]
+}
+
+export function DiscoveryCapsule({
+    compact = false,
+    infoItems = [],
+}: {
+    compact?: boolean
+    infoItems?: DiscoveryMenuNode[]
+}) {
     const HOVER_OPEN_DELAY_MS = 400
     // State to track which tab is active (open)
     const [activeTab, setActiveTab] = useState<'categories' | 'information' | null>(null)
@@ -64,13 +77,13 @@ export function DiscoveryCapsule() {
                Relative positioning used for anchoring the SharedMegaPanel
             */}
             <div className="relative w-full">
-                <div className="flex items-center w-full bg-slate-50 border border-slate-200 rounded-lg shadow-sm transition-all overflow-visible h-16">
+                <div className={`flex items-center w-full bg-slate-50 border border-slate-200 rounded-lg shadow-sm transition-all overflow-visible ${compact ? "h-12" : "h-16"}`}>
 
                     {/* 1. All Categories Trigger (Auto Width + Padding) */}
                     <div className="shrink-0 pl-1 h-full flex items-center">
                         <Button
                             variant="ghost"
-                            className={`h-16 w-auto px-6 justify-center text-base font-semibold transition-colors rounded-md bg-transparent border-none shadow-none hover:bg-slate-100/50 gap-2 ${activeTab === 'categories' ? 'text-teal-800 bg-slate-100/50' : 'text-slate-900 hover:text-teal-700'
+                            className={`${compact ? "h-12 px-4 text-sm" : "h-16 px-6 text-base"} w-auto justify-center font-semibold transition-colors rounded-md bg-transparent border-none shadow-none hover:bg-slate-100/50 gap-2 ${activeTab === 'categories' ? 'text-teal-800 bg-slate-100/50' : 'text-slate-900 hover:text-teal-700'
                                 }`}
                             onMouseEnter={() => handleMouseEnter('categories')}
                             onMouseLeave={handleMouseLeave}
@@ -105,7 +118,7 @@ export function DiscoveryCapsule() {
                     <div className="shrink-0 pr-1 h-full flex items-center">
                         <Button
                             variant="ghost"
-                            className={`h-16 w-auto px-6 justify-center text-base font-semibold transition-colors rounded-md bg-transparent border-none shadow-none hover:bg-slate-100/50 gap-2 ${activeTab === 'information' ? 'text-teal-800 bg-slate-100/50' : 'text-slate-900 hover:text-teal-700'
+                            className={`${compact ? "h-12 px-4 text-sm" : "h-16 px-6 text-base"} w-auto justify-center font-semibold transition-colors rounded-md bg-transparent border-none shadow-none hover:bg-slate-100/50 gap-2 ${activeTab === 'information' ? 'text-teal-800 bg-slate-100/50' : 'text-slate-900 hover:text-teal-700'
                                 }`}
                             onMouseEnter={() => handleMouseEnter('information')}
                             onMouseLeave={handleMouseLeave}
@@ -119,6 +132,7 @@ export function DiscoveryCapsule() {
                 {/* Shared Panel - Anchored left-0 (Start of container) */}
                 <SharedMegaPanel
                     activeTab={activeTab}
+                    infoItems={infoItems}
                     onMouseEnter={handlePanelMouseEnter}
                     onMouseLeave={handleMouseLeave}
                     onLinkClick={() => setActiveTab(null)}

@@ -8,6 +8,7 @@ import { getImageUrl } from "@/lib/storage/url"
 
 interface SharedMegaPanelProps {
     activeTab: "categories" | "information" | null
+    infoItems?: MenuNode[]
     onMouseEnter: () => void
     onMouseLeave: () => void
     onLinkClick: () => void
@@ -29,7 +30,15 @@ type TreeCategory = {
     children?: TreeCategory[]
 }
 
-export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkClick }: SharedMegaPanelProps) {
+export function SharedMegaPanel({
+    activeTab,
+    infoItems: initialInfoItems = [],
+    onMouseEnter,
+    onMouseLeave,
+    onLinkClick,
+}: SharedMegaPanelProps & {
+    infoItems?: MenuNode[]
+}) {
     const [infoItems, setInfoItems] = React.useState<MenuNode[]>([])
     const [categoryTree, setCategoryTree] = React.useState<TreeCategory[]>([])
     const [activeCategoryId, setActiveCategoryId] = React.useState<string | null>(null)
@@ -62,32 +71,14 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
             }
         }
 
-        const fetchInfoData = async (force = false) => {
-            if (infoLoadedRef.current && !force) {
-                setInfoLoading(false)
-                return
-            }
-            setInfoLoading(true)
-            try {
-                const menuRes = await fetch("/api/public/menus/location/HEADER_INFORMATION", { cache: "no-store" })
-                if (menuRes.ok) {
-                    const menuData = await menuRes.json()
-                    setInfoItems(menuData && menuData.items ? (menuData.items as MenuNode[]) : [])
-                } else {
-                    setInfoItems([])
-                }
-                infoLoadedRef.current = true
-            } catch (err) {
-                console.error("[SharedMegaPanel] Failed to fetch Information menu", err)
-                setInfoItems([])
-            } finally {
-                setInfoLoading(false)
-            }
-        }
-
         void fetchCategoryTree()
-        void fetchInfoData()
     }, [])
+
+    React.useEffect(() => {
+        setInfoItems(Array.isArray(initialInfoItems) ? initialInfoItems : [])
+        infoLoadedRef.current = true
+        setInfoLoading(false)
+    }, [initialInfoItems])
 
     React.useEffect(() => {
         if (categoryTree.length === 0) {
@@ -206,9 +197,7 @@ export function SharedMegaPanel({ activeTab, onMouseEnter, onMouseLeave, onLinkC
                     {infoLoading ? (
                         <div className="flex items-center justify-center h-40 text-slate-400 text-sm">Loading information...</div>
                     ) : infoItems.length === 0 ? (
-                        <div className="flex items-center justify-center h-40 text-slate-400 text-sm">
-                            Information Menu is empty. Configure it in Menus. (Location: INFORMATION)
-                        </div>
+                        <div className="flex items-center justify-center h-40 text-slate-400 text-sm">No information pages available.</div>
                     ) : (
                         <div className="grid grid-cols-3 gap-8">
                             {infoItems.map((col) => (

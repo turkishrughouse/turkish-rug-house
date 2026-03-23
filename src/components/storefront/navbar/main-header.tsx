@@ -25,6 +25,7 @@ export function MainHeader({
     initialSendPasswordSetupLink,
     initialMobileCategoriesMenu,
     initialMobilePagesMenu,
+    initialInformationMenu,
 }: {
     initialBrandPrimary: string
     initialBrandSecondary: string
@@ -33,6 +34,7 @@ export function MainHeader({
     initialSendPasswordSetupLink: boolean
     initialMobileCategoriesMenu: MobileMenuItem[]
     initialMobilePagesMenu: MobileMenuItem[]
+    initialInformationMenu: MobileMenuItem[]
 }) {
     const router = useRouter()
     const appleEnabled = process.env.NEXT_PUBLIC_ENABLE_APPLE_LOGIN === "true"
@@ -61,6 +63,8 @@ export function MainHeader({
     const [loginPassword, setLoginPassword] = useState("")
     const [loginLoading, setLoginLoading] = useState(false)
     const [sendPasswordSetupLink] = useState(initialSendPasswordSetupLink)
+    const [informationMenu] = useState<MobileMenuItem[]>(initialInformationMenu)
+    const [isCompact, setIsCompact] = useState(false)
     const cartPreviewTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     const refreshCart = () => {
@@ -137,6 +141,15 @@ export function MainHeader({
                 clearTimeout(cartPreviewTimeoutRef.current)
             }
         }
+    }, [])
+
+    useEffect(() => {
+        const onScroll = () => {
+            setIsCompact(window.scrollY > 80)
+        }
+        onScroll()
+        window.addEventListener("scroll", onScroll, { passive: true })
+        return () => window.removeEventListener("scroll", onScroll)
     }, [])
 
     const submitLogin = async (e: React.FormEvent) => {
@@ -282,7 +295,7 @@ export function MainHeader({
     }
 
     return (
-        <div className="bg-white border-b border-slate-100 shadow-sm relative z-40">
+        <div className={`bg-white border-b border-slate-100 shadow-sm relative z-40 transition-all duration-200 ${isCompact ? "shadow-[0_10px_28px_rgba(15,23,42,0.08)]" : ""}`}>
             <div className="container mx-auto px-3 sm:px-4 lg:px-6">
                 {maintenanceMode && (
                     <div className="pt-3">
@@ -292,8 +305,8 @@ export function MainHeader({
                     </div>
                 )}
 
-                <div className="md:hidden pb-3">
-                    <div className="flex h-16 items-center justify-between">
+                <div className={`md:hidden transition-all duration-200 ${isCompact ? "pb-2" : "pb-3"}`}>
+                    <div className={`flex items-center justify-between transition-all duration-200 ${isCompact ? "h-14" : "h-16"}`}>
                         <button
                             type="button"
                             onClick={() => setMobileMenuOpen(true)}
@@ -326,12 +339,12 @@ export function MainHeader({
                     </form>
                 </div>
 
-                <div className="hidden md:flex h-20 items-center justify-between">
+                <div className={`hidden md:flex items-center justify-between transition-all duration-200 ${isCompact ? "h-14" : "h-20"}`}>
                     <Link href="/" className="flex flex-col shrink-0 group">
-                        <span className="font-serif text-3xl font-bold text-slate-900 tracking-tight leading-none group-hover:text-teal-900 transition-colors">
+                        <span className={`font-serif font-bold text-slate-900 tracking-tight leading-none group-hover:text-teal-900 transition-colors ${isCompact ? "text-[1.65rem]" : "text-3xl"}`}>
                             {brandPrimary}
                         </span>
-                        <span className="font-serif text-3xl font-bold text-teal-700 tracking-tight leading-none -mt-1 group-hover:text-teal-800 transition-colors">
+                        <span className={`font-serif font-bold text-teal-700 tracking-tight leading-none -mt-1 group-hover:text-teal-800 transition-colors ${isCompact ? "text-[1.65rem]" : "text-3xl"}`}>
                             {brandSecondary}
                         </span>
                     </Link>
@@ -425,8 +438,8 @@ export function MainHeader({
                     </div>
                 </div>
 
-                <div className="hidden md:block">
-                    <DiscoveryCapsule />
+                <div className={`hidden md:block transition-all duration-200 ${isCompact ? "pb-2" : "pb-0"}`}>
+                    <DiscoveryCapsule compact={isCompact} infoItems={informationMenu} />
                 </div>
 
             </div>
