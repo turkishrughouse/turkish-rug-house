@@ -4,12 +4,15 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 
 import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
+import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
+import { buildProductImageAlt, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
 
 type RecentProduct = {
   id: string
   slug: string
   title: string
   image: string
+  images?: string
   price: number
 }
 
@@ -34,6 +37,7 @@ export function FooterRecentlyViewed() {
               slug: String(item.slug),
               title: String(item.title),
               image: String(item.image || "/placeholder.jpg"),
+              images: typeof item.images === "string" ? item.images : "",
               price: Number(item.price || 0),
             }))
         )
@@ -62,14 +66,40 @@ export function FooterRecentlyViewed() {
   return (
     <div className="mt-3 space-y-1.5 lg:ml-auto lg:max-w-[230px]">
       {recentlyViewed.map((item) => (
-        <Link key={item.id} href={`/product/${item.slug}`} className="flex items-center justify-start gap-2 rounded-md border border-slate-200 bg-white p-1.5 transition-colors hover:border-red-200 hover:bg-red-50/40">
-          <img src={item.image || "/placeholder.jpg"} alt={item.title} className="h-8 w-8 rounded object-cover border border-slate-200" />
-          <div className="min-w-0 text-left">
-            <p className="line-clamp-1 text-[11px] font-medium text-slate-800 hover:text-red-600">{item.title}</p>
-            <p className="text-[10px] text-emerald-700">{formatUsd(item.price)}</p>
-          </div>
-        </Link>
+        <FooterRecentlyViewedItem key={item.id} item={item} formatUsd={formatUsd} />
       ))}
     </div>
+  )
+}
+
+function FooterRecentlyViewedItem({
+  item,
+  formatUsd,
+}: {
+  item: RecentProduct
+  formatUsd: (value: number) => string
+}) {
+  const images = parseProductImageRecords(item.images || JSON.stringify([item.image]))
+  const thumbCandidates = getProductImageUrlCandidates(images[0], "thumb")
+  const largeCandidates = getProductImageUrlCandidates(images[0], "large")
+  const candidates = [...thumbCandidates, ...largeCandidates]
+  const alt = buildProductImageAlt({ title: item.title, fallbackAlt: images[0]?.alt })
+
+  return (
+    <Link href={`/product/${item.slug}`} className="flex items-center justify-start gap-2 rounded-md border border-slate-200 bg-white p-1.5 transition-colors hover:border-red-200 hover:bg-red-50/40">
+      <div className="relative h-8 w-8 overflow-hidden rounded border border-slate-200 bg-slate-100">
+        <StorefrontProductImage
+          candidates={candidates}
+          alt={alt}
+          fill
+          sizes="32px"
+          className="object-cover"
+        />
+      </div>
+      <div className="min-w-0 text-left">
+        <p className="line-clamp-1 text-[11px] font-medium text-slate-800 hover:text-red-600">{item.title}</p>
+        <p className="text-[10px] text-emerald-700">{formatUsd(item.price)}</p>
+      </div>
+    </Link>
   )
 }

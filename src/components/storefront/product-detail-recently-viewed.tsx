@@ -8,12 +8,14 @@ export function ProductDetailRecentlyViewed({
   title,
   price,
   image,
+  images,
 }: {
   productId: string
   slug: string
   title: string
   price: number
   image: string
+  images?: string | null
 }) {
   useEffect(() => {
     const storageKey = "rughouse_recently_viewed_products"
@@ -22,6 +24,7 @@ export function ProductDetailRecentlyViewed({
       slug,
       title,
       image,
+      images: typeof images === "string" ? images : "",
       price: Number(price || 0),
     }
     try {
@@ -34,7 +37,7 @@ export function ProductDetailRecentlyViewed({
     } catch {
       // Do not block product page on localStorage errors.
     }
-  }, [image, price, productId, slug, title])
+  }, [image, images, price, productId, slug, title])
 
   return null
 }

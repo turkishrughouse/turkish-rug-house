@@ -8,6 +8,7 @@ type RecentProduct = {
   slug: string
   title: string
   image: string
+  images?: string
   price: number
 }
 
@@ -31,6 +32,7 @@ export function RecentlyViewedSection() {
             slug: String(item.slug),
             title: String(item.title),
             image: String(item.image || "/placeholder.jpg"),
+            images: typeof item.images === "string" ? item.images : "",
             price: Number(item.price || 0),
           }))
         setProducts(normalized)
@@ -71,7 +73,7 @@ export function RecentlyViewedSection() {
               slug: product.slug,
               title: product.title,
               price: product.price,
-              images: JSON.stringify([product.image]),
+              images: product.images || JSON.stringify([product.image]),
             }}
           />
         ))}
