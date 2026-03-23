@@ -158,7 +158,6 @@ export function ProductDetailView({
             <div className="mt-7 border-y border-[#e6edf5]">
               <div className="grid grid-cols-2 md:flex md:items-center md:gap-8">
                 {[
-                  { icon: "🧿", label: "One Of a Kind" },
                   { icon: "🧶", label: "Handmade" },
                   { icon: "🌿", label: "Natural Fiber" },
                   { icon: "🚚", label: "Free Shipping" },
