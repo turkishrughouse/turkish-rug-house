@@ -80,6 +80,10 @@ export function extractPriceIntent(query: string) {
   }
 }
 
+function isPureNumericToken(term: string) {
+  return /^\d+(?:\.\d+)?$/.test(term)
+}
+
 export function buildListingPricePresets(maxPrice: number) {
   const cappedUpper = Math.max(3000, Math.ceil(maxPrice / 100) * 100)
   return [
@@ -95,7 +99,6 @@ export function buildProductSearchWhere(query: string): Prisma.ProductWhereInput
   if (!normalized) return undefined
 
   const slugLike = normalized.replace(/\s+/g, "-")
-  const priceIntent = extractPriceIntent(normalized)
   const terms = Array.from(
     new Set(
       normalized
@@ -104,8 +107,9 @@ export function buildProductSearchWhere(query: string): Prisma.ProductWhereInput
         .filter(Boolean),
     ),
   )
+  const textTerms = terms.filter((term) => !isPureNumericToken(term))
 
-  const clauses: Prisma.ProductWhereInput[] = terms.map((term) => ({
+  const clauses: Prisma.ProductWhereInput[] = textTerms.map((term) => ({
     OR: [
       { title: { contains: term } },
       { slug: { contains: term } },
@@ -115,11 +119,10 @@ export function buildProductSearchWhere(query: string): Prisma.ProductWhereInput
       { types: { some: { OR: [{ name: { contains: term } }, { slug: { contains: term } }] } } },
       { colors: { some: { OR: [{ name: { contains: normalizeListingColor(term) } }, { slug: { contains: normalizeListingColor(term) } }] } } },
       { sizes: { some: { OR: [{ name: { contains: term } }, { slug: { contains: normalizeListingSize(term) } }] } } },
-      ...(priceIntent && /^\d/.test(term) ? [{ price: { gte: priceIntent.min, lte: priceIntent.max } }] : []),
     ],
   }))
 
-  if (slugLike && slugLike !== normalized) {
+  if (slugLike && slugLike !== normalized && !isPureNumericToken(slugLike)) {
     clauses.push({
       OR: [
         { slug: { contains: slugLike } },
