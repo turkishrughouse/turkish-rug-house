@@ -219,6 +219,51 @@ async function getSiblingUploadAssets(url: string) {
   return assets
 }
 
+function parseVariantFileName(fileName: string) {
+  const match = fileName.match(/^(.*)-(thumb|large|master)(\.[^./]+)$/i)
+  if (!match) return null
+
+  return {
+    baseName: match[1] || fileName,
+    variant: match[2].toLowerCase(),
+    extension: match[3] || "",
+  }
+}
+
+function buildVariantFileName(baseName: string, variant: string, extension: string) {
+  return `${baseName}-${variant}${extension}`
+}
+
+async function resolveTargetSiblingFileNames(
+  siblings: Array<{ fileName: string }>,
+  targetDir: string
+) {
+  const parsed = siblings.map((sibling) => parseVariantFileName(sibling.fileName))
+  const parsedBaseName = parsed.find(Boolean)?.baseName || path.parse(siblings[0]?.fileName || "asset").name
+  const safeBaseName = sanitizeFolderPath(parsedBaseName).replace(/\//g, "-") || "asset"
+
+  for (let attempt = 0; attempt < 1000; attempt += 1) {
+    const candidateBaseName = attempt === 0 ? safeBaseName : `${safeBaseName}-${attempt + 1}`
+    const candidateNames = siblings.map((sibling, index) => {
+      const current = parsed[index]
+      if (!current) return sibling.fileName
+      return buildVariantFileName(candidateBaseName, current.variant, current.extension)
+    })
+
+    const collisions = await Promise.all(
+      candidateNames.map((candidateName) =>
+        stat(path.join(targetDir, candidateName)).then(() => true).catch(() => false)
+      )
+    )
+
+    if (!collisions.some(Boolean)) {
+      return candidateNames
+    }
+  }
+
+  throw new Error("Unable to resolve a unique target filename for product media normalization.")
+}
+
 async function pruneEmptyUploadFolders(folder: string) {
   const uploadRoot = path.join(process.cwd(), "public", "uploads")
   let current = sanitizeFolderPath(folder)
@@ -338,23 +383,18 @@ export async function moveManagedAssetGroupToFolder(url: string, targetFolder: s
 
   const storage = getStorageProvider()
   const masterSibling = siblings.find((sibling) => sibling.fileName.includes("-master.")) || siblings[0]
-  for (const sibling of siblings) {
-    const targetPath = path.join(targetDir, sibling.fileName)
-    const exists = await stat(targetPath).then(() => true).catch(() => false)
-    if (exists) {
-      return storage.getPublicUrl(`${safeTargetFolder}/${masterSibling.fileName}`)
-    }
-  }
+  const targetFileNames = await resolveTargetSiblingFileNames(siblings, targetDir)
 
   let nextPrimaryUrl = url
   await ensureMediaRegistryTable()
-  for (const sibling of siblings) {
-    const targetPath = path.join(targetDir, sibling.fileName)
+  for (const [index, sibling] of siblings.entries()) {
+    const targetFileName = targetFileNames[index] || sibling.fileName
+    const targetPath = path.join(targetDir, targetFileName)
     await rename(sibling.absolutePath, targetPath)
-    const nextUrl = storage.getPublicUrl(`${safeTargetFolder}/${sibling.fileName}`)
+    const nextUrl = storage.getPublicUrl(`${safeTargetFolder}/${targetFileName}`)
     await replaceMediaUrlReferences(sibling.url, nextUrl)
-    await prisma.$executeRaw`UPDATE "MediaAsset" SET "image_url" = ${nextUrl}, "object_key" = ${`${safeTargetFolder}/${sibling.fileName}`} WHERE "image_url" = ${sibling.url}`
-    if (sibling.fileName.endsWith("-master.webp")) {
+    await prisma.$executeRaw`UPDATE "MediaAsset" SET "image_url" = ${nextUrl}, "object_key" = ${`${safeTargetFolder}/${targetFileName}`} WHERE "image_url" = ${sibling.url}`
+    if (sibling === masterSibling || targetFileName.endsWith("-master.webp")) {
       nextPrimaryUrl = nextUrl
     }
   }
