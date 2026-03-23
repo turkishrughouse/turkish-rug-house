@@ -129,9 +129,6 @@ export function ProductDetailPurchase({
                 />
                 <button type="button" className="h-10 w-10 text-base text-slate-600 hover:bg-slate-50" onClick={() => setQty((prev) => Math.min(prev + 1, stockLimit))}>+</button>
               </div>
-              <div className="mt-2 text-xs font-medium text-slate-500">
-                Quantity - {safeQty} - SKU - {product.sku || "-"}
-              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -172,9 +169,6 @@ export function ProductDetailPurchase({
             <button type="button" className="h-10 rounded-md border border-emerald-700 bg-white px-4 text-sm font-semibold text-emerald-700 hover:bg-emerald-50" onClick={() => setAskQuestionOpen(true)}>
               Ask Question
             </button>
-          </div>
-          <div className="mt-2 text-xs font-medium text-slate-500">
-            Quantity - {safeQty} - SKU - {product.sku || "-"}
           </div>
         </div>
       </div>

@@ -102,6 +102,7 @@ export function ProductDetailView({
             />
 
             <ProductDetailInfoTabs
+              product={product}
               bottomDescriptionHtml={bottomDescriptionHtml}
               canExpandBottomDescription={canExpandBottomDescription}
               shippingText={shippingText}

@@ -638,6 +638,10 @@ export default function CheckoutPage() {
 
                   <div>
                     <h3 className="text-2xl font-semibold leading-none text-slate-900">New Customer</h3>
+                    <div className="mt-5 rounded-2xl border border-[#dce3ed] bg-white px-5 py-4 text-sm leading-6 text-slate-600">
+                      <p className="font-medium text-slate-900">Checkout as guest or create an account.</p>
+                      <p className="mt-1">An account is optional. Guest checkout is available and lets you complete your order without creating a password.</p>
+                    </div>
                     <div className="mt-10 space-y-3 text-lg text-slate-700">
                       <label className="flex items-center gap-3">
                         <input
@@ -656,11 +660,13 @@ export default function CheckoutPage() {
                           checked={checkoutOption === "guest"}
                           onChange={() => setCheckoutOption("guest")}
                         />
-                        Guest Checkout
+                        Checkout as Guest
                       </label>
                     </div>
                     <p className="mt-6 text-base leading-relaxed text-slate-600">
-                      By creating an account you will be able to shop faster, be up to date on an order’s status, and keep track of the orders you have previously made.
+                      {checkoutOption === "register"
+                        ? "Create an account to save your details, track orders, and check out faster next time."
+                        : "Guest checkout keeps things simple. You can place your order now and create an account later if you wish."}
                     </p>
                     <div
                       className={`grid transition-all duration-200 ease-out ${
@@ -737,7 +743,7 @@ export default function CheckoutPage() {
                       disabled={authLoading}
                       className="mt-10 inline-flex h-12 w-full items-center justify-center rounded-full bg-teal-700 text-base font-semibold text-white hover:bg-teal-800 disabled:opacity-60"
                     >
-                      {checkoutOption === "register" ? (authLoading ? "Please wait..." : "Create Account & Continue") : "Continue"}
+                      {checkoutOption === "register" ? (authLoading ? "Please wait..." : "Create Account & Continue") : "Continue as Guest"}
                     </button>
                   </div>
                 </div>
@@ -752,6 +758,10 @@ export default function CheckoutPage() {
             </button>
             {openStep === 2 ? (
               <div className="pb-8">
+                <div className="mb-6 rounded-2xl border border-[#dce3ed] bg-white px-5 py-4">
+                  <p className="text-sm font-medium text-slate-900">Billing details</p>
+                  <p className="mt-1 text-sm text-slate-600">Required fields are marked with an asterisk. We only ask for the information needed to ship and support your order.</p>
+                </div>
                 <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
                   <div>
                     <h3 className="text-2xl font-semibold leading-none text-slate-900">Your Personal Details</h3>
@@ -942,7 +952,10 @@ export default function CheckoutPage() {
             </button>
             {openStep === 4 ? (
               <div className="pb-8">
-                <p className="text-base text-slate-600">Please select the preferred shipping method to use on this order.</p>
+                <div className="rounded-2xl border border-[#dce3ed] bg-white px-5 py-4">
+                  <p className="text-base text-slate-600">Please select the preferred shipping method to use on this order.</p>
+                  <p className="mt-2 text-sm text-slate-600">Most orders ship in 1 to 3 business days and typically arrive worldwide within 5 to 7 days.</p>
+                </div>
                 <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
                   {shippingOptions.map((option) => (
                     <button
@@ -1096,11 +1109,11 @@ export default function CheckoutPage() {
                     <div className="p-3 text-right">{formatUsd(shippingCost)}</div>
                   </div>
                   <div className="grid grid-cols-[4.1fr_0.9fr] border-t border-slate-300 text-[15px]">
-                    <div className="border-r border-slate-300 p-3 text-right font-semibold text-slate-700">Eco Tax (-2.00):</div>
-                    <div className="p-3 text-right">{formatUsd(ecoTaxAmount)}</div>
+                    <div className="border-r border-slate-300 p-3 text-right font-semibold text-slate-700">Eco Tax:</div>
+                    <div className="p-3 text-right">{ecoTaxAmount > 0 ? formatUsd(ecoTaxAmount) : formatUsd(0)}</div>
                   </div>
                   <div className="grid grid-cols-[4.1fr_0.9fr] border-t border-slate-300 text-[15px]">
-                    <div className="border-r border-slate-300 p-3 text-right font-semibold text-slate-700">VAT (20%):</div>
+                    <div className="border-r border-slate-300 p-3 text-right font-semibold text-slate-700">{settings.enableTaxes ? "Tax:" : "Tax:"}</div>
                     <div className="p-3 text-right">{formatUsd(vatAmount)}</div>
                   </div>
                   <div className="grid grid-cols-[4.1fr_0.9fr] border-t border-slate-300 text-[18px] font-semibold">
@@ -1108,6 +1121,18 @@ export default function CheckoutPage() {
                     <div className="p-3 text-right">{formatUsd(total)}</div>
                   </div>
                   </div>
+                  </div>
+                </div>
+                <div className="mt-5 rounded-2xl border border-[#dce3ed] bg-white px-5 py-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Secure checkout</p>
+                      <p className="mt-1 text-sm text-slate-600">Your payment is processed on a secure payment page. We do not store card details.</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Delivery and support</p>
+                      <p className="mt-1 text-sm text-slate-600">Free worldwide shipping and easy returns. Need help before ordering? Our team is here to assist.</p>
+                    </div>
                   </div>
                 </div>
                 <button
@@ -1118,6 +1143,7 @@ export default function CheckoutPage() {
                 >
                   {loading ? "Please wait..." : "Confirm Order"}
                 </button>
+                <p className="mt-3 text-center text-sm text-slate-600">By confirming, you will continue to our secure payment partner to complete your order.</p>
               </div>
             ) : null}
           </div>
