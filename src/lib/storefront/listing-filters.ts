@@ -98,7 +98,6 @@ export function buildProductSearchWhere(query: string): Prisma.ProductWhereInput
   const normalized = normalizeListingText(query)
   if (!normalized) return undefined
 
-  const slugLike = normalized.replace(/\s+/g, "-")
   const terms = Array.from(
     new Set(
       normalized
@@ -108,6 +107,7 @@ export function buildProductSearchWhere(query: string): Prisma.ProductWhereInput
     ),
   )
   const textTerms = terms.filter((term) => !isPureNumericToken(term))
+  const slugLike = textTerms.join("-")
 
   const clauses: Prisma.ProductWhereInput[] = textTerms.map((term) => ({
     OR: [
@@ -122,7 +122,7 @@ export function buildProductSearchWhere(query: string): Prisma.ProductWhereInput
     ],
   }))
 
-  if (slugLike && slugLike !== normalized && !isPureNumericToken(slugLike)) {
+  if (slugLike && slugLike !== textTerms.join(" ")) {
     clauses.push({
       OR: [
         { slug: { contains: slugLike } },
