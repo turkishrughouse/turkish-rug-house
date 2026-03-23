@@ -20,7 +20,8 @@ import {
     Star,
 } from "lucide-react"
 import { toast } from "sonner"
-import { parseProductImages } from "@/lib/product-images"
+import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
+import { buildProductImageAlt, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
 import {
     bulkDeleteProductsPermanently,
     bulkDeleteProducts,
@@ -85,6 +86,38 @@ interface ProductListProps {
 
 type BulkAction = "" | "publish" | "draft" | "delete" | "restore" | "delete_permanently"
 type ColumnKey = "image" | "sku" | "status" | "stock" | "price" | "featured" | "actions"
+
+function AdminProductThumbnail({
+    title,
+    images,
+}: {
+    title: string
+    images: string
+}) {
+    const records = parseProductImageRecords(images)
+    const thumbCandidates = getProductImageUrlCandidates(records[0], "thumb")
+    const largeCandidates = getProductImageUrlCandidates(records[0], "large")
+    const candidates = [...thumbCandidates, ...largeCandidates]
+    const alt = buildProductImageAlt({ title, fallbackAlt: records[0]?.alt })
+
+    return (
+        <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-sm border border-[#dcdcde] bg-[#f6f7f7]">
+            {candidates.length > 0 ? (
+                <StorefrontProductImage
+                    candidates={candidates}
+                    alt={alt}
+                    fill
+                    sizes="48px"
+                    className="object-cover object-center"
+                />
+            ) : (
+                <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-500">
+                    IMG
+                </div>
+            )}
+        </div>
+    )
+}
 
 export function ProductList({
     lang = "en",
@@ -663,8 +696,6 @@ export function ProductList({
                             </TableRow>
                         ) : (
                             initialProducts.map((product) => {
-                                const mainImage = parseProductImages(product.images)[0] || null
-
                                 return (
                                     <TableRow key={product.id} className="group transition-colors hover:bg-slate-50/80">
                                         <TableCell>
@@ -675,15 +706,7 @@ export function ProductList({
                                         </TableCell>
                                         {visibleColumns.image ? (
                                             <TableCell>
-                                                <div className="h-12 w-12 overflow-hidden rounded-sm border border-[#dcdcde] bg-[#f6f7f7]">
-                                                    {mainImage ? (
-                                                        <img src={mainImage} alt={product.title} className="h-full w-full object-cover" />
-                                                    ) : (
-                                                        <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-500">
-                                                            IMG
-                                                        </div>
-                                                    )}
-                                                </div>
+                                                <AdminProductThumbnail title={product.title} images={product.images} />
                                             </TableCell>
                                         ) : null}
                                         <TableCell>
