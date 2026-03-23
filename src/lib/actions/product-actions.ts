@@ -188,6 +188,25 @@ type ProductSearchCandidate = {
     sizes: Array<{ name: string; slug: string }>
 }
 
+function scorePriceProximity(price: number, intent: ReturnType<typeof extractPriceIntent>) {
+    if (!intent) return 0
+
+    const distance = Math.abs(price - intent.center)
+    const strongRange = Math.max(intent.center * 0.35, 250)
+    const broadRange = Math.max(intent.center * 0.75, 600)
+
+    if (distance === 0) return 520
+    if (distance <= strongRange) {
+        const ratio = 1 - distance / strongRange
+        return 320 + Math.round(ratio * 180)
+    }
+    if (distance <= broadRange) {
+        const ratio = 1 - (distance - strongRange) / Math.max(broadRange - strongRange, 1)
+        return 80 + Math.round(ratio * 180)
+    }
+    return 0
+}
+
 function scoreProductSearchCandidate(product: ProductSearchCandidate, query: string) {
     const normalizedQuery = normalizeSearchText(query)
     if (!normalizedQuery) {
@@ -233,9 +252,7 @@ function scoreProductSearchCandidate(product: ProductSearchCandidate, query: str
     }
 
     const priceIntent = extractPriceIntent(normalizedQuery)
-    if (priceIntent && price >= priceIntent.min && price <= priceIntent.max) {
-        score += 260
-    }
+    score += scorePriceProximity(price, priceIntent)
 
     const tokens = extractSearchTokens(normalizedQuery)
     let matchedTokens = 0
@@ -258,7 +275,7 @@ function scoreProductSearchCandidate(product: ProductSearchCandidate, query: str
         } else if (colorValues.some((value) => value.includes(normalizeListingColor(token)))) {
             score += 70
             tokenMatched = true
-        } else if (priceIntent && /^\d/.test(token) && price >= priceIntent.min && price <= priceIntent.max) {
+        } else if (priceIntent && /^\d/.test(token) && scorePriceProximity(price, priceIntent) > 0) {
             score += 75
             tokenMatched = true
         } else if (

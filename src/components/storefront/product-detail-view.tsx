@@ -46,6 +46,7 @@ export function ProductDetailView({
   const stockLimit = Math.max(0, product.stockCount)
   const isMarkedOutOfStock = product.isStock === false && stockLimit > 0
   const isSold = stockLimit <= 0
+  const showUrgency = stockLimit === 1 && !isSold
   const discountActive = product.compareAtPrice && product.compareAtPrice > product.price
   const discountPercent = discountActive
     ? Math.round((((product.compareAtPrice as number) - product.price) / (product.compareAtPrice as number)) * 100)
@@ -115,6 +116,12 @@ export function ProductDetailView({
               </div>
             ) : null}
 
+            {showUrgency ? (
+              <div className="mt-5 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-medium text-amber-800">
+                Only one available
+              </div>
+            ) : null}
+
             <div className="mt-7 border-y border-[#e6edf5]">
               <div className="grid grid-cols-2 md:flex md:items-center md:gap-8">
                 {[
@@ -132,6 +139,46 @@ export function ProductDetailView({
             </div>
 
             <ProductDetailPurchase product={product} image={heroImage} />
+
+            <div className="mt-6 rounded-2xl border border-[#e6edf5] bg-[#fcfdfd] p-5">
+              <ul className="space-y-2 text-sm text-slate-700">
+                {[
+                  "Handmade & one-of-a-kind",
+                  "Sourced from Anatolia",
+                  "Free worldwide shipping",
+                  "14-day returns",
+                ].map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-700" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="mt-4 border-t border-[#e6edf5] pt-4 text-sm text-slate-700">
+                <p className="font-medium text-slate-900">Delivery</p>
+                <p className="mt-1">Ships in 1–3 business days</p>
+                <p>Estimated delivery: 5–7 days worldwide</p>
+              </div>
+
+              <div className="mt-4 border-t border-[#e6edf5] pt-4">
+                <p className="text-sm font-medium text-slate-900">Trusted by collectors worldwide</p>
+              </div>
+
+              <div className="mt-4 border-t border-[#e6edf5] pt-4">
+                <h2 className="text-sm font-semibold text-slate-900">Is this rug right for you?</h2>
+                <ul className="mt-2 space-y-2 text-sm text-slate-700">
+                  <li className="flex items-start gap-2">
+                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                    <span>Ideal for living rooms, bedrooms, and statement spaces</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                    <span>Best for those who value craftsmanship over mass production</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
 
             <div className="mt-8 border-t border-[#e6edf5] pt-5 text-sm text-slate-700">
               <span className="font-semibold text-slate-900">Category:</span>{" "}

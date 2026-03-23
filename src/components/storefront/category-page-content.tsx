@@ -600,6 +600,12 @@ export async function renderCategoryPage({
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           <aside className="lg:col-span-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filters</h2>
+                <Link href={categoryPath} className="text-sm font-medium text-slate-600 underline hover:text-slate-900">
+                  Clear all filters
+                </Link>
+              </div>
               <div>
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Color</h3>
                 <div className="mt-4 space-y-1.5">
