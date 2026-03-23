@@ -9,6 +9,7 @@ import { getSiteSettings } from "@/lib/site-settings"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { formatCurrency } from "@/lib/storefront/currency"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
+import { buildListingPricePresets, buildProductSearchWhere, getMultiParam, getSingleParam, resolveSelectedSizeSlugs } from "@/lib/storefront/listing-filters"
 
 type ShopPageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
@@ -24,18 +25,6 @@ function getMaterialDelegate() {
   }).material
 }
 
-function getParam(params: { [key: string]: string | string[] | undefined }, key: string) {
-  const value = params[key]
-  if (!value) return []
-  return Array.isArray(value) ? value : [value]
-}
-
-function getSingle(params: { [key: string]: string | string[] | undefined }, key: string) {
-  const value = params[key]
-  if (!value) return ""
-  return Array.isArray(value) ? value[0] || "" : value
-}
-
 export default async function ShopPage({ searchParams }: ShopPageProps) {
   const currencySnapshot = await getStorefrontCurrencySnapshot()
   const currencySettings = {
@@ -44,57 +33,96 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
     locale: currencySnapshot.locale,
   }
   const resolved = await searchParams
-  const query = getSingle(resolved, "q")
-  const sortInput = getSingle(resolved, "sort")
+  const query = getSingleParam(resolved, "q")
+  const sortInput = getSingleParam(resolved, "sort")
   const sort: "latest" | "oldest" | "price-asc" | "price-desc" =
     sortInput === "oldest" || sortInput === "price-asc" || sortInput === "price-desc" ? sortInput : "latest"
-  const showInput = Number(getSingle(resolved, "show") || 24)
+  const showInput = Number(getSingleParam(resolved, "show") || 24)
   const showValue = [8, 16, 24, 36].includes(showInput) ? showInput : 24
   const inStockOnly = resolved["inStock"] === "true"
-  const selectedColors = getParam(resolved, "color")
-  const selectedMaterials = getParam(resolved, "material")
-  const priceMin = Number(getSingle(resolved, "priceMin") || 0)
-  const priceMaxRaw = Number(getSingle(resolved, "priceMax") || 0)
+  const selectedColors = getMultiParam(resolved, "color")
+  const selectedMaterials = getMultiParam(resolved, "material")
+  const selectedCategories = getMultiParam(resolved, "category")
+  const selectedStyles = getMultiParam(resolved, "style")
+  const priceMin = Number(getSingleParam(resolved, "priceMin") || 0)
+  const priceMaxRaw = Number(getSingleParam(resolved, "priceMax") || 0)
   const hasPriceFilter = Number.isFinite(priceMin) && Number.isFinite(priceMaxRaw) && priceMaxRaw > 0
 
+  const materialDelegate = getMaterialDelegate()
+  const [options, siteSettings] = await Promise.all([
+    getProductOptions(),
+    getSiteSettings(),
+  ])
+  const selectedSizes = resolveSelectedSizeSlugs(getMultiParam(resolved, "size"), options.sizes)
+  const selectedCategoryIds = options.categories.filter((category) => selectedCategories.includes(category.slug)).map((category) => category.id)
+
   const filters = {
-    types: getParam(resolved, "type"),
-    styles: getParam(resolved, "style"),
+    types: getMultiParam(resolved, "type"),
+    styles: selectedStyles,
     colors: selectedColors,
-    sizes: getParam(resolved, "size"),
-    ages: getParam(resolved, "age"),
-    materials: getParam(resolved, "material"),
+    sizes: selectedSizes,
+    ages: getMultiParam(resolved, "age"),
+    materials: selectedMaterials,
+    categoryIds: selectedCategoryIds.length > 0 ? selectedCategoryIds : undefined,
     inStock: inStockOnly,
     priceMin: hasPriceFilter ? priceMin : undefined,
     priceMax: hasPriceFilter ? priceMaxRaw : undefined,
   }
 
-  const materialDelegate = getMaterialDelegate()
-  const [{ products }, options, siteSettings, colorCounters, materialCounters] = await Promise.all([
+  const facetBaseWhere = {
+    isPublished: true,
+    AND: buildProductSearchWhere(query),
+    categories: selectedCategoryIds.length > 0 ? { some: { id: { in: selectedCategoryIds } } } : undefined,
+    types: filters.types.length ? { some: { slug: { in: filters.types } } } : undefined,
+    styles: filters.styles.length ? { some: { slug: { in: filters.styles } } } : undefined,
+    colors: filters.colors.length ? { some: { slug: { in: filters.colors } } } : undefined,
+    sizes: filters.sizes.length ? { some: { slug: { in: filters.sizes } } } : undefined,
+    ages: filters.ages.length ? { some: { slug: { in: filters.ages } } } : undefined,
+    materials: filters.materials.length ? { some: { slug: { in: filters.materials } } } : undefined,
+    isStock: inStockOnly ? true : undefined,
+    price: hasPriceFilter ? { gte: priceMin, lte: priceMaxRaw } : undefined,
+  } as const
+
+  const [{ products }, colorCounters, styleCounters, sizeCounters, categoryCounters, materialCounters] = await Promise.all([
     getProducts(1, showValue, query, "published", sort, undefined, filters),
-    getProductOptions(),
-    getSiteSettings(),
     prisma.color.findMany({
       select: {
         id: true,
         slug: true,
+        name: true,
         _count: {
           select: {
             products: {
               where: {
-                isPublished: true,
-                OR: query ? [{ title: { contains: query } }, { slug: { contains: query } }] : undefined,
-                types: filters.types.length ? { some: { slug: { in: filters.types } } } : undefined,
-                styles: filters.styles.length ? { some: { slug: { in: filters.styles } } } : undefined,
-                sizes: filters.sizes.length ? { some: { slug: { in: filters.sizes } } } : undefined,
-                ages: filters.ages.length ? { some: { slug: { in: filters.ages } } } : undefined,
-                materials: filters.materials.length ? { some: { slug: { in: filters.materials } } } : undefined,
-                isStock: inStockOnly ? true : undefined,
-                price: hasPriceFilter ? { gte: priceMin, lte: priceMaxRaw } : undefined,
+                ...facetBaseWhere,
               },
             },
           },
         },
+      },
+    }),
+    prisma.style.findMany({
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        _count: { select: { products: { where: facetBaseWhere } } },
+      },
+    }),
+    prisma.size.findMany({
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        _count: { select: { products: { where: facetBaseWhere } } },
+      },
+    }),
+    prisma.category.findMany({
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        _count: { select: { products: { where: facetBaseWhere } } },
       },
     }),
     materialDelegate?.findMany
@@ -107,15 +135,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
               select: {
                 products: {
                   where: {
-                    isPublished: true,
-                    OR: query ? [{ title: { contains: query } }, { slug: { contains: query } }] : undefined,
-                    types: filters.types.length ? { some: { slug: { in: filters.types } } } : undefined,
-                    styles: filters.styles.length ? { some: { slug: { in: filters.styles } } } : undefined,
-                    colors: filters.colors.length ? { some: { slug: { in: filters.colors } } } : undefined,
-                    sizes: filters.sizes.length ? { some: { slug: { in: filters.sizes } } } : undefined,
-                    ages: filters.ages.length ? { some: { slug: { in: filters.ages } } } : undefined,
-                    isStock: inStockOnly ? true : undefined,
-                    price: hasPriceFilter ? { gte: priceMin, lte: priceMaxRaw } : undefined,
+                    ...facetBaseWhere,
                   },
                 },
               },
@@ -145,15 +165,13 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
   const heroCategories = Array.from(categoryMap.values()).slice(0, 6)
 
   const colorCountMap = new Map(colorCounters.map((entry) => [entry.slug, entry._count.products]))
+  const styleCountMap = new Map(styleCounters.map((entry) => [entry.slug, entry._count.products]))
+  const sizeCountMap = new Map(sizeCounters.map((entry) => [entry.slug, entry._count.products]))
+  const categoryCountMap = new Map(categoryCounters.map((entry) => [entry.slug, entry._count.products]))
   const materialCountMap = new Map(materialCounters.map((entry) => [entry.slug, entry._count.products]))
 
   const maxShopPrice = visibleProducts.reduce((max, product) => Math.max(max, Number(product.price || 0)), 0)
-  const pricePresets = [
-    { min: 0, max: 500, label: "$0 - $500" },
-    { min: 500, max: 1000, label: "$500 - $1000" },
-    { min: 1000, max: 2500, label: "$1000 - $2500" },
-    { min: 2500, max: Math.max(3000, Math.ceil(maxShopPrice / 100) * 100), label: `$2500 - $${Math.max(3000, Math.ceil(maxShopPrice / 100) * 100)}` },
-  ]
+  const pricePresets = buildListingPricePresets(maxShopPrice)
 
   const activePriceLabel = hasPriceFilter ? `$${priceMin} - $${priceMaxRaw}` : "Any"
   const sidebarProducts = visibleProducts.slice(0, 5)
@@ -171,6 +189,62 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
     const q = params.toString()
     return q ? `?${q}` : ""
   }
+
+  const activeFilterChips = [
+    ...selectedCategories.map((slug) => ({
+      key: `category-${slug}`,
+      label: `Category: ${options.categories.find((item) => item.slug === slug)?.title || slug}`,
+      href: `/shop${buildQuery((p) => {
+        const next = p.getAll("category").filter((item) => item !== slug)
+        p.delete("category")
+        next.forEach((item) => p.append("category", item))
+      })}`,
+    })),
+    ...selectedStyles.map((slug) => ({
+      key: `style-${slug}`,
+      label: `Style: ${options.styles.find((item) => item.slug === slug)?.name || slug}`,
+      href: `/shop${buildQuery((p) => {
+        const next = p.getAll("style").filter((item) => item !== slug)
+        p.delete("style")
+        next.forEach((item) => p.append("style", item))
+      })}`,
+    })),
+    ...selectedColors.map((slug) => ({
+      key: `color-${slug}`,
+      label: `Color: ${options.colors.find((item) => item.slug === slug)?.name || slug}`,
+      href: `/shop${buildQuery((p) => {
+        const next = p.getAll("color").filter((item) => item !== slug)
+        p.delete("color")
+        next.forEach((item) => p.append("color", item))
+      })}`,
+    })),
+    ...selectedSizes.map((slug) => ({
+      key: `size-${slug}`,
+      label: `Size: ${options.sizes.find((item) => item.slug === slug)?.name || slug}`,
+      href: `/shop${buildQuery((p) => {
+        const next = p.getAll("size").filter((item) => item !== slug)
+        p.delete("size")
+        next.forEach((item) => p.append("size", item))
+      })}`,
+    })),
+    ...(hasPriceFilter
+      ? [{
+          key: "price",
+          label: `Price: ${activePriceLabel}`,
+          href: `/shop${buildQuery((p) => {
+            p.delete("priceMin")
+            p.delete("priceMax")
+          })}`,
+        }]
+      : []),
+    ...(inStockOnly
+      ? [{
+          key: "stock",
+          label: "In stock only",
+          href: `/shop${buildQuery((p) => p.delete("inStock"))}`,
+        }]
+      : []),
+  ]
 
   return (
     <div className="min-h-screen bg-white">
@@ -263,9 +337,93 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
               </div>
 
               <div className="border-t border-slate-200 pt-5">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Category</h3>
+                <div className="mt-4 space-y-1.5">
+                  {options.categories.filter((category) => (categoryCountMap.get(category.slug) || 0) > 0).map((category) => {
+                    const active = selectedCategories.includes(category.slug)
+                    const count = categoryCountMap.get(category.slug) || 0
+                    return (
+                      <Link
+                        key={category.id}
+                        href={`/shop${buildQuery((p) => {
+                          const existing = p.getAll("category")
+                          p.delete("category")
+                          if (existing.includes(category.slug)) existing.filter((item) => item !== category.slug).forEach((item) => p.append("category", item))
+                          else {
+                            existing.forEach((item) => p.append("category", item))
+                            p.append("category", category.slug)
+                          }
+                        })}`}
+                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
+                      >
+                        <span>{category.title}</span>
+                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="border-t border-slate-200 pt-5">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Style</h3>
+                <div className="mt-4 space-y-1.5">
+                  {options.styles.filter((style) => (styleCountMap.get(style.slug) || 0) > 0).map((style) => {
+                    const active = selectedStyles.includes(style.slug)
+                    const count = styleCountMap.get(style.slug) || 0
+                    return (
+                      <Link
+                        key={style.id}
+                        href={`/shop${buildQuery((p) => {
+                          const existing = p.getAll("style")
+                          p.delete("style")
+                          if (existing.includes(style.slug)) existing.filter((item) => item !== style.slug).forEach((item) => p.append("style", item))
+                          else {
+                            existing.forEach((item) => p.append("style", item))
+                            p.append("style", style.slug)
+                          }
+                        })}`}
+                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
+                      >
+                        <span>{style.name}</span>
+                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="border-t border-slate-200 pt-5">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Size</h3>
+                <div className="mt-4 space-y-1.5">
+                  {options.sizes.filter((size) => (sizeCountMap.get(size.slug) || 0) > 0).map((size) => {
+                    const active = selectedSizes.includes(size.slug)
+                    const count = sizeCountMap.get(size.slug) || 0
+                    return (
+                      <Link
+                        key={size.id}
+                        href={`/shop${buildQuery((p) => {
+                          const existing = p.getAll("size")
+                          p.delete("size")
+                          if (existing.includes(size.slug)) existing.filter((item) => item !== size.slug).forEach((item) => p.append("size", item))
+                          else {
+                            existing.forEach((item) => p.append("size", item))
+                            p.append("size", size.slug)
+                          }
+                        })}`}
+                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
+                      >
+                        <span>{size.name}</span>
+                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="border-t border-slate-200 pt-5">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Color</h3>
                 <div className="mt-4 space-y-1.5">
-                  {options.colors.map((color) => {
+                  {options.colors.filter((color) => (colorCountMap.get(color.slug) || 0) > 0).map((color) => {
                     const active = selectedColors.includes(color.slug)
                     const count = colorCountMap.get(color.slug) || 0
                     return (
@@ -376,6 +534,27 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
           </aside>
 
           <section className="lg:col-span-9">
+            {activeFilterChips.length > 0 ? (
+              <div className="mb-5 rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-slate-900">Active filters</span>
+                    {activeFilterChips.map((chip) => (
+                      <Link key={chip.key} href={chip.href} className="inline-flex items-center rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-medium text-teal-800 hover:bg-teal-100">
+                        {chip.label}
+                      </Link>
+                    ))}
+                  </div>
+                  <Link href="/shop" className="inline-flex items-center justify-center rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                    Clear all filters
+                  </Link>
+                </div>
+              </div>
+            ) : null}
+            <div className="mb-5 flex items-center justify-between">
+              <p className="text-sm text-slate-600">{visibleProducts.length} products found</p>
+              <Link href="/shop" className="text-sm text-slate-600 underline hover:text-slate-900">Clear all filters</Link>
+            </div>
             {visibleProducts.length === 0 ? (
               <div className="rounded-lg border border-slate-200 bg-white p-10 text-center">
                 <p className="text-slate-600">No products found for this filter.</p>

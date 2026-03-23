@@ -7,6 +7,7 @@ import { getProducts, getProductOptions } from "@/lib/actions/product-actions"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { formatCurrency } from "@/lib/storefront/currency"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
+import { buildListingPricePresets, buildProductSearchWhere, getMultiParam, getSingleParam, resolveSelectedSizeSlugs } from "@/lib/storefront/listing-filters"
 import { CategoryHoverProductCardServer } from "@/components/storefront/category-hover-product-card-server"
 import { fetchCategoryPathRows, getCategoryPathById, resolveCategoryByPath } from "@/lib/category-paths"
 
@@ -127,44 +128,41 @@ export async function renderCategoryPage({
   const categoryPath = resolved.path
   const categoryId = resolved.category.id
 
-  const getParam = (key: string) => {
-    const val = searchParams[key]
-    if (!val) return []
-    return Array.isArray(val) ? val : [val]
-  }
-
-  const getSingle = (key: string) => {
-    const val = searchParams[key]
-    if (!val) return ""
-    return Array.isArray(val) ? (val[0] ?? "") : val
-  }
-
-  const selectedColors = getParam("color")
-  const selectedStyles = getParam("style")
-  const selectedSizes = getParam("size")
-  const selectedAges = getParam("age")
-  const selectedMaterials = getParam("material")
-  const query = getSingle("q")
-  const viewInput = getSingle("view")
+  const selectedColors = getMultiParam(searchParams, "color")
+  const selectedStyles = getMultiParam(searchParams, "style")
+  const selectedAges = getMultiParam(searchParams, "age")
+  const selectedMaterials = getMultiParam(searchParams, "material")
+  const query = getSingleParam(searchParams, "q")
+  const viewInput = getSingleParam(searchParams, "view")
   const viewMode: "2" | "3" | "4" | "list" = viewInput === "2" || viewInput === "3" || viewInput === "4" || viewInput === "list" ? viewInput : "3"
-  const sortInput = getSingle("sort")
+  const sortInput = getSingleParam(searchParams, "sort")
   const sortValue: "latest" | "oldest" | "price-asc" | "price-desc" =
     sortInput === "oldest" || sortInput === "price-asc" || sortInput === "price-desc" ? sortInput : "latest"
-  const showInput = Number(getSingle("show") || 16)
+  const showInput = Number(getSingleParam(searchParams, "show") || 16)
   const showValue = [8, 16, 32, 36].includes(showInput) ? showInput : 16
   const inStockOnly = searchParams["inStock"] === "true"
   const topRatedOnly = searchParams["topRated"] === "true"
-  const priceMin = Number(getSingle("priceMin") || 0)
-  const priceMaxRaw = Number(getSingle("priceMax") || 0)
+  const priceMin = Number(getSingleParam(searchParams, "priceMin") || 0)
+  const priceMaxRaw = Number(getSingleParam(searchParams, "priceMax") || 0)
   const hasPriceFilter = Number.isFinite(priceMin) && Number.isFinite(priceMaxRaw) && priceMaxRaw > 0
 
-  const baseFilters = {
-    types: getParam("type"),
-    styles: getParam("style"),
+  const baseFilters: {
+    types: string[]
+    styles: string[]
+    colors: string[]
+    sizes: string[]
+    ages: string[]
+    materials: string[]
+    inStock: boolean
+    priceMin: number | undefined
+    priceMax: number | undefined
+  } = {
+    types: getMultiParam(searchParams, "type"),
+    styles: selectedStyles,
     colors: selectedColors,
-    sizes: getParam("size"),
-    ages: getParam("age"),
-    materials: getParam("material"),
+    sizes: [],
+    ages: selectedAges,
+    materials: selectedMaterials,
     inStock: inStockOnly,
     priceMin: hasPriceFilter ? priceMin : undefined,
     priceMax: hasPriceFilter ? priceMaxRaw : undefined,
@@ -207,6 +205,9 @@ export async function renderCategoryPage({
   ])
 
   if (!category) notFound()
+
+  const selectedSizes = resolveSelectedSizeSlugs(getMultiParam(searchParams, "size"), options.sizes)
+  baseFilters.sizes = selectedSizes
 
   const childMap = new Map<string, string[]>()
   const rowById = new Map(rows.map((row) => [row.id, row]))
@@ -305,7 +306,7 @@ export async function renderCategoryPage({
   const colorCountWhere = {
     isPublished: true,
     categories: { some: { id: { in: categoryScopeIds } } },
-    OR: query ? [{ title: { contains: query } }, { slug: { contains: query } }] : undefined,
+    AND: buildProductSearchWhere(query),
     types: baseFilters.types.length ? { some: { slug: { in: baseFilters.types } } } : undefined,
     styles: baseFilters.styles.length ? { some: { slug: { in: baseFilters.styles } } } : undefined,
     sizes: baseFilters.sizes.length ? { some: { slug: { in: baseFilters.sizes } } } : undefined,
@@ -333,7 +334,7 @@ export async function renderCategoryPage({
   const buildFacetWhere = (facet: "styles" | "sizes" | "ages" | "colors" | "materials") => ({
     isPublished: true,
     categories: { some: { id: { in: categoryScopeIds } } },
-    OR: query ? [{ title: { contains: query } }, { slug: { contains: query } }] : undefined,
+    AND: buildProductSearchWhere(query),
     types: baseFilters.types.length ? { some: { slug: { in: baseFilters.types } } } : undefined,
     styles: facet === "styles" || baseFilters.styles.length === 0 ? undefined : { some: { slug: { in: baseFilters.styles } } },
     sizes: facet === "sizes" || baseFilters.sizes.length === 0 ? undefined : { some: { slug: { in: baseFilters.sizes } } },
@@ -453,12 +454,7 @@ export async function renderCategoryPage({
   }
 
   const activePriceLabel = hasPriceFilter ? `$${priceMin} - $${priceMaxRaw}` : "Any"
-  const pricePresets = [
-    { min: 0, max: 500, label: "$0 - $500" },
-    { min: 500, max: 1000, label: "$500 - $1000" },
-    { min: 1000, max: 2500, label: "$1000 - $2500" },
-    { min: 2500, max: Math.max(3000, Math.ceil(maxCategoryPrice / 100) * 100), label: `$2500 - $${Math.max(3000, Math.ceil(maxCategoryPrice / 100) * 100)}` },
-  ]
+  const pricePresets = buildListingPricePresets(maxCategoryPrice)
   const categoryMetaDescription = buildCategoryMetaDescription(category.title, category.description)
   const categoryCanonicalUrl = `${getSiteUrl()}${categoryPath}`
   const facetNameBySlug = {

@@ -13,6 +13,7 @@ import { ensureProductSkuFolders, migrateAllProductsToCanonicalMediaFolders } fr
 import { addColumnIfMissing } from "@/lib/db-compat"
 import { normalizeSuppliers, type SupplierRecord } from "@/lib/supplier-prefix"
 import { syncProductSupplierBySku } from "@/lib/supplier-registry"
+import { buildProductSearchWhere, normalizeListingSize } from "@/lib/storefront/listing-filters"
 
 type MaterialDelegate = {
     findMany: (...args: any[]) => Promise<any[]>
@@ -139,43 +140,6 @@ async function purgeExpiredTrashedProducts() {
     lastTrashPurgeAt = Date.now()
 }
 
-function buildProductSearchWhere(query: string): Prisma.ProductWhereInput["AND"] | undefined {
-    const normalized = query.trim()
-    if (!normalized) return undefined
-
-    const slugLike = normalized.replace(/\s+/g, "-")
-    const terms = Array.from(
-        new Set(
-            normalized
-                .split(/\s+/)
-                .map((term) => term.trim())
-                .filter(Boolean),
-        ),
-    )
-
-    const clauses: Prisma.ProductWhereInput[] = terms.map((term) => ({
-        OR: [
-            { title: { contains: term } },
-            { slug: { contains: term } },
-            { sku: { contains: term } },
-            { categories: { some: { OR: [{ title: { contains: term } }, { slug: { contains: term } }] } } },
-            { styles: { some: { OR: [{ name: { contains: term } }, { slug: { contains: term } }] } } },
-            { types: { some: { OR: [{ name: { contains: term } }, { slug: { contains: term } }] } } },
-        ],
-    }))
-
-    if (slugLike && slugLike !== normalized) {
-        clauses.push({
-            OR: [
-                { slug: { contains: slugLike } },
-                { categories: { some: { slug: { contains: slugLike } } } },
-            ],
-        })
-    }
-
-    return clauses
-}
-
 function normalizeSearchText(value: string | null | undefined) {
     return (value || "").toLowerCase().trim().replace(/\s+/g, " ")
 }
@@ -192,9 +156,7 @@ function extractSearchTokens(query: string) {
 }
 
 function normalizeSizeValue(value: string | null | undefined) {
-    return normalizeSearchText(value)
-        .replace(/\bby\b/g, "x")
-        .replace(/\s*x\s*/g, "x")
+    return normalizeListingSize(normalizeSearchText(value))
 }
 
 function extractSizeQueries(query: string) {
