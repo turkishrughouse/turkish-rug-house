@@ -176,6 +176,128 @@ function buildProductSearchWhere(query: string): Prisma.ProductWhereInput["AND"]
     return clauses
 }
 
+function normalizeSearchText(value: string | null | undefined) {
+    return (value || "").toLowerCase().trim().replace(/\s+/g, " ")
+}
+
+function extractSearchTokens(query: string) {
+    return Array.from(
+        new Set(
+            normalizeSearchText(query)
+                .split(" ")
+                .map((token) => token.trim())
+                .filter(Boolean),
+        ),
+    )
+}
+
+function normalizeSizeValue(value: string | null | undefined) {
+    return normalizeSearchText(value)
+        .replace(/\bby\b/g, "x")
+        .replace(/\s*x\s*/g, "x")
+}
+
+function extractSizeQueries(query: string) {
+    const normalized = normalizeSearchText(query)
+    const matches = normalized.matchAll(/(\d+(?:\.\d+)?)\s*(?:x|by)\s*(\d+(?:\.\d+)?)/g)
+    const values = new Set<string>()
+
+    for (const match of matches) {
+        const width = match[1]
+        const length = match[2]
+        if (!width || !length) continue
+        values.add(`${width}x${length}`)
+        values.add(`${width} x ${length}`)
+    }
+
+    return values
+}
+
+type ProductSearchCandidate = {
+    title: string
+    slug: string
+    sku: string | null
+    createdAt: Date
+    categories: Array<{ title: string; slug: string }>
+    styles: Array<{ name: string; slug: string }>
+    types: Array<{ name: string; slug: string }>
+    sizes: Array<{ name: string; slug: string }>
+}
+
+function scoreProductSearchCandidate(product: ProductSearchCandidate, query: string) {
+    const normalizedQuery = normalizeSearchText(query)
+    if (!normalizedQuery) {
+        return { score: 0, matchedTokens: 0 }
+    }
+
+    const title = normalizeSearchText(product.title)
+    const slug = normalizeSearchText(product.slug)
+    const sku = normalizeSearchText(product.sku)
+    const categoryValues = product.categories.flatMap((item) => [normalizeSearchText(item.title), normalizeSearchText(item.slug)])
+    const styleValues = product.styles.flatMap((item) => [normalizeSearchText(item.name), normalizeSearchText(item.slug)])
+    const typeValues = product.types.flatMap((item) => [normalizeSearchText(item.name), normalizeSearchText(item.slug)])
+    const sizeValues = product.sizes.flatMap((item) => [normalizeSizeValue(item.name), normalizeSizeValue(item.slug)])
+
+    let score = 0
+
+    if (title === normalizedQuery) score += 1200
+    else if (title.includes(normalizedQuery)) score += 700
+
+    if (sku === normalizedQuery) score += 520
+    else if (sku && sku.includes(normalizedQuery)) score += 360
+
+    if (slug === normalizedQuery) score += 320
+    else if (slug.includes(normalizedQuery)) score += 180
+
+    if (categoryValues.some((value) => value === normalizedQuery)) score += 220
+    else if (categoryValues.some((value) => value.includes(normalizedQuery))) score += 120
+
+    if (styleValues.some((value) => value === normalizedQuery)) score += 220
+    else if (styleValues.some((value) => value.includes(normalizedQuery))) score += 120
+
+    if (typeValues.some((value) => value === normalizedQuery)) score += 220
+    else if (typeValues.some((value) => value.includes(normalizedQuery))) score += 120
+
+    const sizeQueries = extractSizeQueries(normalizedQuery)
+    if (sizeQueries.size > 0 && sizeValues.some((value) => Array.from(sizeQueries).some((sizeQuery) => value.includes(normalizeSizeValue(sizeQuery))))) {
+        score += 420
+    }
+
+    const tokens = extractSearchTokens(normalizedQuery)
+    let matchedTokens = 0
+
+    for (const token of tokens) {
+        let tokenMatched = false
+
+        if (title.includes(token)) {
+            score += 90
+            tokenMatched = true
+        } else if (slug.includes(token)) {
+            score += 55
+            tokenMatched = true
+        } else if (sku && sku.includes(token)) {
+            score += 70
+            tokenMatched = true
+        } else if (sizeValues.some((value) => value.includes(normalizeSizeValue(token)))) {
+            score += 80
+            tokenMatched = true
+        } else if (
+            categoryValues.some((value) => value.includes(token)) ||
+            styleValues.some((value) => value.includes(token)) ||
+            typeValues.some((value) => value.includes(token))
+        ) {
+            score += 45
+            tokenMatched = true
+        }
+
+        if (tokenMatched) matchedTokens += 1
+    }
+
+    score += matchedTokens * 110
+
+    return { score, matchedTokens }
+}
+
 type CustomAttribute = {
     name: string
     values: string[]
@@ -387,6 +509,7 @@ export async function getProducts(
 ) {
     await purgeExpiredTrashedProducts()
     const skip = (page - 1) * limit
+    const hasQuery = query.trim().length > 0
 
     const orderBy: Prisma.ProductOrderByWithRelationInput =
         sort === 'latest' ? { createdAt: 'desc' } :
@@ -474,11 +597,14 @@ export async function getProducts(
             : undefined,
     }
 
+    const candidateTake = hasQuery ? Math.min(Math.max(limit * page * 5, 40), 200) : limit
+    const candidateSkip = hasQuery ? 0 : skip
+
     const [products, total] = await Promise.all([
         db.product.findMany({
             where,
-            skip,
-            take: limit,
+            skip: candidateSkip,
+            take: candidateTake,
             orderBy,
             include: {
                 categories: {
@@ -488,12 +614,28 @@ export async function getProducts(
                 },
                 types: true,
                 styles: true,
+                sizes: true,
             }
         }),
         db.product.count({ where })
     ])
 
-    const serializedProducts = products.map(product => ({
+    const rankedProducts = hasQuery
+        ? products
+            .map((product) => ({
+                product,
+                ...scoreProductSearchCandidate(product, query),
+            }))
+            .sort((left, right) => {
+                if (right.score !== left.score) return right.score - left.score
+                if (right.matchedTokens !== left.matchedTokens) return right.matchedTokens - left.matchedTokens
+                return right.product.createdAt.getTime() - left.product.createdAt.getTime()
+            })
+            .slice(skip, skip + limit)
+            .map((entry) => entry.product)
+        : products
+
+    const serializedProducts = rankedProducts.map(product => ({
         ...product,
         sku: product.sku ?? null,
         isFeatured: Boolean(product.isFeatured),
