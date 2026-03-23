@@ -140,7 +140,7 @@ function GalleryState({
               height={selectedGalleryImage.height}
               priority
               sizes="(max-width: 1280px) 100vw, 50vw"
-              className={`h-full w-full object-cover transition-transform duration-300 ${hoverZoomEnabled ? "cursor-zoom-in" : "group-hover:scale-105"}`}
+              className={`h-full w-full object-contain object-center transition-transform duration-300 ${hoverZoomEnabled ? "cursor-zoom-in" : "group-hover:scale-105"}`}
             />
             {hoverZoomEnabled ? (
               <div

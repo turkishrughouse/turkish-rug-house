@@ -70,6 +70,35 @@ function inferVariantUrl(urlOrPath: string | null | undefined, preferredVariant:
   return `${path.replace(VARIANT_FILENAME_PATTERN, `-${preferredVariant}$2`)}${suffix}`
 }
 
+function buildVariantCandidates(
+  image: ProductImageRecord,
+  preferredVariant: "thumb" | "large" | "master"
+) {
+  const sources = [
+    image.variants?.thumb,
+    image.variants?.large,
+    image.variants?.master,
+    image.image_url,
+  ]
+
+  const variantOrder =
+    preferredVariant === "thumb"
+      ? (["thumb", "large", "master"] as const)
+      : preferredVariant === "large"
+        ? (["large", "thumb", "master"] as const)
+        : (["master", "large", "thumb"] as const)
+
+  const candidates: string[] = []
+  for (const variant of variantOrder) {
+    for (const source of sources) {
+      const candidate = inferVariantUrl(source, variant)
+      if (candidate) candidates.push(candidate)
+    }
+  }
+
+  return uniqueNormalized(candidates)
+}
+
 function parseRawProductImages(value: unknown): Array<string | ProductImageRecord> {
   if (!value) return []
   if (Array.isArray(value)) return value
@@ -150,10 +179,20 @@ export function getProductImageUrl(
   if (!image) return ""
   if (typeof image === "string") return inferVariantUrl(image, preferredVariant)
 
-  const explicitVariant = image.variants?.[preferredVariant]
-  if (explicitVariant) return inferVariantUrl(explicitVariant, preferredVariant) || getImageUrl(explicitVariant)
+  return getProductImageUrlCandidates(image, preferredVariant)[0] || ""
+}
 
-  return inferVariantUrl(image.image_url, preferredVariant)
+export function getProductImageUrlCandidates(
+  image: ProductImageRecord | string | null | undefined,
+  preferredVariant: "thumb" | "large" | "master" = "large"
+) {
+  if (!image) return []
+  if (typeof image === "string") {
+    const normalized = inferVariantUrl(image, preferredVariant)
+    return normalized ? [normalized] : []
+  }
+
+  return buildVariantCandidates(image, preferredVariant)
 }
 
 export function parseProductImages(

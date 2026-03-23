@@ -7,7 +7,7 @@ import Image from "next/image"
 import { Loader2, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { saveSearch } from "@/lib/storefront/saved-searches"
-import { parseProductImages } from "@/lib/product-images"
+import { getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
 
 type ProductItem = {
     id: string
@@ -23,13 +23,41 @@ type SearchResult = {
     title: string
     subtitle?: string
     image?: string
+    imageCandidates?: string[]
     price?: number
     href: string
     type: "Product"
 }
 
 function parseFirstImage(images: string | undefined) {
-    return parseProductImages(images, "thumb")[0] || ""
+    const [firstImage] = parseProductImageRecords(images)
+    if (!firstImage) return { image: "", imageCandidates: [] as string[] }
+
+    return {
+        image: getProductImageUrlCandidates(firstImage, "thumb")[0] || "",
+        imageCandidates: getProductImageUrlCandidates(firstImage, "thumb"),
+    }
+}
+
+function SearchResultImage({ title, image, imageCandidates = [] }: { title: string; image?: string; imageCandidates?: string[] }) {
+    const [candidateIndex, setCandidateIndex] = useState(0)
+    const candidates = imageCandidates.length > 0 ? imageCandidates : image ? [image] : []
+    const currentImage = candidates[candidateIndex] || image || ""
+
+    if (!currentImage) return null
+
+    return (
+        <Image
+            src={currentImage}
+            alt={title}
+            width={44}
+            height={44}
+            className="h-full w-full object-cover"
+            onError={() => {
+                setCandidateIndex((prev) => (prev + 1 < candidates.length ? prev + 1 : prev))
+            }}
+        />
+    )
 }
 
 export function SearchBar() {
@@ -73,15 +101,19 @@ export function SearchBar() {
 
                 const productResults: SearchResult[] = products
                     .filter((item) => item.title.toLowerCase().includes(term))
-                    .map((item) => ({
-                        id: `prod-${item.id}`,
-                        title: item.title,
-                        subtitle: item.categories?.[0]?.slug ? item.categories[0].slug.replaceAll("-", " ") : undefined,
-                        image: parseFirstImage(item.images),
-                        price: typeof item.price === "number" ? item.price : undefined,
-                        href: `/product/${item.slug}`,
-                        type: "Product",
-                    }))
+                    .map((item) => {
+                        const { image, imageCandidates } = parseFirstImage(item.images)
+                        return {
+                            id: `prod-${item.id}`,
+                            title: item.title,
+                            subtitle: item.categories?.[0]?.slug ? item.categories[0].slug.replaceAll("-", " ") : undefined,
+                            image,
+                            imageCandidates,
+                            price: typeof item.price === "number" ? item.price : undefined,
+                            href: `/product/${item.slug}`,
+                            type: "Product",
+                        }
+                    })
 
                 setResults(productResults.slice(0, 8))
                 setActiveIndex(-1)
@@ -184,7 +216,7 @@ export function SearchBar() {
                                         <div className="flex min-w-0 items-center gap-3">
                                             <div className="h-11 w-11 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
                                                 {item.image ? (
-                                                    <Image src={item.image} alt={item.title} width={44} height={44} className="h-full w-full object-cover" />
+                                                    <SearchResultImage title={item.title} image={item.image} imageCandidates={item.imageCandidates} />
                                                 ) : null}
                                             </div>
                                             <div className="min-w-0">
