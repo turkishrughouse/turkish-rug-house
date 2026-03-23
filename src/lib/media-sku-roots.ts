@@ -1,4 +1,4 @@
-export const PRODUCT_SKU_FOLDER_ROOTS = ["by-type", "cushion-covers", "by-age", "by-area"] as const
+const NON_PRODUCT_MEDIA_ROOTS = new Set(["categories", "pages", "profile"])
 
 function sanitizeSegment(segment: string) {
   return segment
@@ -19,10 +19,25 @@ export function normalizeFolderPath(input: string) {
     .join("/")
 }
 
-export function shouldUseProductSkuFolder(folderPath: string) {
+export function looksLikeProductSkuSegment(value: string) {
+  const clean = (value || "").trim()
+  return /[0-9]/.test(clean) && /^[A-Z0-9-]{6,}$/i.test(clean)
+}
+
+export function isProductSkuFolderPath(folderPath: string) {
   const safePath = normalizeFolderPath(folderPath)
   if (!safePath) return false
   const parts = safePath.split("/").filter(Boolean)
   if (parts.length < 2) return false
-  return PRODUCT_SKU_FOLDER_ROOTS.includes(parts[0] as (typeof PRODUCT_SKU_FOLDER_ROOTS)[number])
+  if (NON_PRODUCT_MEDIA_ROOTS.has(parts[0] || "")) return false
+  return looksLikeProductSkuSegment(parts[parts.length - 1] || "")
+}
+
+export function shouldUseProductSkuChildFolders(folderPath: string) {
+  const safePath = normalizeFolderPath(folderPath)
+  if (!safePath) return false
+  const parts = safePath.split("/").filter(Boolean)
+  if (parts.length < 1) return false
+  if (NON_PRODUCT_MEDIA_ROOTS.has(parts[0] || "")) return false
+  return !isProductSkuFolderPath(safePath)
 }

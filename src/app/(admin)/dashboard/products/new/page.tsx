@@ -49,7 +49,7 @@ export default async function NewProductPage() {
     }
 
     return (
-        <div className="w-full px-6 pt-6 pb-6">
+        <div className="h-auto w-full px-6 pt-6 pb-6">
             <ProductForm lang={lang} options={options} />
         </div>
     )

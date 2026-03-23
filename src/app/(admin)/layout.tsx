@@ -76,7 +76,7 @@ export default async function AdminLayout({
 
     return (
         <div
-            className={`admin-shell flex min-h-screen h-dvh w-full overflow-hidden bg-[#f4f7fb] text-slate-900 ${profile?.disableSyntaxHighlighting ? "admin-no-syntax" : ""}`}
+            className={`admin-shell flex min-h-screen w-full bg-[#f4f7fb] text-slate-900 ${profile?.disableSyntaxHighlighting ? "admin-no-syntax" : ""}`}
             style={adminStyle}
             data-admin-shortcuts={profile?.enableKeyboardShortcuts ? "on" : "off"}
         >
@@ -84,7 +84,7 @@ export default async function AdminLayout({
             <div className="admin-shell-sidebar">
                 <AdminSidebar user={{ ...user, locale: profile?.locale, avatarUrl: profile?.avatarUrl }} />
             </div>
-            <main className="admin-shell-main flex min-h-0 flex-1 flex-col" lang={(profile?.locale || "en_US").replace("_", "-")}>
+            <main className="admin-shell-main flex min-h-screen min-w-0 flex-1 flex-col" lang={(profile?.locale || "en_US").replace("_", "-")}>
                 <header
                     className="admin-shell-header admin-header-surface h-[80px] border-b border-[#dce3ed] items-center px-6 justify-between sticky top-0 z-30 shrink-0 shadow-[0_1px_0_rgba(15,23,42,0.03)]"
                     style={{ display: "var(--admin-header-display)" }}
@@ -114,7 +114,7 @@ export default async function AdminLayout({
                         </div>
                     </div>
                 </header>
-                <div className="admin-shell-scroll min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+                <div className="admin-shell-scroll h-auto min-h-[calc(100vh-80px)] flex-1 overflow-y-visible">
                     {children}
                 </div>
             </main>

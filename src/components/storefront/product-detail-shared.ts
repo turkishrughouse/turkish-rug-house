@@ -123,15 +123,16 @@ export function getProductDescriptionState(product: ProductDetailData, shippingC
   const longDescriptionHtml = normalizeRichTextHtml(product.description)
   const bottomDescriptionHtml = longDescriptionHtml || "<p>Detailed product information is not available yet.</p>"
   const bottomDescriptionTextLength = bottomDescriptionHtml.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().length
-  const shippingText = shippingContent && shippingContent.trim().length > 0
-    ? shippingContent.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
-    : "Delivery estimates and shipping details are shown at checkout."
+  const shippingHtml =
+    normalizeRichTextHtml(shippingContent?.trim()) ||
+    "<p>Delivery estimates and shipping details are shown at checkout.</p>"
+  const shippingTextLength = shippingHtml.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().length
 
   return {
     shortDescriptionHtml,
     bottomDescriptionHtml,
     canExpandBottomDescription: bottomDescriptionTextLength > 380,
-    shippingText,
-    canExpandShipping: shippingText.length > 520,
+    shippingHtml,
+    canExpandShipping: shippingTextLength > 520,
   }
 }

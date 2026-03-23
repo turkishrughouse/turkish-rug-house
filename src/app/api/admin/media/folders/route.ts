@@ -6,7 +6,7 @@ import { z } from "zod"
 import { prisma } from "@/lib/db"
 import { sanitizeFolderPath, getManagedMediaRoots } from "@/lib/media-folders"
 import { ensureMediaRegistryTable } from "@/lib/media-registry"
-import { shouldUseProductSkuFolder } from "@/lib/media-sku-roots"
+import { isProductSkuFolderPath } from "@/lib/media-sku-roots"
 import { parseProductImages } from "@/lib/product-images"
 import { getStorageProvider } from "@/lib/storage/provider"
 
@@ -126,7 +126,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Invalid folder path" }, { status: 400 })
     }
 
-    if (shouldUseProductSkuFolder(safeFolder)) {
+    if (isProductSkuFolderPath(safeFolder)) {
       const parts = safeFolder.split("/").filter(Boolean)
       if (parts.length >= 3) {
         const sku = parts[parts.length - 1] || ""

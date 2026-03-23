@@ -7,6 +7,7 @@ import { ProductDetailView } from "@/components/storefront/product-detail-view"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
 import { fetchCategoryPathRows, getCategoryPathById, type CategoryPathRow } from "@/lib/category-paths"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
+import { getShippingReturnsPage } from "@/lib/storefront/shipping-returns-page"
 
 type Props = {
   params: Promise<{ slug: string }>
@@ -404,21 +405,7 @@ export default async function ProductPage({ params }: Props) {
       }
     : null
 
-  const shippingPage = await prisma.page.findFirst({
-    where: {
-      status: "PUBLISHED",
-      OR: [
-        { slug: "shipping-and-delivery" },
-        { slug: "shipping-delivery" },
-        { slug: "shipping" },
-      ],
-    },
-    select: {
-      content: true,
-      excerpt: true,
-    },
-  })
-
+  const shippingPage = await getShippingReturnsPage()
   const shippingContent = shippingPage?.content || shippingPage?.excerpt || null
   const currencySnapshot = await getStorefrontCurrencySnapshot()
   const currencySettings = {

@@ -8,13 +8,13 @@ export function ProductDetailInfoTabs({
   product,
   bottomDescriptionHtml,
   canExpandBottomDescription,
-  shippingText,
+  shippingHtml,
   canExpandShipping,
 }: {
   product: ProductDetailData
   bottomDescriptionHtml: string
   canExpandBottomDescription: boolean
-  shippingText: string
+  shippingHtml: string
   canExpandShipping: boolean
 }) {
   void product
@@ -46,7 +46,10 @@ export function ProductDetailInfoTabs({
 
           {activeInfoTab === "shipping" ? (
             <div>
-              <p className={`text-slate-600 leading-6 text-sm ${!expandedShipping && canExpandShipping ? "line-clamp-10" : ""}`}>{shippingText}</p>
+              <div
+                className={`${richContentClassName} ${!expandedShipping && canExpandShipping ? "line-clamp-10" : ""}`}
+                dangerouslySetInnerHTML={{ __html: shippingHtml }}
+              />
               {canExpandShipping ? (
                 <button type="button" onClick={() => setExpandedShipping((prev) => !prev)} className="mt-2 text-sm font-medium text-emerald-700 hover:underline">
                   {expandedShipping ? "Show less" : "See more"}

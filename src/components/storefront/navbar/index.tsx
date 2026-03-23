@@ -1,5 +1,6 @@
 import { getSiteSettings } from "@/lib/site-settings"
 import { getPublicCategoryTreeMenu, getPublicMenu, type PublicMenuNode } from "@/lib/storefront/public-menu"
+import { getShippingReturnsPage, getShippingReturnsPageUrl } from "@/lib/storefront/shipping-returns-page"
 import { BackToTopButton } from "@/components/storefront/back-to-top-button"
 import { TopBar } from "./top-bar"
 import { MainHeader } from "./main-header"
@@ -33,18 +34,36 @@ function filterInformationMenu(nodes: PublicMenuNode[]): PublicMenuNode[] {
         .filter((node): node is PublicMenuNode => Boolean(node))
 }
 
+function hasMenuUrl(nodes: PublicMenuNode[], targetUrl: string): boolean {
+    return nodes.some((node) => node.url === targetUrl || hasMenuUrl(node.children || [], targetUrl))
+}
+
 export async function Header() {
-    const [settings, topNavMenu, primaryMenu, headerInfoMenu, footerInfoMenu, categoryTreeMenu] = await Promise.all([
+    const [settings, topNavMenu, primaryMenu, headerInfoMenu, footerInfoMenu, categoryTreeMenu, shippingReturnsPage] = await Promise.all([
         getSiteSettings(),
         getPublicMenu("TOP_NAV"),
         getPublicMenu("PRIMARY_HEADER"),
         getPublicMenu("HEADER_INFORMATION"),
         getPublicMenu("INFORMATION_FOOTER"),
         getPublicCategoryTreeMenu(),
+        getShippingReturnsPage(),
     ])
 
     const mobileCategoriesMenu = primaryMenu.length > 0 ? primaryMenu : categoryTreeMenu
-    const resolvedInformationMenu = filterInformationMenu(headerInfoMenu.length > 0 ? headerInfoMenu : footerInfoMenu)
+    const informationMenu = filterInformationMenu(headerInfoMenu.length > 0 ? headerInfoMenu : footerInfoMenu)
+    const shippingReturnsUrl = shippingReturnsPage ? getShippingReturnsPageUrl(shippingReturnsPage) : null
+    const resolvedInformationMenu =
+        shippingReturnsPage && shippingReturnsUrl && !hasMenuUrl(informationMenu, shippingReturnsUrl)
+            ? [
+                ...informationMenu,
+                {
+                    id: shippingReturnsPage.id,
+                    label: shippingReturnsPage.title || "Shipping & Returns",
+                    url: shippingReturnsUrl,
+                    children: [],
+                },
+            ]
+            : informationMenu
     const mobilePagesMenu = resolvedInformationMenu
 
     return (

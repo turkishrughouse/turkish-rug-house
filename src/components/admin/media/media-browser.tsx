@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { isManagedUploadUrl } from "@/lib/storage/url"
+import { prettifyAdminMediaLabel } from "@/lib/admin/media-labels"
+import { shouldUseProductSkuChildFolders } from "@/lib/media-sku-roots"
 
 type Folder = { name: string; count: number }
 type Asset = {
@@ -23,8 +25,6 @@ type Asset = {
 
 const ALL_TOP = "__all__"
 const ALL_SUB = "__all_sub__"
-const SKU_FOLDER_ROOTS = new Set(["by-type", "cushion-covers", "by-age", "by-area"])
-
 const FOLDER_LABELS: Record<string, string> = {
   "by-type": "By Type",
   "by-style": "By Style",
@@ -51,16 +51,7 @@ function folderLabel(value: string) {
 }
 
 function prettifyAssetName(asset: Asset) {
-  const productMatch = asset.usedIn.match(/^Product featured:\s*(.+)$/i)
-  if (productMatch?.[1]) return productMatch[1].trim()
-
-  const raw = asset.name
-    .replace(/\.(avif|webp|png|jpe?g|gif)$/i, "")
-    .replace(/-(thumb|large|master)$/i, "")
-    .replace(/[-_]+/g, " ")
-    .trim()
-
-  return raw || asset.name
+  return prettifyAdminMediaLabel(asset)
 }
 
 export function MediaBrowser() {
@@ -193,9 +184,8 @@ export function MediaBrowser() {
 
   const usesSkuFolders = useMemo(() => {
     if (selectedSubfolder === ALL_SUB) return false
-    const root = selectedTopFolder !== ALL_TOP ? selectedTopFolder : selectedSubfolder.split("/")[0] || ""
-    return SKU_FOLDER_ROOTS.has(root)
-  }, [selectedSubfolder, selectedTopFolder])
+    return shouldUseProductSkuChildFolders(selectedSubfolder)
+  }, [selectedSubfolder])
 
   const filteredAssets = useMemo(() => {
     return assets.filter((asset) => {

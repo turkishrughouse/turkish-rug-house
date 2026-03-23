@@ -81,7 +81,6 @@ const moveAssetSchema = z.object({
 })
 
 const OPTIMIZED_ROOT = "_optimized"
-const SKU_FOLDER_ROOTS = new Set(["by-type", "cushion-covers", "by-age", "by-area"])
 
 function normalizeUploadRelativePath(relativePath: string) {
   return (relativePath || "")
@@ -168,12 +167,6 @@ function escapeRegExp(input: string): string {
 function topFolderName(folder: string) {
   const clean = sanitizeFolderPath(folder)
   return clean.split("/")[0] || clean
-}
-
-function shouldUseSkuFolder(folder: string) {
-  const clean = sanitizeFolderPath(folder)
-  const parts = clean.split("/").filter(Boolean)
-  return parts.length >= 2 && SKU_FOLDER_ROOTS.has(parts[0] || "")
 }
 
 function normalizeAssetUrl(
@@ -534,20 +527,16 @@ async function moveUploadedAssetToFolder(url: string, targetFolder: string) {
 }
 
 async function backfillProductSkuFolders(
-  products: Array<{ id: string; title: string; images: string; categories: Array<{ id: string; slug: string; parentId: string | null }> }>,
+  products: Array<{ id: string; title: string; sku: string | null; images: string; categories: Array<{ id: string; slug: string; parentId: string | null }> }>,
   categoryPathMap: Map<string, string>
 ) {
   for (const product of products) {
-    const skuRecord = await prisma.product.findUnique({
-      where: { id: product.id },
-      select: { sku: true },
-    })
-    const sku = sanitizeFolderPath(skuRecord?.sku || "")
+    const sku = sanitizeFolderPath(product.sku || "")
     if (!sku) continue
 
     const targetCategoryFolders = product.categories
       .map((category) => categoryPathMap.get(category.id) || "")
-      .filter((folder) => shouldUseSkuFolder(folder))
+      .filter(Boolean)
 
     if (targetCategoryFolders.length === 0) continue
 
@@ -580,6 +569,7 @@ export async function GET() {
       prisma.product.findMany({
         select: {
           id: true,
+          sku: true,
           title: true,
           images: true,
           categories: { select: { id: true, slug: true, parentId: true } },
@@ -607,18 +597,27 @@ export async function GET() {
       const imgs = parseProductImages(product.images)
       const featuredImage = imgs[0]
       if (!featuredImage) continue
+      const normalizedSku = sanitizeFolderPath(product.sku || "")
       const productCategoryFolders = product.categories
         .map((category) => categoryPathMap.get(category.id) || "")
         .filter(Boolean)
-      const defaultProductFolder = productCategoryFolders[0] || "categories/uncategorized"
+      const productSkuFolders = normalizedSku
+        ? productCategoryFolders.map((folder) => `${folder}/${normalizedSku}`)
+        : []
+      const defaultProductFolder =
+        productSkuFolders[0] ||
+        productCategoryFolders[0] ||
+        (normalizedSku ? `categories/uncategorized/${normalizedSku}` : "categories/uncategorized")
       const uploadFolder = extractFolderFromUrl(featuredImage)
       const isUpload = Boolean(getStorageProvider().toRelativePath(featuredImage))
       const uploadFolderTop = topFolderName(uploadFolder)
       const canUseUploadFolder = isUpload && uploadFolder !== "root" && allowedRoots.has(uploadFolderTop)
       const folderCandidates = canUseUploadFolder
         ? [uploadFolder]
-        : productCategoryFolders.length > 0
-            ? productCategoryFolders
+        : productSkuFolders.length > 0
+            ? productSkuFolders
+            : productCategoryFolders.length > 0
+              ? productCategoryFolders
             : [defaultProductFolder]
 
       for (const folder of folderCandidates) {

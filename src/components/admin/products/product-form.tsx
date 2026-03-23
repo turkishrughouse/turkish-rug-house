@@ -549,7 +549,7 @@ function RichTextEditor({
         isFullscreen && "sticky top-0 z-20"
     )
     const editorWrapperClass = cn(
-        "border border-[#8c8f94] bg-white",
+        "h-auto min-h-0 border border-[#8c8f94] bg-white",
         isFullscreen && "fixed inset-6 z-50 overflow-auto bg-[#f6f7f7] p-4 shadow-2xl"
     )
 
@@ -689,7 +689,7 @@ function RichTextEditor({
                         runCommand("insertText", text)
                     }}
                     className={cn(
-                        "w-full max-w-full break-words px-3 py-2 text-sm leading-6 text-slate-900 focus:outline-none [overflow-wrap:anywhere]",
+                        "h-auto min-h-[180px] w-full max-w-full break-words px-3 py-2 text-sm leading-6 text-slate-900 focus:outline-none [overflow-wrap:anywhere]",
                         "[&_h1]:text-4xl [&_h1]:font-bold [&_h1]:leading-tight [&_h1]:my-3",
                         "[&_h2]:text-3xl [&_h2]:font-bold [&_h2]:leading-tight [&_h2]:my-3",
                         "[&_h3]:text-2xl [&_h3]:font-semibold [&_h3]:leading-snug [&_h3]:my-2.5",
@@ -710,7 +710,7 @@ function RichTextEditor({
                 <textarea
                     value={value}
                     onChange={(event) => onChange(event.target.value)}
-                    className="w-full px-3 py-2 font-mono text-[13px] leading-5 text-slate-900 focus:outline-none"
+                    className="h-auto min-h-[180px] w-full px-3 py-2 font-mono text-[13px] leading-5 text-slate-900 focus:outline-none"
                     style={{ minHeight: `${Math.max(minHeight, 180)}px` }}
                     placeholder={placeholder}
                 />

@@ -55,7 +55,7 @@ export function ProductDetailView({
   const primaryCategory = product.categories[0]
   const visibleCategories = product.categories.slice(0, 2)
   const heroImage = gallery[0]?.src || "/placeholder.jpg"
-  const { shortDescriptionHtml, bottomDescriptionHtml, canExpandBottomDescription, shippingText, canExpandShipping } =
+  const { shortDescriptionHtml, bottomDescriptionHtml, canExpandBottomDescription, shippingHtml, canExpandShipping } =
     getProductDescriptionState(product, shippingContent)
 
   return (
@@ -105,7 +105,7 @@ export function ProductDetailView({
               product={product}
               bottomDescriptionHtml={bottomDescriptionHtml}
               canExpandBottomDescription={canExpandBottomDescription}
-              shippingText={shippingText}
+              shippingHtml={shippingHtml}
               canExpandShipping={canExpandShipping}
             />
           </section>

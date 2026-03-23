@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { isManagedUploadUrl } from "@/lib/storage/url"
+import { prettifyAdminMediaLabel } from "@/lib/admin/media-labels"
 
 type Folder = { name: string; count: number }
 type Asset = {
@@ -86,21 +87,7 @@ function folderLeafName(folderPath: string) {
 }
 
 function prettifyAssetName(asset: Asset) {
-  const productMatch = asset.usedIn.match(/^Product featured:\s*(.+)$/i)
-  if (productMatch?.[1]) return productMatch[1].trim()
-
-  const rawName = asset.name
-    .replace(/\.(avif|webp|png|jpe?g|gif)$/i, "")
-    .replace(/-(thumb|large|master)$/i, "")
-    .replace(/[-_]+/g, " ")
-    .trim()
-
-  if (!rawName) return asset.name
-  return rawName
-    .split(" ")
-    .filter(Boolean)
-    .map((part) => (part === part.toUpperCase() ? part : part.charAt(0).toUpperCase() + part.slice(1)))
-    .join(" ")
+  return prettifyAdminMediaLabel(asset)
 }
 
 function FolderTile({ label }: { label: string }) {

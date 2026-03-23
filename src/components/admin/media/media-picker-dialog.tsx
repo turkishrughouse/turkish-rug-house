@@ -9,8 +9,9 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { shouldUseProductSkuFolder } from "@/lib/media-sku-roots"
-import { getImageUrl, isManagedUploadUrl } from "@/lib/storage/url"
+import { isProductSkuFolderPath, looksLikeProductSkuSegment, shouldUseProductSkuChildFolders } from "@/lib/media-sku-roots"
+import { getImageUrl } from "@/lib/storage/url"
+import { normalizeMediaTitleForBaseName, prettifyAdminMediaLabel, stripDuplicateMediaPrefix } from "@/lib/admin/media-labels"
 
 type Folder = { name: string; count: number }
 type Asset = {
@@ -59,7 +60,7 @@ function formatFolderLabel(value: string) {
 }
 
 function buildUploadBaseName(title: string, index: number, total: number) {
-  const base = title
+  const base = normalizeMediaTitleForBaseName(title)
     .trim()
     .replace(/[^\p{L}\p{N}\s-]/gu, " ")
     .replace(/[\s_]+/g, "-")
@@ -73,16 +74,7 @@ function buildUploadBaseName(title: string, index: number, total: number) {
 }
 
 function prettifyPickerAssetName(asset: Asset) {
-  const productMatch = asset.usedIn.match(/^Product featured:\s*(.+)$/i)
-  if (productMatch?.[1]) return productMatch[1].trim()
-
-  const raw = asset.name
-    .replace(/\.(avif|webp|png|jpe?g|gif)$/i, "")
-    .replace(/-(thumb|large|master)$/i, "")
-    .replace(/[-_]+/g, " ")
-    .trim()
-
-  return raw || asset.name
+  return prettifyAdminMediaLabel(asset)
 }
 
 function normalizePickerAssetUrl(url: string) {
@@ -104,17 +96,6 @@ function extractFolderFromUploadUrl(url: string) {
   const parts = relative.split("/").filter(Boolean)
   if (parts.length < 2) return null
   return parts.slice(0, -1).join("/")
-}
-
-function looksLikeSkuFolderSegment(value: string) {
-  const clean = (value || "").trim()
-  return /[0-9]/.test(clean) && /^[A-Z0-9-]{6,}$/i.test(clean)
-}
-
-function isSkuFolderPath(value: string) {
-  const clean = (value || "").trim()
-  const leaf = clean.split("/").filter(Boolean).pop() || clean
-  return looksLikeSkuFolderSegment(leaf)
 }
 
 function resolveProductUploadFolder(baseFolder: string, sku: string) {
@@ -265,7 +246,7 @@ export function MediaPickerDialog({
       .filter((name) => name.startsWith(prefix))
       .map((name) => name.slice(prefix.length))
       .filter((rest) => rest.length > 0 && !rest.includes("/"))
-      .filter((leaf) => !looksLikeSkuFolderSegment(leaf))
+      .filter((leaf) => !looksLikeProductSkuSegment(leaf))
       .map((leaf) => `${activeFolder}/${leaf}`)
       .sort((a, b) => a.localeCompare(b))
   }, [activeFolder, folders])
@@ -373,7 +354,7 @@ export function MediaPickerDialog({
 
   const usesSkuFolders = useMemo(() => {
     if (activeSubfolder === "all") return false
-    return shouldUseProductSkuFolder(activeSubfolder)
+    return shouldUseProductSkuChildFolders(activeSubfolder)
   }, [activeSubfolder])
 
   const getAssetLabelGroup = useCallback((asset: Asset) => {
@@ -471,9 +452,9 @@ export function MediaPickerDialog({
 
   const selectedAssetDisplayLabel = useMemo(() => {
     if (!selectedAsset) return ""
-    const productTitle = productMeta?.title?.trim()
+    const productTitle = stripDuplicateMediaPrefix(productMeta?.title?.trim())
     if (productTitle) return productTitle
-    return assetLabels[selectedAssetLabelGroup] || selectedAsset.name
+    return assetLabels[selectedAssetLabelGroup] || prettifyPickerAssetName(selectedAsset)
   }, [assetLabels, productMeta?.title, selectedAsset, selectedAssetLabelGroup])
 
   const effectiveSelectedFolderCount = selectedRightFolders.length
@@ -626,7 +607,14 @@ export function MediaPickerDialog({
       const focusFolder = uploadedFolders[0] || targetUploadFolder
       const focusTop = focusFolder.split("/")[0] || "all"
       setActiveFolder(focusTop)
-      setActiveSubfolder(focusFolder === focusTop ? "all" : focusFolder)
+      if (isProductSkuFolderPath(focusFolder)) {
+        const parentFolder = focusFolder.split("/").slice(0, -1).join("/") || "all"
+        setActiveSubfolder(parentFolder === focusTop ? parentFolder : parentFolder)
+        setSelectedChildFolder(focusFolder)
+      } else {
+        setActiveSubfolder(focusFolder === focusTop ? "all" : focusFolder)
+        setSelectedChildFolder("")
+      }
       setUploadFolder(focusFolder)
       const assetUrlSet = new Set((refreshed?.assets || []).map((asset) => asset.url))
       const existingUploaded = uploadedUrls.filter((url) => assetUrlSet.has(url))
