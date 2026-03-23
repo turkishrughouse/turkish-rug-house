@@ -63,11 +63,12 @@ export async function upsertMediaAsset(row: {
   object_key?: string | null
 }) {
   await ensureMediaRegistryTable()
+  const stableId = row.object_key || row.id || row.image_url
   await prisma.$executeRaw`
       INSERT INTO "MediaAsset" (
         "id", "image_url", "width", "height", "alt", "sort_order", "is_primary", "variant", "master_url",
         "checksum", "mime_type", "size_bytes", "storage_provider", "object_key", "updated_at"
-      ) VALUES (${row.id}, ${row.image_url}, ${row.width ?? null}, ${row.height ?? null}, ${row.alt ?? null}, ${row.sort_order ?? 0}, ${row.is_primary ? 1 : 0}, ${row.variant ?? null}, ${row.master_url ?? null}, ${row.checksum ?? null}, ${row.mime_type ?? null}, ${row.size_bytes ?? null}, ${row.storage_provider ?? null}, ${row.object_key ?? null}, CURRENT_TIMESTAMP)
+      ) VALUES (${stableId}, ${row.image_url}, ${row.width ?? null}, ${row.height ?? null}, ${row.alt ?? null}, ${row.sort_order ?? 0}, ${row.is_primary ? 1 : 0}, ${row.variant ?? null}, ${row.master_url ?? null}, ${row.checksum ?? null}, ${row.mime_type ?? null}, ${row.size_bytes ?? null}, ${row.storage_provider ?? null}, ${row.object_key ?? null}, CURRENT_TIMESTAMP)
       ON CONFLICT("image_url") DO UPDATE SET
         "width"=excluded."width",
         "height"=excluded."height",
@@ -84,4 +85,3 @@ export async function upsertMediaAsset(row: {
         "updated_at"=CURRENT_TIMESTAMP
     `
 }
-
