@@ -1,8 +1,9 @@
 import Link from "next/link"
 
 import { CategoryHoverProductCardClient } from "@/components/storefront/category-hover-product-card"
+import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
 import { formatCurrency, type CurrencySettings } from "@/lib/storefront/currency"
-import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
+import { buildProductImageAlt, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
 
 type ProductCardData = {
   id: string
@@ -30,8 +31,10 @@ export function CategoryHoverProductCardServer({
   currencySettings?: CurrencySettings
 }) {
   const gallery = parseProductImageRecords(product.images)
-  const mainImage = getProductImageUrl(gallery[0], "thumb") || getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
-  const primaryLargeImage = getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
+  const imageCandidates = getProductImageUrlCandidates(gallery[0], "thumb")
+  const largeCandidates = getProductImageUrlCandidates(gallery[0], "large")
+  const mainImage = imageCandidates[0] || largeCandidates[0] || "/placeholder.jpg"
+  const primaryLargeImage = largeCandidates[0] || mainImage
   const mainImageAlt = buildProductImageAlt({
     title: product.title,
     fallbackAlt: gallery[0]?.alt,
@@ -67,11 +70,12 @@ export function CategoryHoverProductCardServer({
                 {discountPercent}% OFF
               </span>
             ) : null}
-            <img
-              src={mainImage}
+            <StorefrontProductImage
+              candidates={[...imageCandidates, ...largeCandidates]}
               alt={mainImageAlt}
-              loading="lazy"
-              decoding="async"
+              width={640}
+              height={640}
+              sizes="(max-width: 768px) 50vw, (max-width: 1280px) 33vw, 25vw"
               className="h-full w-full object-contain object-center transition-transform duration-300 group-hover/card:scale-105"
             />
             <div className="pointer-events-none absolute inset-0 bg-black/20 opacity-0 transition-opacity duration-300 group-hover/card:opacity-100" />

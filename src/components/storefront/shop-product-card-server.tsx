@@ -1,10 +1,10 @@
 import Link from "next/link"
 
-import { ResponsiveImage } from "@/components/ui/responsive-image"
 import { ProductRatingBadge } from "@/components/storefront/product-rating-badge"
 import { ShopProductCardActions } from "@/components/storefront/shop-product-card"
+import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
 import { formatCurrency, type CurrencySettings } from "@/lib/storefront/currency"
-import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
+import { buildProductImageAlt, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
 
 type ShopProduct = {
   id: string
@@ -27,8 +27,10 @@ export function ShopProductCardServer({
   currencySettings?: CurrencySettings
 }) {
   const images = parseProductImageRecords(product.images)
-  const cardImage = getProductImageUrl(images[0], "thumb") || getProductImageUrl(images[0], "large") || "/placeholder.jpg"
-  const storedImage = getProductImageUrl(images[0], "large") || "/placeholder.jpg"
+  const cardImageCandidates = getProductImageUrlCandidates(images[0], "thumb")
+  const storedImageCandidates = getProductImageUrlCandidates(images[0], "large")
+  const cardImage = cardImageCandidates[0] || storedImageCandidates[0] || "/placeholder.jpg"
+  const storedImage = storedImageCandidates[0] || cardImage
   const mainImageAlt = buildProductImageAlt({ title: product.title, fallbackAlt: images[0]?.alt })
   const stockCount = Math.max(0, product.stockCount ?? 999)
   const isMarkedOutOfStock = product.isStock === false && stockCount > 0
@@ -55,8 +57,8 @@ export function ShopProductCardServer({
             {discountPercent}% OFF
           </span>
         ) : null}
-        <ResponsiveImage
-          src={cardImage}
+        <StorefrontProductImage
+          candidates={[...cardImageCandidates, ...storedImageCandidates]}
           alt={mainImageAlt}
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
