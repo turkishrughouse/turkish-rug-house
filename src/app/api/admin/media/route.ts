@@ -179,7 +179,20 @@ function normalizeAssetUrl(
   if (!value) return ""
 
   const relativeFromStorage = storage.toRelativePath(value)
-  if (relativeFromStorage) return storage.getPublicUrl(relativeFromStorage)
+  if (relativeFromStorage) {
+    const fileName = path.basename(relativeFromStorage)
+    const candidates = uploadLookup?.get(fileName.toLowerCase()) || []
+    if (candidates.length > 0 && fallbackFolder) {
+      const folder = sanitizeFolderPath(fallbackFolder)
+      if (folder) {
+        const exact = candidates.find((item) => item.folder === folder)
+        if (exact) return exact.url
+        const nested = candidates.find((item) => item.folder.startsWith(`${folder}/`))
+        if (nested) return nested.url
+      }
+    }
+    return storage.getPublicUrl(relativeFromStorage)
+  }
 
   if (value.startsWith("http://") || value.startsWith("https://")) return value
 
@@ -595,8 +608,7 @@ export async function GET() {
 
     for (const product of products) {
       const imgs = parseProductImages(product.images)
-      const featuredImage = imgs[0]
-      if (!featuredImage) continue
+      if (imgs.length === 0) continue
       const normalizedSku = sanitizeFolderPath(product.sku || "")
       const productCategoryFolders = product.categories
         .map((category) => categoryPathMap.get(category.id) || "")
@@ -608,29 +620,31 @@ export async function GET() {
         productSkuFolders[0] ||
         productCategoryFolders[0] ||
         (normalizedSku ? `categories/uncategorized/${normalizedSku}` : "categories/uncategorized")
-      const uploadFolder = extractFolderFromUrl(featuredImage)
-      const isUpload = Boolean(getStorageProvider().toRelativePath(featuredImage))
-      const uploadFolderTop = topFolderName(uploadFolder)
-      const canUseUploadFolder = isUpload && uploadFolder !== "root" && allowedRoots.has(uploadFolderTop)
-      const folderCandidates = canUseUploadFolder
-        ? [uploadFolder]
-        : productSkuFolders.length > 0
-            ? productSkuFolders
-            : productCategoryFolders.length > 0
-              ? productCategoryFolders
-            : [defaultProductFolder]
+      for (const imageUrl of imgs) {
+        const uploadFolder = extractFolderFromUrl(imageUrl)
+        const isUpload = Boolean(getStorageProvider().toRelativePath(imageUrl))
+        const uploadFolderTop = topFolderName(uploadFolder)
+        const canUseUploadFolder = isUpload && uploadFolder !== "root" && allowedRoots.has(uploadFolderTop)
+        const folderCandidates = productSkuFolders.length > 0
+          ? productSkuFolders
+          : canUseUploadFolder
+              ? [uploadFolder]
+              : productCategoryFolders.length > 0
+                ? productCategoryFolders
+                : [defaultProductFolder]
 
-      for (const folder of folderCandidates) {
-        const normalizedFeaturedImage = normalizeAssetUrl(featuredImage, folder, uploadLookup)
-        assets.push({
-          id: `product:${product.id}:${folder}:${normalizedFeaturedImage}`,
-          url: normalizedFeaturedImage,
-          name: fileNameFromUrl(normalizedFeaturedImage),
-          folder,
-          source: "PRODUCT",
-          usedIn: `Product featured: ${product.title}`,
-          createdAt: 0,
-        })
+        for (const folder of folderCandidates) {
+          const normalizedImage = normalizeAssetUrl(imageUrl, folder, uploadLookup)
+          assets.push({
+            id: `product:${product.id}:${folder}:${normalizedImage}`,
+            url: normalizedImage,
+            name: fileNameFromUrl(normalizedImage),
+            folder,
+            source: "PRODUCT",
+            usedIn: `Product image: ${product.title}`,
+            createdAt: 0,
+          })
+        }
       }
     }
 

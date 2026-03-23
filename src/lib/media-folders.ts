@@ -437,23 +437,18 @@ export async function migrateAllProductsToCanonicalMediaFolders() {
     const currentImages = normalizeProductImageRecords(product.images)
     if (currentImages.length === 0) continue
 
-    const currentUrls = currentImages.map((image) => image.image_url)
-    const nextUrls = await relocateProductImagesToSkuFolders(currentUrls, categoryIds, sku)
-    const didChange = nextUrls.some((url, index) => url !== currentUrls[index])
+    const nextImages = await normalizeProductImageRecordsToSkuFolder(product.images, categoryIds, sku)
+    const didChange = nextImages.some((image, index) => {
+      const current = currentImages[index]
+      if (!current) return true
+      return (
+        image.image_url !== current.image_url ||
+        image.variants?.thumb !== current.variants?.thumb ||
+        image.variants?.large !== current.variants?.large ||
+        image.variants?.master !== current.variants?.master
+      )
+    })
     if (!didChange) continue
-
-    // CRITICAL FIX: Do NOT mutate variant URLs based on current category assignments.
-    // Variant URLs must remain as-persisted to preserve historical image references.
-    // Only update image_url if files were actually relocated by relocateProductImagesToSkuFolders().
-    // Variant URLs (thumb/large/master) are owned by the persisted Product.images,
-    // NOT derived from a category-computed targetFolder.
-    const nextImages = currentImages.map((image, index) => ({
-      ...image,
-      image_url: nextUrls[index] || image.image_url,
-      // Keep variant URLs unchanged - they reference the same physical files
-      // in their persisted historical locations, regardless of current categories.
-      variants: image.variants ? { ...image.variants } : undefined,
-    }))
 
     await prisma.product.update({
       where: { id: product.id },

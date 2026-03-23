@@ -2,9 +2,51 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { ChevronLeft, ChevronRight, X } from "lucide-react"
+import Image from "next/image"
 
-import { ResponsiveImage } from "@/components/ui/responsive-image"
 import type { ProductGalleryImage } from "@/components/storefront/product-detail-shared"
+
+function GalleryImageWithFallback({
+  src,
+  candidates,
+  alt,
+  width,
+  height,
+  sizes,
+  className,
+  priority = false,
+}: {
+  src: string
+  candidates: string[]
+  alt: string
+  width: number
+  height: number
+  sizes: string
+  className?: string
+  priority?: boolean
+}) {
+  const normalizedCandidates = Array.from(new Set([src, ...candidates].filter(Boolean)))
+  const [candidateIndex, setCandidateIndex] = useState(0)
+
+  const currentSrc = normalizedCandidates[candidateIndex] || "/placeholder.jpg"
+
+  return (
+    <Image
+      src={currentSrc}
+      alt={alt}
+      width={width || 1200}
+      height={height || 1200}
+      sizes={sizes}
+      className={className}
+      priority={priority}
+      quality={80}
+      unoptimized={currentSrc.startsWith("/uploads/") || /^https?:\/\//i.test(currentSrc)}
+      onError={() => {
+        setCandidateIndex((prev) => (prev + 1 < normalizedCandidates.length ? prev + 1 : prev))
+      }}
+    />
+  )
+}
 
 function GalleryState({
   gallery,
@@ -86,8 +128,10 @@ function GalleryState({
               onClick={() => selectImage(i)}
               className={`block h-14 w-14 sm:h-20 sm:w-20 rounded-md overflow-hidden border ${activeImageIndex === i ? "border-slate-900" : "border-[#dce3ed]"}`}
             >
-              <ResponsiveImage
+              <GalleryImageWithFallback
+                key={`${img.src}-${img.thumbSrc}-${img.thumbSrcCandidates.join("|")}`}
                 src={img.thumbSrc}
+                candidates={img.thumbSrcCandidates}
                 alt={img.alt}
                 width={80}
                 height={80}
@@ -133,8 +177,10 @@ function GalleryState({
                 {discountPercent}% OFF
               </span>
             ) : null}
-            <ResponsiveImage
+            <GalleryImageWithFallback
+              key={`${selectedGalleryImage.src}-${selectedGalleryImage.srcCandidates.join("|")}`}
               src={selectedGalleryImage.src}
+              candidates={selectedGalleryImage.srcCandidates}
               alt={selectedGalleryImage.alt}
               width={selectedGalleryImage.width}
               height={selectedGalleryImage.height}
@@ -213,8 +259,10 @@ function GalleryState({
                   transitionDuration: "200ms",
                 }}
               >
-                <ResponsiveImage
+                <GalleryImageWithFallback
+                  key={`${selectedGalleryImage.zoomSrc}-${selectedGalleryImage.zoomSrcCandidates.join("|")}`}
                   src={selectedGalleryImage.zoomSrc}
+                  candidates={selectedGalleryImage.zoomSrcCandidates}
                   alt={selectedGalleryImage.alt}
                   width={selectedGalleryImage.width}
                   height={selectedGalleryImage.height}

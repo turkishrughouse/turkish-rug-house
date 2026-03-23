@@ -1,4 +1,4 @@
-import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
+import { buildProductImageAlt, getProductImageUrl, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
 import { normalizeRichTextHtml } from "@/lib/rich-text"
 
 export type ProductCategory = {
@@ -47,8 +47,11 @@ export type NavProduct = {
 
 export type ProductGalleryImage = {
   src: string
+  srcCandidates: string[]
   zoomSrc: string
+  zoomSrcCandidates: string[]
   thumbSrc: string
+  thumbSrcCandidates: string[]
   alt: string
   width: number
   height: number
@@ -88,8 +91,11 @@ export function buildProductGallery(product: ProductDetailData): ProductGalleryI
     return [
       {
         src: "/placeholder.jpg",
+        srcCandidates: ["/placeholder.jpg"],
         zoomSrc: "/placeholder.jpg",
+        zoomSrcCandidates: ["/placeholder.jpg"],
         thumbSrc: "/placeholder.jpg",
+        thumbSrcCandidates: ["/placeholder.jpg"],
         alt: buildProductImageAlt({
           title: product.title,
           categories: product.categories,
@@ -103,8 +109,11 @@ export function buildProductGallery(product: ProductDetailData): ProductGalleryI
 
   return records.map((image, index) => ({
     src: getProductImageUrl(image, "large") || "/placeholder.jpg",
+    srcCandidates: getProductImageUrlCandidates(image, "large"),
     zoomSrc: getProductImageUrl(image, "master") || getProductImageUrl(image, "large") || "/placeholder.jpg",
+    zoomSrcCandidates: getProductImageUrlCandidates(image, "master"),
     thumbSrc: getProductImageUrl(image, "thumb") || getProductImageUrl(image, "large") || "/placeholder.jpg",
+    thumbSrcCandidates: getProductImageUrlCandidates(image, "thumb"),
     alt: buildProductImageAlt({
       title: product.title,
       fallbackAlt: image.alt,
