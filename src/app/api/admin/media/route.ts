@@ -14,7 +14,7 @@ import {
 } from "@/lib/media-folders"
 import { logger } from "@/lib/logger"
 import { getStorageProvider } from "@/lib/storage/provider"
-import { getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
+import { getProductImageUrl, parseProductImageRecords, parseProductImages } from "@/lib/product-images"
 import { ensureMediaRegistryTable } from "@/lib/media-registry"
 
 export const runtime = "nodejs"
