@@ -7,7 +7,7 @@ import { getProducts, getProductOptions } from "@/lib/actions/product-actions"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { formatCurrency } from "@/lib/storefront/currency"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
-import { buildListingPricePresets, buildProductSearchWhere, getMultiParam, getSingleParam, resolveSelectedSizeSlugs } from "@/lib/storefront/listing-filters"
+import { buildListingPricePresets, buildProductSearchWhere, getMultiParam, getSingleParam, resolveSelectedOptionSlugs, resolveSelectedSizeSlugs } from "@/lib/storefront/listing-filters"
 import { CategoryHoverProductCardServer } from "@/components/storefront/category-hover-product-card-server"
 import { fetchCategoryPathRows, getCategoryPathById, resolveCategoryByPath } from "@/lib/category-paths"
 
@@ -128,7 +128,7 @@ export async function renderCategoryPage({
   const categoryPath = resolved.path
   const categoryId = resolved.category.id
 
-  const selectedColors = getMultiParam(searchParams, "color")
+  const rawSelectedColors = getMultiParam(searchParams, "color")
   const selectedStyles = getMultiParam(searchParams, "style")
   const selectedAges = getMultiParam(searchParams, "age")
   const selectedMaterials = getMultiParam(searchParams, "material")
@@ -145,28 +145,6 @@ export async function renderCategoryPage({
   const priceMin = Number(getSingleParam(searchParams, "priceMin") || 0)
   const priceMaxRaw = Number(getSingleParam(searchParams, "priceMax") || 0)
   const hasPriceFilter = Number.isFinite(priceMin) && Number.isFinite(priceMaxRaw) && priceMaxRaw > 0
-
-  const baseFilters: {
-    types: string[]
-    styles: string[]
-    colors: string[]
-    sizes: string[]
-    ages: string[]
-    materials: string[]
-    inStock: boolean
-    priceMin: number | undefined
-    priceMax: number | undefined
-  } = {
-    types: getMultiParam(searchParams, "type"),
-    styles: selectedStyles,
-    colors: selectedColors,
-    sizes: [],
-    ages: selectedAges,
-    materials: selectedMaterials,
-    inStock: inStockOnly,
-    priceMin: hasPriceFilter ? priceMin : undefined,
-    priceMax: hasPriceFilter ? priceMaxRaw : undefined,
-  }
 
   const [category, options, maxPriceRow, categoryShortcutMenu] = await Promise.all([
     prisma.category.findUnique({
@@ -206,8 +184,29 @@ export async function renderCategoryPage({
 
   if (!category) notFound()
 
+  const selectedColors = resolveSelectedOptionSlugs(rawSelectedColors, options.colors)
   const selectedSizes = resolveSelectedSizeSlugs(getMultiParam(searchParams, "size"), options.sizes)
-  baseFilters.sizes = selectedSizes
+  const baseFilters: {
+    types: string[]
+    styles: string[]
+    colors: string[]
+    sizes: string[]
+    ages: string[]
+    materials: string[]
+    inStock: boolean
+    priceMin: number | undefined
+    priceMax: number | undefined
+  } = {
+    types: getMultiParam(searchParams, "type"),
+    styles: selectedStyles,
+    colors: selectedColors,
+    sizes: selectedSizes,
+    ages: selectedAges,
+    materials: selectedMaterials,
+    inStock: inStockOnly,
+    priceMin: hasPriceFilter ? priceMin : undefined,
+    priceMax: hasPriceFilter ? priceMaxRaw : undefined,
+  }
 
   const childMap = new Map<string, string[]>()
   const rowById = new Map(rows.map((row) => [row.id, row]))

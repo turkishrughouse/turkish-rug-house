@@ -5,7 +5,7 @@ import { getSiteSettings } from "@/lib/site-settings"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
 import { getProductOptions } from "@/lib/actions/product-actions"
 import { prisma } from "@/lib/db"
-import { buildListingPricePresets, buildProductSearchWhere, getMultiParam, getSingleParam, resolveSelectedSizeSlugs } from "@/lib/storefront/listing-filters"
+import { buildListingPricePresets, buildProductSearchWhere, getMultiParam, getSingleParam, resolveSelectedOptionSlugs, resolveSelectedSizeSlugs } from "@/lib/storefront/listing-filters"
 
 type ProductsPageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
@@ -20,7 +20,7 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
     sortInput === "oldest" || sortInput === "price-asc" || sortInput === "price-desc"
       ? sortInput
       : "latest"
-  const selectedColors = getMultiParam(resolved, "color")
+  const rawSelectedColors = getMultiParam(resolved, "color")
   const selectedCategories = getMultiParam(resolved, "category")
   const selectedStyles = getMultiParam(resolved, "style")
   const priceMin = Number(getSingleParam(resolved, "priceMin") || 0)
@@ -31,6 +31,7 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
     getProductOptions(),
     getSiteSettings(),
   ])
+  const selectedColors = resolveSelectedOptionSlugs(rawSelectedColors, options.colors)
   const selectedSizes = resolveSelectedSizeSlugs(getMultiParam(resolved, "size"), options.sizes)
   const selectedCategoryIds = options.categories.filter((category) => selectedCategories.includes(category.slug)).map((category) => category.id)
 

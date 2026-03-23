@@ -3,6 +3,11 @@ import type { Prisma } from "@prisma/client"
 export type ListingSearchParams = { [key: string]: string | string[] | undefined }
 
 type SizeOption = { slug: string; name?: string | null }
+type SlugOption = { slug: string; name?: string | null; title?: string | null }
+
+export function normalizeListingText(value: string | null | undefined) {
+  return (value || "").toLowerCase().trim().replace(/\s+/g, " ")
+}
 
 export function getMultiParam(params: ListingSearchParams, key: string) {
   const value = params[key]
@@ -17,12 +22,32 @@ export function getSingleParam(params: ListingSearchParams, key: string) {
 }
 
 export function normalizeListingSize(value: string | null | undefined) {
-  return (value || "")
-    .toLowerCase()
-    .trim()
+  return normalizeListingText(value)
     .replace(/\bby\b/g, "x")
     .replace(/\s*x\s*/g, "x")
-    .replace(/\s+/g, " ")
+}
+
+export function normalizeListingColor(value: string | null | undefined) {
+  return normalizeListingText(value)
+}
+
+export function resolveSelectedOptionSlugs(values: string[], options: SlugOption[]) {
+  const byNormalized = new Map<string, string>()
+
+  options.forEach((option) => {
+    const normalizedSlug = normalizeListingText(option.slug)
+    const normalizedName = normalizeListingText(option.name || option.title || "")
+    if (normalizedSlug) byNormalized.set(normalizedSlug, option.slug)
+    if (normalizedName) byNormalized.set(normalizedName, option.slug)
+  })
+
+  return Array.from(
+    new Set(
+      values
+        .map((value) => byNormalized.get(normalizeListingText(value)) || value)
+        .filter(Boolean),
+    ),
+  )
 }
 
 export function resolveSelectedSizeSlugs(values: string[], sizeOptions: SizeOption[]) {
@@ -35,13 +60,24 @@ export function resolveSelectedSizeSlugs(values: string[], sizeOptions: SizeOpti
     if (normalizedName) byNormalized.set(normalizedName, option.slug)
   })
 
-  return Array.from(
-    new Set(
-      values
-        .map((value) => byNormalized.get(normalizeListingSize(value)) || value)
-        .filter(Boolean),
-    ),
-  )
+  return Array.from(new Set(values.map((value) => byNormalized.get(normalizeListingSize(value)) || value).filter(Boolean)))
+}
+
+export function extractPriceIntent(query: string) {
+  const matches = normalizeListingText(query).match(/\b\d+(?:\.\d+)?\b/g) || []
+  const numericValues = matches
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value >= 100)
+
+  if (numericValues.length === 0) return undefined
+
+  const center = numericValues[0]
+  const tolerance = Math.max(100, Math.round(center * 0.15))
+  return {
+    center,
+    min: Math.max(0, center - tolerance),
+    max: center + tolerance,
+  }
 }
 
 export function buildListingPricePresets(maxPrice: number) {
@@ -55,10 +91,11 @@ export function buildListingPricePresets(maxPrice: number) {
 }
 
 export function buildProductSearchWhere(query: string): Prisma.ProductWhereInput["AND"] | undefined {
-  const normalized = query.trim()
+  const normalized = normalizeListingText(query)
   if (!normalized) return undefined
 
   const slugLike = normalized.replace(/\s+/g, "-")
+  const priceIntent = extractPriceIntent(normalized)
   const terms = Array.from(
     new Set(
       normalized
@@ -76,7 +113,9 @@ export function buildProductSearchWhere(query: string): Prisma.ProductWhereInput
       { categories: { some: { OR: [{ title: { contains: term } }, { slug: { contains: term } }] } } },
       { styles: { some: { OR: [{ name: { contains: term } }, { slug: { contains: term } }] } } },
       { types: { some: { OR: [{ name: { contains: term } }, { slug: { contains: term } }] } } },
+      { colors: { some: { OR: [{ name: { contains: normalizeListingColor(term) } }, { slug: { contains: normalizeListingColor(term) } }] } } },
       { sizes: { some: { OR: [{ name: { contains: term } }, { slug: { contains: normalizeListingSize(term) } }] } } },
+      ...(priceIntent && /^\d/.test(term) ? [{ price: { gte: priceIntent.min, lte: priceIntent.max } }] : []),
     ],
   }))
 

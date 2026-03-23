@@ -9,7 +9,7 @@ import { getSiteSettings } from "@/lib/site-settings"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { formatCurrency } from "@/lib/storefront/currency"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
-import { buildListingPricePresets, buildProductSearchWhere, getMultiParam, getSingleParam, resolveSelectedSizeSlugs } from "@/lib/storefront/listing-filters"
+import { buildListingPricePresets, buildProductSearchWhere, getMultiParam, getSingleParam, resolveSelectedOptionSlugs, resolveSelectedSizeSlugs } from "@/lib/storefront/listing-filters"
 
 type ShopPageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
@@ -40,7 +40,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
   const showInput = Number(getSingleParam(resolved, "show") || 24)
   const showValue = [8, 16, 24, 36].includes(showInput) ? showInput : 24
   const inStockOnly = resolved["inStock"] === "true"
-  const selectedColors = getMultiParam(resolved, "color")
+  const rawSelectedColors = getMultiParam(resolved, "color")
   const selectedMaterials = getMultiParam(resolved, "material")
   const selectedCategories = getMultiParam(resolved, "category")
   const selectedStyles = getMultiParam(resolved, "style")
@@ -53,6 +53,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
     getProductOptions(),
     getSiteSettings(),
   ])
+  const selectedColors = resolveSelectedOptionSlugs(rawSelectedColors, options.colors)
   const selectedSizes = resolveSelectedSizeSlugs(getMultiParam(resolved, "size"), options.sizes)
   const selectedCategoryIds = options.categories.filter((category) => selectedCategories.includes(category.slug)).map((category) => category.id)
 

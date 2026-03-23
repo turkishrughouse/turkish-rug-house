@@ -13,7 +13,7 @@ import { ensureProductSkuFolders, migrateAllProductsToCanonicalMediaFolders } fr
 import { addColumnIfMissing } from "@/lib/db-compat"
 import { normalizeSuppliers, type SupplierRecord } from "@/lib/supplier-prefix"
 import { syncProductSupplierBySku } from "@/lib/supplier-registry"
-import { buildProductSearchWhere, normalizeListingSize } from "@/lib/storefront/listing-filters"
+import { buildProductSearchWhere, extractPriceIntent, normalizeListingColor, normalizeListingSize, normalizeListingText } from "@/lib/storefront/listing-filters"
 
 type MaterialDelegate = {
     findMany: (...args: any[]) => Promise<any[]>
@@ -141,7 +141,7 @@ async function purgeExpiredTrashedProducts() {
 }
 
 function normalizeSearchText(value: string | null | undefined) {
-    return (value || "").toLowerCase().trim().replace(/\s+/g, " ")
+    return normalizeListingText(value)
 }
 
 function extractSearchTokens(query: string) {
@@ -149,7 +149,7 @@ function extractSearchTokens(query: string) {
         new Set(
             normalizeSearchText(query)
                 .split(" ")
-                .map((token) => token.trim())
+                .map((token: string) => token.trim())
                 .filter(Boolean),
         ),
     )
@@ -179,10 +179,12 @@ type ProductSearchCandidate = {
     title: string
     slug: string
     sku: string | null
+    price: Prisma.Decimal | number
     createdAt: Date
     categories: Array<{ title: string; slug: string }>
     styles: Array<{ name: string; slug: string }>
     types: Array<{ name: string; slug: string }>
+    colors: Array<{ name: string; slug: string }>
     sizes: Array<{ name: string; slug: string }>
 }
 
@@ -195,9 +197,11 @@ function scoreProductSearchCandidate(product: ProductSearchCandidate, query: str
     const title = normalizeSearchText(product.title)
     const slug = normalizeSearchText(product.slug)
     const sku = normalizeSearchText(product.sku)
+    const price = Number(product.price || 0)
     const categoryValues = product.categories.flatMap((item) => [normalizeSearchText(item.title), normalizeSearchText(item.slug)])
     const styleValues = product.styles.flatMap((item) => [normalizeSearchText(item.name), normalizeSearchText(item.slug)])
     const typeValues = product.types.flatMap((item) => [normalizeSearchText(item.name), normalizeSearchText(item.slug)])
+    const colorValues = product.colors.flatMap((item) => [normalizeListingColor(item.name), normalizeListingColor(item.slug)])
     const sizeValues = product.sizes.flatMap((item) => [normalizeSizeValue(item.name), normalizeSizeValue(item.slug)])
 
     let score = 0
@@ -220,9 +224,17 @@ function scoreProductSearchCandidate(product: ProductSearchCandidate, query: str
     if (typeValues.some((value) => value === normalizedQuery)) score += 220
     else if (typeValues.some((value) => value.includes(normalizedQuery))) score += 120
 
+    if (colorValues.some((value) => value === normalizeListingColor(normalizedQuery))) score += 220
+    else if (colorValues.some((value) => value.includes(normalizeListingColor(normalizedQuery)))) score += 120
+
     const sizeQueries = extractSizeQueries(normalizedQuery)
     if (sizeQueries.size > 0 && sizeValues.some((value) => Array.from(sizeQueries).some((sizeQuery) => value.includes(normalizeSizeValue(sizeQuery))))) {
         score += 420
+    }
+
+    const priceIntent = extractPriceIntent(normalizedQuery)
+    if (priceIntent && price >= priceIntent.min && price <= priceIntent.max) {
+        score += 260
     }
 
     const tokens = extractSearchTokens(normalizedQuery)
@@ -242,6 +254,12 @@ function scoreProductSearchCandidate(product: ProductSearchCandidate, query: str
             tokenMatched = true
         } else if (sizeValues.some((value) => value.includes(normalizeSizeValue(token)))) {
             score += 80
+            tokenMatched = true
+        } else if (colorValues.some((value) => value.includes(normalizeListingColor(token)))) {
+            score += 70
+            tokenMatched = true
+        } else if (priceIntent && /^\d/.test(token) && price >= priceIntent.min && price <= priceIntent.max) {
+            score += 75
             tokenMatched = true
         } else if (
             categoryValues.some((value) => value.includes(token)) ||
@@ -576,6 +594,7 @@ export async function getProducts(
                 },
                 types: true,
                 styles: true,
+                colors: true,
                 sizes: true,
             }
         }),
