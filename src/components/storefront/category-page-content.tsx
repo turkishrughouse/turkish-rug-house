@@ -2,9 +2,10 @@ import { notFound, permanentRedirect } from "next/navigation"
 import Link from "next/link"
 import { Metadata } from "next"
 import { LayoutGrid, Grid2x2, Rows3, List } from "lucide-react"
+import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
 import { prisma } from "@/lib/db"
 import { getProducts, getProductOptions } from "@/lib/actions/product-actions"
-import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
+import { buildProductImageAlt, getProductImageUrl, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
 import { formatCurrency } from "@/lib/storefront/currency"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
 import { buildListingPricePresets, buildProductSearchWhere, getMultiParam, getSingleParam, resolveSelectedOptionSlugs, resolveSelectedSizeSlugs } from "@/lib/storefront/listing-filters"
@@ -761,10 +762,19 @@ export async function renderCategoryPage({
                 <div className="mt-4 space-y-3">
                   {sidebarProducts.length === 0 ? <p className="text-sm text-slate-500">No products found in this category.</p> : sidebarProducts.map((product) => {
                     const parsedImages = parseProductImageRecords(product.images)
-                    const image = getProductImageUrl(parsedImages[0], "thumb") || "/placeholder.jpg"
+                    const thumbCandidates = getProductImageUrlCandidates(parsedImages[0], "thumb")
+                    const largeCandidates = getProductImageUrlCandidates(parsedImages[0], "large")
                     return (
                       <Link key={product.id} href={`/product/${product.slug}`} className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-slate-50">
-                        <img src={image} alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt, categories: product.categories })} loading="lazy" decoding="async" className="h-12 w-12 rounded-md border border-slate-200 object-cover" />
+                        <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+                          <StorefrontProductImage
+                            candidates={[...thumbCandidates, ...largeCandidates]}
+                            alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt, categories: product.categories })}
+                            fill
+                            sizes="48px"
+                            className="object-cover object-center"
+                          />
+                        </div>
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-slate-900">{product.title}</p>
                           <p className="text-sm font-semibold text-emerald-700">{formatCurrency(product.price, currencySettings)}</p>

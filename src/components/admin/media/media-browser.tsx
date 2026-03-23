@@ -190,17 +190,16 @@ export function MediaBrowser() {
   const filteredAssets = useMemo(() => {
     return assets.filter((asset) => {
       if (selectedChildFolder) {
-        const inFolder = asset.folder === selectedChildFolder || asset.folder.startsWith(`${selectedChildFolder}/`)
+        const inFolder = asset.folder === selectedChildFolder
         if (!inFolder) return false
       } else if (selectedSubfolder !== ALL_SUB) {
         if (usesSkuFolders) return false
-        const inSubfolder = asset.folder === selectedSubfolder || asset.folder.startsWith(`${selectedSubfolder}/`)
+        const inSubfolder = asset.folder === selectedSubfolder
         if (!inSubfolder) return false
       } else {
         const inFolder =
           !activeFolder ||
-          asset.folder === activeFolder ||
-          asset.folder.startsWith(`${activeFolder}/`)
+          asset.folder === activeFolder
         if (!inFolder) return false
       }
 

@@ -14,7 +14,7 @@ import {
 } from "@/lib/media-folders"
 import { logger } from "@/lib/logger"
 import { getStorageProvider } from "@/lib/storage/provider"
-import { parseProductImages } from "@/lib/product-images"
+import { getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { ensureMediaRegistryTable } from "@/lib/media-registry"
 
 export const runtime = "nodejs"
@@ -233,6 +233,33 @@ function buildUploadLookup(uploadedFiles: MediaAsset[]) {
   return lookup
 }
 
+function resolveCanonicalAssetIdentity(
+  rawUrl: string,
+  folder: string,
+  uploadLookup?: Map<string, UploadCandidate[]>
+) {
+  const normalizedUrl = normalizeAssetUrl(rawUrl, folder, uploadLookup)
+  const storage = getStorageProvider()
+  const relative = storage.toRelativePath(normalizedUrl)
+
+  if (!relative) {
+    return {
+      dedupKey: `${normalizedUrl}@@${sanitizeFolderPath(folder)}`,
+      canonicalUrl: normalizedUrl,
+      canonicalName: fileNameFromUrl(normalizedUrl),
+      canonicalFolder: sanitizeFolderPath(folder) || folder,
+    }
+  }
+
+  const group = extractVariantGroup(relative)
+  return {
+    dedupKey: `${group.folder}@@${group.baseKey}`,
+    canonicalUrl: storage.getPublicUrl(group.masterRelative),
+    canonicalName: path.basename(group.masterRelative),
+    canonicalFolder: group.folder,
+  }
+}
+
 function buildCategoryPathMap(
   categories: Array<{ id: string; slug: string; parentId: string | null }>
 ) {
@@ -276,12 +303,12 @@ async function replaceUrlReferences(oldUrl: string, nextUrl: string | null) {
 
     let changed = false
     const updated = images
-      .map((img) => {
+      .map((img: string) => {
         if (img !== oldUrl) return img
         changed = true
         return nextUrl
       })
-      .filter((img): img is string => Boolean(img))
+      .filter((img: string | null): img is string => Boolean(img))
 
     if (changed) {
       await prisma.product.update({
@@ -607,8 +634,8 @@ export async function GET() {
     const assets: MediaAsset[] = [...uploadedFiles]
 
     for (const product of products) {
-      const imgs = parseProductImages(product.images)
-      if (imgs.length === 0) continue
+      const imageRecords = parseProductImageRecords(product.images)
+      if (imageRecords.length === 0) continue
       const normalizedSku = sanitizeFolderPath(product.sku || "")
       const productCategoryFolders = product.categories
         .map((category) => categoryPathMap.get(category.id) || "")
@@ -620,7 +647,8 @@ export async function GET() {
         productSkuFolders[0] ||
         productCategoryFolders[0] ||
         (normalizedSku ? `categories/uncategorized/${normalizedSku}` : "categories/uncategorized")
-      for (const imageUrl of imgs) {
+      for (const imageRecord of imageRecords) {
+        const imageUrl = getProductImageUrl(imageRecord, "master") || imageRecord.image_url
         const uploadFolder = extractFolderFromUrl(imageUrl)
         const isUpload = Boolean(getStorageProvider().toRelativePath(imageUrl))
         const uploadFolderTop = topFolderName(uploadFolder)
@@ -716,14 +744,15 @@ export async function GET() {
     for (const asset of assets) {
       const assetTopFolder = topFolderName(asset.folder)
       if (!allowedRoots.has(assetTopFolder)) continue
-      const dedupKey = `${asset.url}@@${asset.folder}`
+      const canonical = resolveCanonicalAssetIdentity(asset.url, asset.folder, uploadLookup)
+      const dedupKey = canonical.dedupKey
       const existing = dedup.get(dedupKey)
       if (!existing) {
         dedup.set(dedupKey, {
           id: asset.id,
-          url: asset.url,
-          name: asset.name,
-          folder: asset.folder,
+          url: canonical.canonicalUrl,
+          name: canonical.canonicalName,
+          folder: canonical.canonicalFolder,
           source: asset.source,
       usedIn: asset.usedIn,
       createdAt: asset.createdAt,
