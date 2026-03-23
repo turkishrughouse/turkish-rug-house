@@ -42,6 +42,7 @@ export function ProductDetailView({
   currencySettings?: CurrencySettings
 }) {
   const gallery = buildProductGallery(product)
+  const specificationRows = buildProductSpecificationRows(product)
   const productImageStateKey = `${product.id}:${product.slug}:${product.images}`
   const stockLimit = Math.max(0, product.stockCount)
   const isMarkedOutOfStock = product.isStock === false && stockLimit > 0
@@ -99,6 +100,13 @@ export function ProductDetailView({
               isMarkedOutOfStock={isMarkedOutOfStock}
               isSold={isSold}
             />
+
+            <ProductDetailInfoTabs
+              bottomDescriptionHtml={bottomDescriptionHtml}
+              canExpandBottomDescription={canExpandBottomDescription}
+              shippingText={shippingText}
+              canExpandShipping={canExpandShipping}
+            />
           </section>
 
           <section>
@@ -116,11 +124,35 @@ export function ProductDetailView({
               </div>
             ) : null}
 
-            {showUrgency ? (
-              <div className="mt-5 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-medium text-amber-800">
-                Only one available
+            {specificationRows.length > 0 ? (
+              <div className="mt-7 overflow-hidden rounded-2xl border border-[#e8eef5] bg-[#fcfdff]">
+                <div className="divide-y divide-[#edf2f7]">
+                  {specificationRows.map((row) => (
+                    <div key={row.label} className="grid grid-cols-[120px_1fr] gap-4 px-4 py-3.5 sm:grid-cols-[150px_1fr] sm:px-5">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{row.label}</span>
+                      <span className="text-sm font-medium text-slate-800">{row.value}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : null}
+
+            {showUrgency || product.sku ? (
+              <div className="mt-6 flex flex-wrap items-center gap-2 text-sm">
+                {showUrgency ? (
+                  <div className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-medium text-amber-800">
+                    Only one available
+                  </div>
+                ) : null}
+                {product.sku ? (
+                  <div className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-medium text-slate-700">
+                    SKU: <span className="ml-1 text-slate-900">{product.sku}</span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <ProductDetailPurchase product={product} image={heroImage} />
 
             <div className="mt-7 border-y border-[#e6edf5]">
               <div className="grid grid-cols-2 md:flex md:items-center md:gap-8">
@@ -137,8 +169,6 @@ export function ProductDetailView({
                 ))}
               </div>
             </div>
-
-            <ProductDetailPurchase product={product} image={heroImage} />
 
             <div className="mt-6 rounded-2xl border border-[#e6edf5] bg-[#fcfdfd] p-5">
               <ul className="space-y-2 text-sm text-slate-700">
@@ -201,14 +231,6 @@ export function ProductDetailView({
           </section>
         </div>
 
-        <ProductDetailInfoTabs
-          product={product}
-          bottomDescriptionHtml={bottomDescriptionHtml}
-          canExpandBottomDescription={canExpandBottomDescription}
-          shippingText={shippingText}
-          canExpandShipping={canExpandShipping}
-        />
-
         {relatedProducts.length > 0 ? (
           <section className="mt-16">
             <h2 className="text-3xl font-serif font-bold text-slate-900 mb-6">You May Also Like</h2>
@@ -222,6 +244,34 @@ export function ProductDetailView({
       </div>
     </div>
   )
+}
+
+function buildProductSpecificationRows(product: ProductDetailData) {
+  const visibleAttributes = (product.customAttributes || []).filter((item) => item.visible !== false)
+  const attributeMap = new Map(
+    visibleAttributes.map((item) => [item.name.trim().toLowerCase(), item.values.filter(Boolean).join(", ").trim()]),
+  )
+
+  const preferredOrder = [
+    { label: "Origin", keys: ["origin"] },
+    { label: "Style", keys: ["style"] },
+    { label: "Material", keys: ["material"] },
+    { label: "Size", keys: ["size", "dimensions"] },
+    { label: "Age/Circa", keys: ["age", "circa", "age/circa"] },
+  ]
+
+  const rows = preferredOrder
+    .map((item) => {
+      const value = item.keys.map((key) => attributeMap.get(key)).find((entry) => entry && entry.length > 0)
+      return value ? { label: item.label, value } : null
+    })
+    .filter((item): item is { label: string; value: string } => Boolean(item))
+
+  if (product.sku) {
+    rows.push({ label: "SKU", value: product.sku })
+  }
+
+  return rows
 }
 
 function ProductNavigationPreview({
