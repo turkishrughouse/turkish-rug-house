@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { getSessionUser } from "@/lib/auth"
+import { canAccessAdminSection } from "@/lib/rbac"
 
 export async function requireAdminRoles(roles: string[]) {
   const user = await getSessionUser("admin")
@@ -12,6 +13,13 @@ export async function requireAdminRoles(roles: string[]) {
   return user
 }
 
-export async function requireAdminSection(_section: string) {
-  return requireAdminRoles(["SUPER_USER", "ADMIN"])
+export async function requireAdminSection(section: string) {
+  const user = await getSessionUser("admin")
+  if (!user) {
+    redirect("/rughouse/login")
+  }
+  if (!canAccessAdminSection(user.role, section)) {
+    redirect("/rughouse/login")
+  }
+  return user
 }

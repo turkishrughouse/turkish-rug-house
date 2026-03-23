@@ -11,7 +11,8 @@ import {
     Users,
     Menu,
     Box,
-    Inbox
+    Inbox,
+    ListTodo
 } from "lucide-react"
 import { useState, useRef, useEffect, type ComponentType } from "react"
 import { createPortal } from "react-dom"
@@ -107,6 +108,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
             ]
         },
         { name: t.sidebar.messages, href: "/dashboard/messages", section: "messages", icon: Inbox },
+        { name: t.sidebar.tasks || "Tasks", href: "/dashboard/tasks", section: "tasks", icon: ListTodo },
         {
             name: t.sidebar.design,
             href: "/dashboard/design?tab=banners",

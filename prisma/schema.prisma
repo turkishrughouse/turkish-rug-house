@@ -39,8 +39,34 @@ model User {
   supportTickets   SupportTicket[]
   customerProfile  CustomerProfile?
   reviewAccesses   ReviewAccess[]
+  assignedTasks    Task[]    @relation("TaskAssignedTo")
+  createdTasks     Task[]    @relation("TaskCreatedBy")
 
   @@unique([provider, providerAccountId])
+}
+
+model Task {
+  id           String       @id @default(cuid())
+  title        String
+  description  String?
+  priority     String       @default("MEDIUM") // LOW | MEDIUM | HIGH | URGENT
+  status       String       @default("TODO") // TODO | IN_PROGRESS | REVIEW | COMPLETED
+  dueDate      DateTime?
+  relatedProductId String?
+  relatedProduct Product?   @relation("TaskRelatedProduct", fields: [relatedProductId], references: [id], onDelete: SetNull)
+  assignedToId String?
+  assignedTo   User?        @relation("TaskAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdById  String
+  createdBy    User         @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  progressNote String?
+  archivedAt   DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([assignedToId, status, dueDate])
+  @@index([createdById, createdAt(sort: Desc)])
+  @@index([archivedAt, updatedAt(sort: Desc)])
+  @@index([relatedProductId, status])
 }
 
 model SupportFaq {
@@ -137,6 +163,7 @@ model Product {
   materials   Material[]
   origins     Origin[]
   reviews     ProductReview[]
+  tasks       Task[]   @relation("TaskRelatedProduct")
 }
 
 model ProductReview {
@@ -407,4 +434,3 @@ model Origin {
   name     String
   products Product[]
 }
-

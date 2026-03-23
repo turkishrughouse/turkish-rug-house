@@ -14,7 +14,7 @@ export function isAdminRole(role: string | null | undefined): role is AdminRole 
 export function canAccessAdminSection(role: string, section: string) {
   if (role === "SUPER_USER") return true
   if (role === "ADMIN") {
-    return ["dashboard", "analytics", "products", "orders", "pages", "blog"].includes(section)
+    return ["dashboard", "analytics", "products", "orders", "pages", "blog", "tasks"].includes(section)
   }
   if (role === "EDITOR") {
     return ["dashboard", "analytics", "products", "blog"].includes(section)
