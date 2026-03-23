@@ -8,8 +8,7 @@ import { z } from "zod"
 import { notifyNewProduct, notifyProductDiscount } from "@/lib/customer-messaging"
 import { getSessionUser } from "@/lib/auth"
 import { syncProductToInventory } from "@/lib/inventory-sync"
-import { normalizeProductImageRecords } from "@/lib/product-images"
-import { ensureProductSkuFolders, migrateAllProductsToCanonicalMediaFolders } from "@/lib/media-folders"
+import { ensureProductSkuFolders, migrateAllProductsToCanonicalMediaFolders, normalizeProductImageRecordsToSkuFolder } from "@/lib/media-folders"
 import { addColumnIfMissing } from "@/lib/db-compat"
 import { normalizeSuppliers, type SupplierRecord } from "@/lib/supplier-prefix"
 import { syncProductSupplierBySku } from "@/lib/supplier-registry"
@@ -789,12 +788,13 @@ export async function createProduct(data: ProductFormValues) {
         const uniqueSlug = await ensureUniqueProductSlug(
             buildSlugBaseWithSku(validated.slug || validated.title, validated.sku)
         )
-        // CRITICAL FIX: Use image URLs as-is without path mutation.
-        // Persisted image paths may exist under historical category folders.
-        // Calling relocateProductImagesToSkuFolders() would mutate URLs based on CURRENT categories,
-        // breaking images stored under different historical category paths.
-        // Only relocate during initial upload, never during product edits.
-        const normalizedImages = validated.images
+        await ensureProductSkuFolders(validated.categoryIds, validated.sku || null)
+        const normalizedImageRecords = await normalizeProductImageRecordsToSkuFolder(
+            validated.images,
+            validated.categoryIds,
+            validated.sku || null
+        )
+        const normalizedImages = normalizedImageRecords.map((image) => image.image_url)
         const categoryRows = validated.categoryIds.length > 0
             ? await db.category.findMany({
                 where: { id: { in: validated.categoryIds } },
@@ -820,7 +820,7 @@ export async function createProduct(data: ProductFormValues) {
                 stockCount: validated.stockCount,
                 isStock: validated.isStock,
                 isPublished: validated.isPublished,
-                images: JSON.stringify(normalizeProductImageRecords(normalizedImages)),
+                images: JSON.stringify(normalizedImageRecords),
                 seoTitle: seo.seoTitle,
                 seoDescription: seo.seoDescription,
                 seoKeywords: seo.seoKeywords,
@@ -838,7 +838,6 @@ export async function createProduct(data: ProductFormValues) {
         await setShortDescriptionByProductId(created.id, validated.shortDescription)
         await setCustomAttributesByProductId(created.id, validated.customAttributes)
         const resolvedSuppliers = await syncProductSupplierBySku(created.id, validated.sku || null)
-        await ensureProductSkuFolders(validated.categoryIds, validated.sku || null)
         await setProductCreatorByProductId(created.id, {
             id: actor?.id || null,
             name: actor?.name || actor?.email || "Unknown",
@@ -927,12 +926,13 @@ export async function updateProduct(id: string, data: ProductFormValues) {
             buildSlugBaseWithSku(validated.slug || validated.title, validated.sku),
             id
         )
-        // CRITICAL FIX: Use image URLs as-is without path mutation.
-        // Persisted image paths may exist under historical category folders.
-        // Calling relocateProductImagesToSkuFolders() would mutate URLs based on CURRENT categories,
-        // breaking images stored under different historical category paths.
-        // Only relocate during initial upload, never during product edits.
-        const normalizedImages = validated.images
+        await ensureProductSkuFolders(validated.categoryIds, validated.sku || null)
+        const normalizedImageRecords = await normalizeProductImageRecordsToSkuFolder(
+            validated.images,
+            validated.categoryIds,
+            validated.sku || null
+        )
+        const normalizedImages = normalizedImageRecords.map((image) => image.image_url)
         const categoryRows = validated.categoryIds.length > 0
             ? await db.category.findMany({
                 where: { id: { in: validated.categoryIds } },
@@ -962,7 +962,7 @@ export async function updateProduct(id: string, data: ProductFormValues) {
                 stockCount: validated.stockCount,
                 isStock: validated.isStock,
                 isPublished: validated.isPublished,
-                images: JSON.stringify(normalizeProductImageRecords(normalizedImages)),
+                images: JSON.stringify(normalizedImageRecords),
                 seoTitle: seo.seoTitle,
                 seoDescription: seo.seoDescription,
                 seoKeywords: seo.seoKeywords,
@@ -980,8 +980,6 @@ export async function updateProduct(id: string, data: ProductFormValues) {
         await setShortDescriptionByProductId(id, validated.shortDescription)
         await setCustomAttributesByProductId(id, validated.customAttributes)
         const resolvedSuppliers = await syncProductSupplierBySku(id, validated.sku || null)
-        await ensureProductSkuFolders(validated.categoryIds, validated.sku || null)
-
         const hadDiscount = Boolean(
             before?.isPublished &&
             before.compareAtPrice &&

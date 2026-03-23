@@ -2,7 +2,7 @@ import { mkdir, readdir, rename, rm, rmdir, stat } from "fs/promises"
 import path from "path"
 import { prisma } from "@/lib/db"
 import { ensureMediaRegistryTable } from "@/lib/media-registry"
-import { normalizeProductImageRecords } from "@/lib/product-images"
+import { getProductImageUrl, normalizeProductImageRecords } from "@/lib/product-images"
 import { getStorageProvider } from "@/lib/storage/provider"
 
 const MANAGED_MEDIA_ROOTS = ["categories", "pages", "profile"] as const
@@ -175,15 +175,9 @@ async function resolveCanonicalProductFolder(
   return `${baseFolder}/${normalizedSku}`
 }
 
-function hasUsablePersistedImageUrl(url: string | null | undefined) {
-  const value = (url || "").trim()
-  if (!value) return false
-  if (/^https?:\/\//i.test(value)) return true
-  return Boolean(getStorageProvider().toRelativePath(value))
-}
-
-export function shouldPreservePersistedProductImagePaths(imageUrls: Array<string | null | undefined>) {
-  return imageUrls.some((url) => hasUsablePersistedImageUrl(url))
+function isManagedProductImageUrl(url: string | null | undefined) {
+  if (!url) return false
+  return Boolean(getStorageProvider().toRelativePath(url))
 }
 
 function extractFolderFromManagedUrl(url: string) {
@@ -240,6 +234,97 @@ async function pruneEmptyUploadFolders(folder: string) {
   }
 }
 
+async function replaceMediaUrlReferences(oldUrl: string, nextUrl: string | null) {
+  const [products, categories, pages, profiles] = await Promise.all([
+    prisma.product.findMany({ select: { id: true, images: true } }),
+    prisma.category.findMany({ select: { id: true, image: true } }),
+    prisma.page.findMany({ select: { id: true, featuredImage: true, content: true } }),
+    prisma.customerProfile.findMany({ select: { id: true, avatarUrl: true } }),
+  ])
+
+  for (const product of products) {
+    const images = normalizeProductImageRecords(product.images)
+    let changed = false
+    const nextImages = images.map((image) => {
+      const nextImage = {
+        ...image,
+        variants: image.variants ? { ...image.variants } : undefined,
+      }
+
+      if (nextImage.image_url === oldUrl) {
+        nextImage.image_url = nextUrl || ""
+        changed = true
+      }
+      if (nextImage.variants?.thumb === oldUrl) {
+        nextImage.variants.thumb = nextUrl || ""
+        changed = true
+      }
+      if (nextImage.variants?.large === oldUrl) {
+        nextImage.variants.large = nextUrl || ""
+        changed = true
+      }
+      if (nextImage.variants?.master === oldUrl) {
+        nextImage.variants.master = nextUrl || ""
+        changed = true
+      }
+
+      return nextImage
+    }).filter((image) => image.image_url)
+
+    if (changed) {
+      await prisma.product.update({
+        where: { id: product.id },
+        data: { images: JSON.stringify(nextImages) },
+      })
+    }
+  }
+
+  for (const category of categories) {
+    if (category.image !== oldUrl) continue
+    await prisma.category.update({
+      where: { id: category.id },
+      data: { image: nextUrl },
+    })
+  }
+
+  const escaped = oldUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const imgTagRegex = new RegExp(`<img[^>]*src=["']${escaped}["'][^>]*>`, "gi")
+  const urlRegex = new RegExp(escaped, "g")
+
+  for (const page of pages) {
+    const featuredChanged = page.featuredImage === oldUrl
+    let nextContent = page.content || ""
+    const hadInContent = nextContent.includes(oldUrl)
+
+    if (hadInContent) {
+      if (nextUrl) {
+        nextContent = nextContent.replace(urlRegex, nextUrl)
+      } else {
+        nextContent = nextContent.replace(imgTagRegex, "")
+        nextContent = nextContent.replace(urlRegex, "")
+      }
+    }
+
+    if (featuredChanged || hadInContent) {
+      await prisma.page.update({
+        where: { id: page.id },
+        data: {
+          featuredImage: featuredChanged ? nextUrl : undefined,
+          content: hadInContent ? nextContent : undefined,
+        },
+      })
+    }
+  }
+
+  for (const profile of profiles) {
+    if (profile.avatarUrl !== oldUrl) continue
+    await prisma.customerProfile.update({
+      where: { id: profile.id },
+      data: { avatarUrl: nextUrl },
+    })
+  }
+}
+
 export async function moveManagedAssetGroupToFolder(url: string, targetFolder: string) {
   const siblings = await getSiblingUploadAssets(url)
   if (siblings.length === 0) return url
@@ -267,6 +352,7 @@ export async function moveManagedAssetGroupToFolder(url: string, targetFolder: s
     const targetPath = path.join(targetDir, sibling.fileName)
     await rename(sibling.absolutePath, targetPath)
     const nextUrl = storage.getPublicUrl(`${safeTargetFolder}/${sibling.fileName}`)
+    await replaceMediaUrlReferences(sibling.url, nextUrl)
     await prisma.$executeRaw`UPDATE "MediaAsset" SET "image_url" = ${nextUrl}, "object_key" = ${`${safeTargetFolder}/${sibling.fileName}`} WHERE "image_url" = ${sibling.url}`
     if (sibling.fileName.endsWith("-master.webp")) {
       nextPrimaryUrl = nextUrl
@@ -278,13 +364,6 @@ export async function moveManagedAssetGroupToFolder(url: string, targetFolder: s
 }
 
 export async function relocateProductImagesToSkuFolders(imageUrls: string[], categoryIds: string[], sku: string | null | undefined) {
-  // Persisted Product.images paths are the source of truth.
-  // If a product already has usable persisted image URLs, never rebuild the
-  // directory from current category state or relocate the files.
-  if (shouldPreservePersistedProductImagePaths(imageUrls)) {
-    return imageUrls
-  }
-
   const targetFolder = await resolveCanonicalProductFolder(categoryIds, sku, imageUrls)
   if (!targetFolder || imageUrls.length === 0) {
     return imageUrls
@@ -292,6 +371,10 @@ export async function relocateProductImagesToSkuFolders(imageUrls: string[], cat
 
   const nextUrls: string[] = []
   for (const url of imageUrls) {
+    if (!isManagedProductImageUrl(url)) {
+      nextUrls.push(url)
+      continue
+    }
     const currentFolder = extractFolderFromManagedUrl(url)
     if (currentFolder === targetFolder) {
       nextUrls.push(url)
@@ -303,6 +386,35 @@ export async function relocateProductImagesToSkuFolders(imageUrls: string[], cat
   }
 
   return nextUrls
+}
+
+export async function normalizeProductImageRecordsToSkuFolder(
+  imagesValue: unknown,
+  categoryIds: string[],
+  sku: string | null | undefined
+) {
+  const currentImages = normalizeProductImageRecords(imagesValue)
+  if (currentImages.length === 0) return currentImages
+
+  const nextUrls = await relocateProductImagesToSkuFolders(
+    currentImages.map((image) => image.image_url),
+    categoryIds,
+    sku
+  )
+
+  return currentImages.map((image, index) => {
+    const nextUrl = nextUrls[index] || image.image_url
+    if (nextUrl === image.image_url) return image
+    return {
+      ...image,
+      image_url: nextUrl,
+      variants: {
+        thumb: getProductImageUrl(nextUrl, "thumb") || image.variants?.thumb || nextUrl,
+        large: getProductImageUrl(nextUrl, "large") || image.variants?.large || nextUrl,
+        master: getProductImageUrl(nextUrl, "master") || image.variants?.master || nextUrl,
+      },
+    }
+  })
 }
 
 export async function migrateAllProductsToCanonicalMediaFolders() {
@@ -326,10 +438,6 @@ export async function migrateAllProductsToCanonicalMediaFolders() {
     if (currentImages.length === 0) continue
 
     const currentUrls = currentImages.map((image) => image.image_url)
-    if (shouldPreservePersistedProductImagePaths(currentUrls)) {
-      continue
-    }
-
     const nextUrls = await relocateProductImagesToSkuFolders(currentUrls, categoryIds, sku)
     const didChange = nextUrls.some((url, index) => url !== currentUrls[index])
     if (!didChange) continue
