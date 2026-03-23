@@ -299,16 +299,35 @@ async function replaceUrlReferences(oldUrl: string, nextUrl: string | null) {
   ])
 
   for (const product of products) {
-    const images = parseProductImages(product.images)
-
+    const images = parseProductImageRecords(product.images)
     let changed = false
     const updated = images
-      .map((img: string) => {
-        if (img !== oldUrl) return img
-        changed = true
-        return nextUrl
+      .map((image) => {
+        const nextImage = {
+          ...image,
+          variants: image.variants ? { ...image.variants } : undefined,
+        }
+
+        if (nextImage.image_url === oldUrl) {
+          nextImage.image_url = nextUrl || ""
+          changed = true
+        }
+        if (nextImage.variants?.thumb === oldUrl) {
+          nextImage.variants.thumb = nextUrl ? getProductImageUrl(nextUrl, "thumb") || nextUrl : ""
+          changed = true
+        }
+        if (nextImage.variants?.large === oldUrl) {
+          nextImage.variants.large = nextUrl ? getProductImageUrl(nextUrl, "large") || nextUrl : ""
+          changed = true
+        }
+        if (nextImage.variants?.master === oldUrl) {
+          nextImage.variants.master = nextUrl ? getProductImageUrl(nextUrl, "master") || nextUrl : ""
+          changed = true
+        }
+
+        return nextImage
       })
-      .filter((img: string | null): img is string => Boolean(img))
+      .filter((image) => image.image_url)
 
     if (changed) {
       await prisma.product.update({
