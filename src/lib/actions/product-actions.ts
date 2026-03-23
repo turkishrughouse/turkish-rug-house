@@ -139,6 +139,43 @@ async function purgeExpiredTrashedProducts() {
     lastTrashPurgeAt = Date.now()
 }
 
+function buildProductSearchWhere(query: string): Prisma.ProductWhereInput["AND"] | undefined {
+    const normalized = query.trim()
+    if (!normalized) return undefined
+
+    const slugLike = normalized.replace(/\s+/g, "-")
+    const terms = Array.from(
+        new Set(
+            normalized
+                .split(/\s+/)
+                .map((term) => term.trim())
+                .filter(Boolean),
+        ),
+    )
+
+    const clauses: Prisma.ProductWhereInput[] = terms.map((term) => ({
+        OR: [
+            { title: { contains: term } },
+            { slug: { contains: term } },
+            { sku: { contains: term } },
+            { categories: { some: { OR: [{ title: { contains: term } }, { slug: { contains: term } }] } } },
+            { styles: { some: { OR: [{ name: { contains: term } }, { slug: { contains: term } }] } } },
+            { types: { some: { OR: [{ name: { contains: term } }, { slug: { contains: term } }] } } },
+        ],
+    }))
+
+    if (slugLike && slugLike !== normalized) {
+        clauses.push({
+            OR: [
+                { slug: { contains: slugLike } },
+                { categories: { some: { slug: { contains: slugLike } } } },
+            ],
+        })
+    }
+
+    return clauses
+}
+
 type CustomAttribute = {
     name: string
     values: string[]
@@ -405,10 +442,7 @@ export async function getProducts(
             : null
 
     const where: Prisma.ProductWhereInput = {
-        OR: query ? [
-            { title: { contains: query } },
-            { slug: { contains: query } },
-        ] : undefined,
+        AND: buildProductSearchWhere(query),
         isPublished: status === 'published' ? true : status === 'draft' ? false : undefined,
         categories: filters?.categoryIds?.length ? {
             some: {
@@ -452,6 +486,8 @@ export async function getProducts(
                         parent: true
                     }
                 },
+                types: true,
+                styles: true,
             }
         }),
         db.product.count({ where })

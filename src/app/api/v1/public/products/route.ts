@@ -1,5 +1,5 @@
-
 import { NextResponse } from "next/server";
+import { unstable_noStore as noStore } from "next/cache"
 import { getProducts } from "@/lib/actions/product-actions";
 
 export const revalidate = 300;
@@ -9,7 +9,9 @@ export async function GET(request: Request) {
         const { searchParams } = new URL(request.url);
         const page = Number(searchParams.get("page")) || 1;
         const limit = Number(searchParams.get("limit")) || 20;
-        const query = searchParams.get("q") || "";
+        const query = (searchParams.get("q") || "").trim();
+        const isSearchRequest = query.length > 0;
+        if (isSearchRequest) noStore()
         const sortParam = searchParams.get("sort");
         const sort: "latest" | "oldest" | "price-asc" | "price-desc" =
             sortParam === "oldest" || sortParam === "price-asc" || sortParam === "price-desc"
@@ -38,7 +40,9 @@ export async function GET(request: Request) {
 
         return NextResponse.json(result, {
             headers: {
-                "Cache-Control": "public, s-maxage=300, stale-while-revalidate=86400",
+                "Cache-Control": isSearchRequest
+                    ? "no-store, max-age=0"
+                    : "public, s-maxage=300, stale-while-revalidate=86400",
             },
         });
     } catch (error) {

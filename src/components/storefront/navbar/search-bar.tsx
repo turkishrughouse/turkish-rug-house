@@ -13,9 +13,12 @@ type ProductItem = {
     id: string
     title: string
     slug: string
+    sku?: string | null
     price?: number
     images?: string
     categories?: Array<{ slug: string }>
+    styles?: Array<{ slug: string; name?: string | null }>
+    types?: Array<{ slug: string; name?: string | null }>
 }
 
 type SearchResult = {
@@ -27,6 +30,19 @@ type SearchResult = {
     price?: number
     href: string
     type: "Product"
+}
+
+function normalizeSearchQuery(value: string) {
+    return value.trim().replace(/\s+/g, " ").toLowerCase()
+}
+
+function getResultSubtitle(item: ProductItem) {
+    if (item.categories?.[0]?.slug) return item.categories[0].slug.replaceAll("-", " ")
+    if (item.styles?.[0]?.name) return item.styles[0].name
+    if (item.styles?.[0]?.slug) return item.styles[0].slug.replaceAll("-", " ")
+    if (item.types?.[0]?.name) return item.types[0].name
+    if (item.types?.[0]?.slug) return item.types[0].slug.replaceAll("-", " ")
+    return undefined
 }
 
 function parseFirstImage(images: string | undefined) {
@@ -68,6 +84,7 @@ export function SearchBar() {
     const [activeIndex, setActiveIndex] = useState(-1)
     const [open, setOpen] = useState(false)
     const [loading, setLoading] = useState(false)
+    const latestRequestRef = useRef(0)
 
     useEffect(() => {
         const closeOnOutside = (event: MouseEvent) => {
@@ -81,7 +98,7 @@ export function SearchBar() {
     }, [])
 
     useEffect(() => {
-        const term = query.trim().toLowerCase()
+        const term = normalizeSearchQuery(query)
         if (term.length < 1) {
             setResults([])
             setOpen(false)
@@ -90,23 +107,28 @@ export function SearchBar() {
             return
         }
 
+        const controller = new AbortController()
+        const requestId = latestRequestRef.current + 1
+        latestRequestRef.current = requestId
+
         const timer = setTimeout(async () => {
             setLoading(true)
             try {
                 const productRes = await fetch(`/api/v1/public/products?limit=8&q=${encodeURIComponent(term)}&sort=latest`, {
                     cache: "no-store",
+                    signal: controller.signal,
                 })
                 const productsData: { products?: ProductItem[] } = productRes.ok ? await productRes.json() : {}
                 const products: ProductItem[] = productsData.products || []
 
+                const seen = new Set<string>()
                 const productResults: SearchResult[] = products
-                    .filter((item) => item.title.toLowerCase().includes(term))
-                    .map((item) => {
+                    .map((item): SearchResult => {
                         const { image, imageCandidates } = parseFirstImage(item.images)
                         return {
                             id: `prod-${item.id}`,
                             title: item.title,
-                            subtitle: item.categories?.[0]?.slug ? item.categories[0].slug.replaceAll("-", " ") : undefined,
+                            subtitle: getResultSubtitle(item),
                             image,
                             imageCandidates,
                             price: typeof item.price === "number" ? item.price : undefined,
@@ -114,20 +136,33 @@ export function SearchBar() {
                             type: "Product",
                         }
                     })
+                    .filter((item) => {
+                        if (seen.has(item.href)) return false
+                        seen.add(item.href)
+                        return true
+                    })
 
+                if (latestRequestRef.current !== requestId) return
                 setResults(productResults.slice(0, 8))
                 setActiveIndex(-1)
                 setOpen(true)
-            } catch {
+            } catch (error) {
+                if (controller.signal.aborted) return
+                console.error("SearchBar search request failed:", error)
                 setResults([])
                 setActiveIndex(-1)
                 setOpen(false)
             } finally {
-                setLoading(false)
+                if (latestRequestRef.current === requestId) {
+                    setLoading(false)
+                }
             }
         }, 220)
 
-        return () => clearTimeout(timer)
+        return () => {
+            controller.abort()
+            clearTimeout(timer)
+        }
     }, [query])
 
     const emptyMessage = useMemo(() => {
