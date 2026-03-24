@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react"
 import { ChevronDown, ChevronRight, Heart, House, Menu, Search, Shuffle, ShoppingBag, UserCircle2, X } from "lucide-react"
 import { getCartSummary, getCartUpdateEventName, readCart } from "@/lib/storefront/cart"
 import { toast } from "sonner"
-import { buildProductImageAlt, getProductImageUrlCandidates } from "@/lib/product-images"
+import { buildProductImageAlt, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
 import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
 
 import { DiscoveryCapsule } from "./discovery-capsule"
@@ -399,16 +399,25 @@ export function MainHeader({
                                         <div className="max-h-[260px] space-y-2 overflow-auto pr-1">
                                             {cartItems.slice(0, 4).map((item) => (
                                                 <div key={item.productId} className="flex items-center gap-2 rounded-md border border-slate-200 p-2">
-                                                    <Link href={`/product/${item.slug}`} className="h-12 w-12 shrink-0 overflow-hidden rounded border border-slate-200">
-                                                        <StorefrontProductImage
-                                                            candidates={getProductImageUrlCandidates(item.image, "thumb")}
-                                                            alt={buildProductImageAlt({ title: item.title })}
-                                                            width={48}
-                                                            height={48}
-                                                            sizes="48px"
-                                                            className="h-full w-full object-cover"
-                                                        />
-                                                    </Link>
+                                                    {(() => {
+                                                        const images = parseProductImageRecords(item.image)
+                                                        const largeCandidates = getProductImageUrlCandidates(images[0] || item.image, "large")
+                                                        const thumbCandidates = getProductImageUrlCandidates(images[0] || item.image, "thumb")
+                                                        const candidates = [...largeCandidates, ...thumbCandidates]
+
+                                                        return (
+                                                            <Link href={`/product/${item.slug}`} className="h-12 w-12 shrink-0 overflow-hidden rounded border border-slate-200">
+                                                                <StorefrontProductImage
+                                                                    candidates={candidates}
+                                                                    alt={buildProductImageAlt({ title: item.title })}
+                                                                    width={48}
+                                                                    height={48}
+                                                                    sizes="48px"
+                                                                    className="h-full w-full object-cover"
+                                                                />
+                                                            </Link>
+                                                        )
+                                                    })()}
                                                     <div className="min-w-0 flex-1">
                                                         <p className="truncate text-xs font-medium text-slate-900">{item.title}</p>
                                                         <p className="text-xs text-slate-500">

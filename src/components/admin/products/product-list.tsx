@@ -95,9 +95,9 @@ function AdminProductThumbnail({
     images: string
 }) {
     const records = parseProductImageRecords(images)
-    const thumbCandidates = getProductImageUrlCandidates(records[0], "thumb")
     const largeCandidates = getProductImageUrlCandidates(records[0], "large")
-    const candidates = [...thumbCandidates, ...largeCandidates]
+    const thumbCandidates = getProductImageUrlCandidates(records[0], "thumb")
+    const candidates = [...largeCandidates, ...thumbCandidates]
     const alt = buildProductImageAlt({ title, fallbackAlt: records[0]?.alt })
 
     return (
