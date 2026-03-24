@@ -8,6 +8,7 @@ import { getImageUrl } from "@/lib/storage/url"
 
 interface SharedMegaPanelProps {
     activeTab: "categories" | "information" | null
+    categoryItems?: MenuNode[]
     infoItems?: MenuNode[]
     onMouseEnter: () => void
     onMouseLeave: () => void
@@ -32,13 +33,16 @@ type TreeCategory = {
 
 export function SharedMegaPanel({
     activeTab,
+    categoryItems: initialCategoryItems = [],
     infoItems: initialInfoItems = [],
     onMouseEnter,
     onMouseLeave,
     onLinkClick,
 }: SharedMegaPanelProps & {
+    categoryItems?: MenuNode[]
     infoItems?: MenuNode[]
 }) {
+    const [categoryItems, setCategoryItems] = React.useState<MenuNode[]>([])
     const [infoItems, setInfoItems] = React.useState<MenuNode[]>([])
     const [categoryTree, setCategoryTree] = React.useState<TreeCategory[]>([])
     const [activeCategoryId, setActiveCategoryId] = React.useState<string | null>(null)
@@ -49,7 +53,16 @@ export function SharedMegaPanel({
     const infoLoadedRef = React.useRef(false)
 
     React.useEffect(() => {
+        setCategoryItems(Array.isArray(initialCategoryItems) ? initialCategoryItems : [])
+    }, [initialCategoryItems])
+
+    React.useEffect(() => {
         const fetchCategoryTree = async (force = false) => {
+            if (Array.isArray(initialCategoryItems) && initialCategoryItems.length > 0) {
+                setCategoriesLoading(false)
+                categoriesLoadedRef.current = true
+                return
+            }
             if (categoriesLoadedRef.current && !force) {
                 setCategoriesLoading(false)
                 return
@@ -72,7 +85,20 @@ export function SharedMegaPanel({
         }
 
         void fetchCategoryTree()
-    }, [])
+    }, [initialCategoryItems])
+
+    const activeCategoryMenu = React.useMemo(
+        () => categoryItems.find((item) => item.id === activeCategoryId) || categoryItems[0] || null,
+        [activeCategoryId, categoryItems]
+    )
+
+    React.useEffect(() => {
+        if (categoryItems.length === 0) return
+        setActiveCategoryId((current) => {
+            if (current && categoryItems.some((item) => item.id === current)) return current
+            return categoryItems[0]?.id || null
+        })
+    }, [categoryItems])
 
     React.useEffect(() => {
         setInfoItems(Array.isArray(initialInfoItems) ? initialInfoItems : [])
@@ -132,7 +158,32 @@ export function SharedMegaPanel({
                             <p className="mb-5 text-[10px] font-medium uppercase tracking-[0.22em] text-[#8c8070]">
                                 Shop Collections
                             </p>
-                            {categoriesLoading ? (
+                            {categoryItems.length > 0 ? (
+                                <ul className="space-y-2.5">
+                                    {categoryItems.map((group) => {
+                                        const active = group.id === activeCategoryMenu?.id
+                                        return (
+                                            <li key={group.id}>
+                                                <Link
+                                                    href={getSafeUrl(group.url)}
+                                                    onClick={onLinkClick}
+                                                    onMouseEnter={() => setActiveCategoryId(group.id)}
+                                                    onFocus={() => setActiveCategoryId(group.id)}
+                                                    className={cn(
+                                                        "group flex items-center justify-between rounded-sm px-4 py-3 font-serif text-[16px] font-medium text-[#2d2a26] transition-all duration-300",
+                                                        active
+                                                            ? "bg-[#f4ede5] text-[#1f1b16] shadow-[inset_0_0_0_1px_rgba(88,75,61,0.05)]"
+                                                            : "hover:bg-[#faf5ef] hover:text-[#1f1b16]"
+                                                    )}
+                                                >
+                                                    <span>{group.label}</span>
+                                                    <ChevronRight className={cn("h-4 w-4 transition-transform duration-300", active ? "translate-x-0.5 text-[#6b645b]" : "text-[#9b9389] group-hover:translate-x-0.5")} />
+                                                </Link>
+                                            </li>
+                                        )
+                                    })}
+                                </ul>
+                            ) : categoriesLoading ? (
                                 <p className="text-sm text-[#8c8070]">Loading categories...</p>
                             ) : categoryTree.length === 0 ? (
                                 <p className="text-sm text-[#8c8070]">No categories found.</p>
@@ -165,7 +216,74 @@ export function SharedMegaPanel({
                         </aside>
 
                         <div className="bg-white px-9 py-7">
-                            {categoriesLoading ? (
+                            {categoryItems.length > 0 ? (
+                                activeCategoryMenu ? (
+                                    activeCategoryMenu.children && activeCategoryMenu.children.length > 0 ? (
+                                        <div className="max-w-[840px]">
+                                            <div className="mb-5 flex items-center gap-4">
+                                                <h3 className="font-serif text-[26px] font-semibold tracking-[-0.02em] text-[#231f1a]">
+                                                    {activeCategoryMenu.label}
+                                                </h3>
+                                                <div className="h-px flex-1 bg-[#e7ddd1]" />
+                                            </div>
+                                            <div className="grid grid-cols-3 gap-8">
+                                                {activeCategoryMenu.children.map((group) => (
+                                                    <div key={group.id} className="space-y-4">
+                                                        <h4 className="border-b border-slate-100 pb-2 font-serif text-lg font-semibold text-slate-900">
+                                                            <Link href={getSafeUrl(group.url)} onClick={onLinkClick} className="hover:text-teal-700">
+                                                                {group.label}
+                                                            </Link>
+                                                        </h4>
+                                                        <ul className="space-y-2">
+                                                            {group.children && group.children.length > 0 ? (
+                                                                group.children.map((child) => (
+                                                                    <li key={child.id}>
+                                                                        <Link
+                                                                            href={getSafeUrl(child.url)}
+                                                                            onClick={onLinkClick}
+                                                                            className="block text-sm text-slate-600 transition-all hover:translate-x-1 hover:text-teal-700"
+                                                                        >
+                                                                            {child.label}
+                                                                        </Link>
+                                                                    </li>
+                                                                ))
+                                                            ) : getSafeUrl(group.url) !== "#" ? (
+                                                                <li>
+                                                                    <Link
+                                                                        href={getSafeUrl(group.url)}
+                                                                        onClick={onLinkClick}
+                                                                        className="block text-sm text-slate-600 transition-all hover:translate-x-1 hover:text-teal-700"
+                                                                    >
+                                                                        {group.label}
+                                                                    </Link>
+                                                                </li>
+                                                            ) : (
+                                                                <li className="text-sm text-slate-400">No links</li>
+                                                            )}
+                                                        </ul>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ) : getSafeUrl(activeCategoryMenu.url) !== "#" ? (
+                                        <div className="max-w-[840px]">
+                                            <div className="mb-5 flex items-center gap-4">
+                                                <h3 className="font-serif text-[26px] font-semibold tracking-[-0.02em] text-[#231f1a]">
+                                                    {activeCategoryMenu.label}
+                                                </h3>
+                                                <div className="h-px flex-1 bg-[#e7ddd1]" />
+                                            </div>
+                                            <Link href={getSafeUrl(activeCategoryMenu.url)} onClick={onLinkClick} className="text-sm text-slate-600 hover:text-teal-700">
+                                                {activeCategoryMenu.label}
+                                            </Link>
+                                        </div>
+                                    ) : (
+                                        <div className="flex h-40 items-center justify-center text-sm text-[#8c8070]">No menu links found.</div>
+                                    )
+                                ) : (
+                                    <div className="flex h-40 items-center justify-center text-sm text-[#8c8070]">No menu links found.</div>
+                                )
+                            ) : categoriesLoading ? (
                                 <div className="flex h-40 items-center justify-center text-sm text-[#8c8070]">Loading categories...</div>
                             ) : activeCategory ? (
                                 activeChildren.length > 0 ? (

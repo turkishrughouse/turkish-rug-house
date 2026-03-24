@@ -88,6 +88,7 @@ export async function Header() {
                     initialSendPasswordSetupLink={settings.sendPasswordSetupLink}
                     initialMobileCategoriesMenu={mobileCategoriesMenu}
                     initialMobilePagesMenu={mobilePagesMenu}
+                    initialPrimaryMenu={primaryMenu}
                     initialInformationMenu={resolvedInformationMenu}
                 />
             </div>

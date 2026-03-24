@@ -26,9 +26,11 @@ type DiscoveryMenuNode = {
 
 export function DiscoveryCapsule({
     compact = false,
+    categoryItems = [],
     infoItems = [],
 }: {
     compact?: boolean
+    categoryItems?: DiscoveryMenuNode[]
     infoItems?: DiscoveryMenuNode[]
 }) {
     const HOVER_OPEN_DELAY_MS = 400
@@ -132,6 +134,7 @@ export function DiscoveryCapsule({
                 {/* Shared Panel - Anchored left-0 (Start of container) */}
                 <SharedMegaPanel
                     activeTab={activeTab}
+                    categoryItems={categoryItems}
                     infoItems={infoItems}
                     onMouseEnter={handlePanelMouseEnter}
                     onMouseLeave={handleMouseLeave}

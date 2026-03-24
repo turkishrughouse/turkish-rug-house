@@ -29,8 +29,8 @@ export default async function DashboardPage() {
   if (user.role === "SUPER_USER") {
     return (
       <>
-        {tasksCard}
         <LegacySuperuserDashboard />
+        {tasksCard}
       </>
     )
   }
@@ -42,8 +42,8 @@ export default async function DashboardPage() {
   })
   return (
     <>
-      {tasksCard}
       <RoleBasedDashboard data={dashboardData} lang="en" />
+      {tasksCard}
     </>
   )
 }
