@@ -275,8 +275,8 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
         <>
             <div className="admin-sidebar-surface w-64 border-r border-[#dce3ed] h-full flex flex-col shadow-[1px_0_16px_rgba(15,23,42,0.03)] z-20 relative">
                 <div className="h-[80px] flex items-center px-6 border-b border-[#dce3ed] shrink-0">
-                    <span className="font-bold text-lg tracking-wider bg-gradient-to-r from-teal-600 to-emerald-600 bg-clip-text text-transparent">
-                        RUGHOUSE
+                    <span className="bg-gradient-to-r from-teal-600 to-emerald-600 bg-clip-text text-lg font-bold tracking-[0.02em] text-transparent">
+                        Turkish Rug House
                     </span>
                 </div>
 

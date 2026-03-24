@@ -260,7 +260,7 @@ export function NotificationCenter({ lang = "en" }: NotificationCenterProps) {
   }, [items, lastSeen])
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center">
       <DropdownMenu
         open={open}
         onOpenChange={(nextOpen) => {
@@ -269,10 +269,10 @@ export function NotificationCenter({ lang = "en" }: NotificationCenterProps) {
         }}
       >
         <DropdownMenuTrigger asChild>
-          <button className="admin-header-action relative rounded-full p-2 transition-colors" aria-label={tx("Notifications", "Bildirimler")}>
+          <button className="admin-header-action relative inline-flex h-11 w-11 items-center justify-center rounded-xl bg-white transition-colors" aria-label={tx("Notifications", "Bildirimler")}>
             <Bell className="h-4 w-4" />
             {unreadCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-red-500 rounded-full border-2 border-card" />
+              <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full border-2 border-white bg-red-500" />
             )}
           </button>
         </DropdownMenuTrigger>
