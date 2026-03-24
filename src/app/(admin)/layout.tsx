@@ -66,7 +66,6 @@ export default async function AdminLayout({
         "--admin-header-input-bg": theme.headerInputBg,
         "--admin-header-input-border": theme.headerInputBorder,
         "--admin-nav-divider": theme.navDivider,
-        "--admin-header-display": profile?.showToolbar === false ? "none" : "flex",
         "--admin-nav-text": theme.navText,
         "--admin-nav-hover-bg": theme.navHoverBg,
         "--admin-nav-hover-text": theme.navHoverText,
@@ -87,7 +86,6 @@ export default async function AdminLayout({
             <main className="admin-shell-main flex min-h-screen min-w-0 flex-1 flex-col" lang={(profile?.locale || "en_US").replace("_", "-")}>
                 <header
                     className="admin-shell-header admin-header-surface h-[80px] border-b border-[#dce3ed] items-center px-6 justify-between sticky top-0 z-30 shrink-0 shadow-[0_1px_0_rgba(15,23,42,0.03)]"
-                    style={{ display: "var(--admin-header-display)" }}
                 >
 
                     {/* Left: Global Search */}
