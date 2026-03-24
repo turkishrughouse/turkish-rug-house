@@ -72,6 +72,26 @@ export function MainHeader({
     const [isCompact, setIsCompact] = useState(false)
     const cartPreviewTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+    const resolveCartImageCandidates = (
+        item: ReturnType<typeof readCart>[number] & { images?: unknown }
+    ) => {
+        const imageSource =
+            typeof item.images === "string" && item.images.trim().length > 0
+                ? item.images
+                : item.image
+
+        const records = parseProductImageRecords(imageSource)
+        if (records.length > 0) {
+            const largeCandidates = getProductImageUrlCandidates(records[0], "large")
+            const thumbCandidates = getProductImageUrlCandidates(records[0], "thumb")
+            return [...largeCandidates, ...thumbCandidates]
+        }
+
+        const largeCandidates = getProductImageUrlCandidates(item.image, "large")
+        const thumbCandidates = getProductImageUrlCandidates(item.image, "thumb")
+        return [...largeCandidates, ...thumbCandidates]
+    }
+
     const refreshCart = () => {
         const items = readCart()
         const summary = getCartSummary(items)
@@ -399,25 +419,16 @@ export function MainHeader({
                                         <div className="max-h-[260px] space-y-2 overflow-auto pr-1">
                                             {cartItems.slice(0, 4).map((item) => (
                                                 <div key={item.productId} className="flex items-center gap-2 rounded-md border border-slate-200 p-2">
-                                                    {(() => {
-                                                        const images = parseProductImageRecords(item.image)
-                                                        const largeCandidates = getProductImageUrlCandidates(images[0] || item.image, "large")
-                                                        const thumbCandidates = getProductImageUrlCandidates(images[0] || item.image, "thumb")
-                                                        const candidates = [...largeCandidates, ...thumbCandidates]
-
-                                                        return (
-                                                            <Link href={`/product/${item.slug}`} className="h-12 w-12 shrink-0 overflow-hidden rounded border border-slate-200">
-                                                                <StorefrontProductImage
-                                                                    candidates={candidates}
-                                                                    alt={buildProductImageAlt({ title: item.title })}
-                                                                    width={48}
-                                                                    height={48}
-                                                                    sizes="48px"
-                                                                    className="h-full w-full object-cover"
-                                                                />
-                                                            </Link>
-                                                        )
-                                                    })()}
+                                                    <Link href={`/product/${item.slug}`} className="h-12 w-12 shrink-0 overflow-hidden rounded border border-slate-200">
+                                                        <StorefrontProductImage
+                                                            candidates={resolveCartImageCandidates(item)}
+                                                            alt={buildProductImageAlt({ title: item.title })}
+                                                            width={48}
+                                                            height={48}
+                                                            sizes="48px"
+                                                            className="h-full w-full object-cover"
+                                                        />
+                                                    </Link>
                                                     <div className="min-w-0 flex-1">
                                                         <p className="truncate text-xs font-medium text-slate-900">{item.title}</p>
                                                         <p className="text-xs text-slate-500">
