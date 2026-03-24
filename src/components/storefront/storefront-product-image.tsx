@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import Image from "next/image"
+import { PLACEHOLDER_IMAGE_URL, safeImages } from "@/lib/product-images"
 
 type StorefrontProductImageProps = {
   candidates: string[]
@@ -24,12 +25,22 @@ export function StorefrontProductImage({
   sizes,
   priority = false,
 }: StorefrontProductImageProps) {
-  const sources = Array.from(new Set(candidates.map((value) => value.trim()).filter(Boolean)))
-  const [index, setIndex] = useState(0)
-  const src = sources[index] || "/placeholder.jpg"
+  const sources = useMemo(() => {
+    const normalized = safeImages(candidates)
+    return normalized.length > 0 ? normalized : [PLACEHOLDER_IMAGE_URL]
+  }, [candidates])
+  const sourceKey = sources.join("|")
+  const [failedBySourceKey, setFailedBySourceKey] = useState<Record<string, number>>({})
+  const index = failedBySourceKey[sourceKey] ?? 0
+  const src = sources[index] || PLACEHOLDER_IMAGE_URL
 
   const handleError = () => {
-    setIndex((prev) => (prev + 1 < sources.length ? prev + 1 : prev))
+    setFailedBySourceKey((prev) => {
+      const currentIndex = prev[sourceKey] ?? 0
+      const nextIndex = currentIndex + 1 < sources.length ? currentIndex + 1 : currentIndex
+      if (nextIndex === currentIndex) return prev
+      return { ...prev, [sourceKey]: nextIndex }
+    })
   }
 
   if (fill) {
@@ -42,7 +53,7 @@ export function StorefrontProductImage({
         className={className}
         priority={priority}
         quality={75}
-        unoptimized={src.startsWith("/uploads/") || /^https?:\/\//i.test(src)}
+        unoptimized={src.startsWith("/uploads/") || src === PLACEHOLDER_IMAGE_URL || /^https?:\/\//i.test(src)}
         onError={handleError}
       />
     )
@@ -58,7 +69,7 @@ export function StorefrontProductImage({
       className={className}
       priority={priority}
       quality={75}
-      unoptimized={src.startsWith("/uploads/") || /^https?:\/\//i.test(src)}
+      unoptimized={src.startsWith("/uploads/") || src === PLACEHOLDER_IMAGE_URL || /^https?:\/\//i.test(src)}
       onError={handleError}
     />
   )

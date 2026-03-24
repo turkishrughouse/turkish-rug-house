@@ -590,7 +590,9 @@ export default function CheckoutPage() {
         </div>
       </section>
 
-      <div className="mx-auto w-full max-w-[1600px] px-3 py-8 sm:px-4 sm:py-10 lg:px-10">
+      <div className="mx-auto w-full max-w-[1480px] px-3 py-8 sm:px-4 sm:py-10 lg:px-8">
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.45fr)_380px] lg:gap-8">
+        <div className="rounded-[28px] border border-[#dce3ed] bg-white px-4 py-2 shadow-[0_18px_40px_rgba(15,23,42,0.05)] sm:px-6 lg:px-8">
         <div className="border-t border-slate-200">
           <div className="border-b border-slate-200">
             <button type="button" onClick={() => setOpenStep(openStep === 1 ? null : 1)} className="flex h-16 w-full items-center justify-between text-left">
@@ -1147,6 +1149,52 @@ export default function CheckoutPage() {
               </div>
             ) : null}
           </div>
+        </div>
+        </div>
+
+        <aside className="lg:sticky lg:top-6">
+          <div className="overflow-hidden rounded-[28px] border border-[#dce3ed] bg-white shadow-[0_18px_40px_rgba(15,23,42,0.05)]">
+            <div className="border-b border-[#e6ebf2] px-5 py-4 sm:px-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Order Summary</p>
+              <h2 className="mt-2 text-2xl font-semibold text-slate-950">Your order</h2>
+            </div>
+
+            <div className="max-h-[42vh] space-y-4 overflow-y-auto px-5 py-5 sm:px-6">
+              {items.map((item) => (
+                <div key={item.productId} className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4 last:border-b-0 last:pb-0">
+                  <div className="min-w-0">
+                    <p className="line-clamp-2 text-sm font-semibold text-slate-900">{item.title}</p>
+                    <p className="mt-1 text-xs text-slate-500">{item.sku || "No SKU"} • Qty {item.quantity}</p>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold text-slate-900">{formatUsd(item.price * item.quantity)}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-3 border-t border-[#e6ebf2] bg-slate-50/80 px-5 py-5 sm:px-6">
+              <div className="flex items-center justify-between text-sm text-slate-600">
+                <span>Subtotal</span>
+                <span className="font-medium text-slate-900">{formatUsd(summary.total)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm text-slate-600">
+                <span>{shippingLabel} shipping</span>
+                <span className="font-medium text-slate-900">{formatUsd(shippingCost)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm text-slate-600">
+                <span>Tax</span>
+                <span className="font-medium text-slate-900">{formatUsd(vatAmount)}</span>
+              </div>
+              <div className="flex items-center justify-between border-t border-[#d9e1ea] pt-3 text-base font-semibold text-slate-950">
+                <span>Total</span>
+                <span>{formatUsd(total)}</span>
+              </div>
+              <div className="rounded-2xl border border-[#dce3ed] bg-white px-4 py-4 text-sm leading-6 text-slate-600">
+                <p className="font-medium text-slate-900">Secure checkout</p>
+                <p className="mt-1">Free worldwide shipping and easy returns. Complete the steps on the left to continue to payment.</p>
+              </div>
+            </div>
+          </div>
+        </aside>
         </div>
       </div>
 

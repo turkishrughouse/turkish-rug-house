@@ -1,5 +1,7 @@
 import { getImageUrl } from "@/lib/storage/url"
 
+export const PLACEHOLDER_IMAGE_URL = "/placeholder.jpg"
+
 export type ProductImageRecord = {
   image_url: string
   width?: number | null
@@ -39,7 +41,13 @@ function isProductImageRecord(value: unknown): value is ProductImageRecord {
 }
 
 function normalizeImageRecord(record: ProductImageRecord, index: number): ProductImageRecord {
-  const normalizedImageUrl = getImageUrl(record.image_url)
+  const normalizedSources = safeImages([
+    record.image_url,
+    record.variants?.master || "",
+    record.variants?.large || "",
+    record.variants?.thumb || "",
+  ])
+  const normalizedImageUrl = normalizedSources[0] || PLACEHOLDER_IMAGE_URL
   return {
     image_url: normalizedImageUrl,
     width: record.width ?? null,
@@ -58,6 +66,7 @@ function normalizeImageRecord(record: ProductImageRecord, index: number): Produc
 function inferVariantUrl(urlOrPath: string | null | undefined, preferredVariant: "thumb" | "large" | "master") {
   const normalized = getImageUrl(urlOrPath)
   if (!normalized) return ""
+  if (normalized === PLACEHOLDER_IMAGE_URL) return PLACEHOLDER_IMAGE_URL
 
   const queryIndex = normalized.search(/[?#]/)
   const path = queryIndex >= 0 ? normalized.slice(0, queryIndex) : normalized
@@ -96,7 +105,7 @@ function buildVariantCandidates(
     }
   }
 
-  return uniqueNormalized(candidates)
+  return withPlaceholder(candidates)
 }
 
 function parseRawProductImages(value: unknown): Array<string | ProductImageRecord> {
@@ -121,6 +130,24 @@ function uniqueNormalized(values: string[]) {
     seen.add(normalized)
     return true
   })
+}
+
+function isBrokenLiteral(value: string) {
+  return ["undefined", "null", "nan", "/undefined", "/null", "/nan"].includes(value.toLowerCase())
+}
+
+export function safeImages(images: string[]) {
+  return uniqueNormalized(
+    images
+      .map((value) => getImageUrl(value))
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0 && !isBrokenLiteral(value))
+  )
+}
+
+function withPlaceholder(images: string[]) {
+  const cleaned = safeImages(images)
+  return cleaned.length > 0 ? cleaned : [PLACEHOLDER_IMAGE_URL]
 }
 
 function cleanText(value: string | null | undefined) {
@@ -176,20 +203,17 @@ export function getProductImageUrl(
   image: ProductImageRecord | string | null | undefined,
   preferredVariant: "thumb" | "large" | "master" = "large"
 ) {
-  if (!image) return ""
-  if (typeof image === "string") return inferVariantUrl(image, preferredVariant)
-
-  return getProductImageUrlCandidates(image, preferredVariant)[0] || ""
+  return getProductImageUrlCandidates(image, preferredVariant)[0] || PLACEHOLDER_IMAGE_URL
 }
 
 export function getProductImageUrlCandidates(
   image: ProductImageRecord | string | null | undefined,
   preferredVariant: "thumb" | "large" | "master" = "large"
 ) {
-  if (!image) return []
+  if (!image) return [PLACEHOLDER_IMAGE_URL]
   if (typeof image === "string") {
     const normalized = inferVariantUrl(image, preferredVariant)
-    return normalized ? [normalized] : []
+    return withPlaceholder(normalized ? [normalized] : [])
   }
 
   return buildVariantCandidates(image, preferredVariant)
@@ -199,7 +223,7 @@ export function parseProductImages(
   value: unknown,
   preferredVariant: "thumb" | "large" | "master" = "large"
 ): string[] {
-  return parseProductImageRecords(value).map((image) => getProductImageUrl(image, preferredVariant)).filter(Boolean)
+  return safeImages(parseProductImageRecords(value).map((image) => getProductImageUrl(image, preferredVariant)))
 }
 
 export function pickPrimaryImage(
@@ -208,9 +232,9 @@ export function pickPrimaryImage(
   preferredVariant: "thumb" | "large" | "master" = "large"
 ) {
   const featured = typeof featuredImage === "string" ? getProductImageUrl(featuredImage.trim(), preferredVariant) : ""
-  if (featured.length > 0) return featured
+  if (featured.length > 0 && featured !== PLACEHOLDER_IMAGE_URL) return featured
   const parsed = parseProductImages(imagesValue, preferredVariant)
-  return parsed[0] || ""
+  return parsed[0] || PLACEHOLDER_IMAGE_URL
 }
 
 export function normalizeProductImageRecords(value: unknown): ProductImageRecord[] {
