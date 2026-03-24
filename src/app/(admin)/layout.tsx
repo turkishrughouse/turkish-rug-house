@@ -85,14 +85,16 @@ export default async function AdminLayout({
             </div>
             <main className="admin-shell-main flex min-h-screen min-w-0 flex-1 flex-col" lang={(profile?.locale || "en_US").replace("_", "-")}>
                 <header
-                    className="admin-shell-header admin-header-surface h-[80px] border-b border-[#dce3ed] items-center px-6 justify-between sticky top-0 z-30 shrink-0 shadow-[0_1px_0_rgba(15,23,42,0.03)]"
+                    className="admin-shell-header admin-header-surface sticky top-0 z-30 flex h-[80px] items-center justify-between gap-6 border-b border-[#dce3ed] px-6 shadow-[0_1px_0_rgba(15,23,42,0.03)]"
                 >
 
                     {/* Left: Global Search */}
-                    <AdminHeaderSearch placeholder={t.searchPlaceholder} />
+                    <div className="flex flex-1 items-center">
+                        <AdminHeaderSearch placeholder={t.searchPlaceholder} />
+                    </div>
 
                     {/* Right: Actions */}
-                    <div className="flex items-center justify-end">
+                    <div className="flex shrink-0 items-center self-center justify-end">
                         <div className="flex items-center gap-2 rounded-2xl border border-[color:var(--admin-header-input-border)] bg-white/80 p-1.5 shadow-sm backdrop-blur-sm">
 
                             {/* Visit Site Link */}
