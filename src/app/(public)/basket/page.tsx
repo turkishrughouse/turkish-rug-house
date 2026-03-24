@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react"
 import { ChevronDown, ChevronUp, RotateCcw, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { ResponsiveImage } from "@/components/ui/responsive-image"
+import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
 import {
   clearCart,
   getCartSummary,
@@ -14,7 +15,7 @@ import {
   updateCartItemQuantity,
   type CartItem,
 } from "@/lib/storefront/cart"
-import { parseProductImages, pickPrimaryImage } from "@/lib/product-images"
+import { buildProductImageAlt, getProductImageUrlCandidates, parseProductImageRecords, pickPrimaryImage } from "@/lib/product-images"
 import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
 
 type ExpandKey = "coupon" | "shipping" | "gift"
@@ -24,10 +25,6 @@ type SuggestedProduct = {
   title: string
   price: number
   images: string
-}
-
-function parseImages(images: string): string[] {
-  return parseProductImages(images, "thumb")
 }
 
 export default function BasketPage() {
@@ -444,17 +441,22 @@ export default function BasketPage() {
                 <h2 className="text-[28px] font-semibold text-slate-900">You May Also Like</h2>
                 <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                   {suggestedProducts.map((product) => {
-                    const image = parseImages(product.images)[0] || "/placeholder.jpg"
+                    const parsedImages = parseProductImageRecords(product.images)
+                    const imageCandidates = [
+                      ...getProductImageUrlCandidates(parsedImages[0], "thumb"),
+                      ...getProductImageUrlCandidates(parsedImages[0], "large"),
+                      ...getProductImageUrlCandidates(parsedImages[0], "master"),
+                    ]
                     return (
                       <Link
                         key={product.id}
                         href={`/product/${product.slug}`}
                         className="group overflow-hidden border border-[#d8d8d8] bg-white p-3 transition-all hover:shadow-md"
                       >
-                        <div className="aspect-square overflow-hidden border border-slate-200">
-                          <ResponsiveImage
-                            src={image}
-                            alt={product.title}
+                        <div className="relative aspect-square overflow-hidden border border-slate-200">
+                          <StorefrontProductImage
+                            candidates={imageCandidates}
+                            alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt })}
                             fill
                             sizes="(max-width: 768px) 50vw, 20vw"
                             className="object-cover transition-transform duration-300 group-hover:scale-105"
