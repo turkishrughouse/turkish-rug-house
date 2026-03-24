@@ -69,17 +69,14 @@ export function MenuManager({ forcedLocation }: MenuManagerProps = {}) {
                 const res = await fetch("/api/admin/menus")
                 if (res.ok) {
                     const data = await res.json()
-                    const scopedMenus = forcedLocation
-                        ? data.filter((menu: { location: string | null }) => menu.location === forcedLocation)
-                        : data
-                    setMenus(scopedMenus)
-                    // Auto-select requested location first, fallback to first menu.
-                    if (scopedMenus.length > 0 && !activeMenuId) {
+                    setMenus(data)
+                    // Auto-select requested location first, fallback to first existing menu.
+                    if (data.length > 0 && !activeMenuId) {
                         const byLocation = requestedLocation
-                            ? scopedMenus.find((menu: { id: string, location: string | null }) => menu.location === requestedLocation)
+                            ? data.find((menu: { id: string, location: string | null }) => menu.location === requestedLocation)
                             : null
-                        setActiveMenuId(byLocation?.id || scopedMenus[0].id)
-                    } else if (scopedMenus.length === 0) {
+                        setActiveMenuId(byLocation?.id || data[0].id)
+                    } else if (data.length === 0) {
                         setActiveMenuId(null)
                     }
                 }
@@ -245,6 +242,7 @@ export function MenuManager({ forcedLocation }: MenuManagerProps = {}) {
     const activeMenu = menus.find(m => m.id === activeMenuId)
     const isFooterMenu = activeMenu?.location === "INFORMATION_FOOTER"
     const structureStorageKey = activeMenuId ? `rughouse:menu-structure-open:${activeMenuId}` : null
+    const locationLabel = MENU_LOCATIONS.find((loc) => loc.value === (forcedLocation || activeMenu?.location || ""))?.label
 
     useEffect(() => {
         if (!activeMenuId || !activeMenu) return
@@ -374,6 +372,36 @@ export function MenuManager({ forcedLocation }: MenuManagerProps = {}) {
 
                 {/* RIGHT: Builder */}
                 <div className="lg:col-span-8 bg-white border rounded-lg shadow-sm min-h-[600px] flex flex-col">
+                    {forcedLocation ? (
+                        <div className="border-b bg-white px-4 py-4">
+                            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                <div className="space-y-1">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Editing Location</p>
+                                    <p className="text-sm font-medium text-slate-800">{locationLabel || forcedLocation}</p>
+                                </div>
+                                <div className="relative z-20 w-full md:w-[320px]">
+                                    <Select value={activeMenuId || ""} onValueChange={setActiveMenuId}>
+                                        <SelectTrigger className="w-full">
+                                            <SelectValue placeholder="Select menu..." />
+                                        </SelectTrigger>
+                                        <SelectContent
+                                            position="popper"
+                                            side="bottom"
+                                            sideOffset={8}
+                                            className="z-[120] w-[var(--radix-select-trigger-width)] border-slate-200 bg-white shadow-xl"
+                                        >
+                                            {menus.map((menu) => (
+                                                <SelectItem key={menu.id} value={menu.id}>
+                                                    {menu.title}{menu.location ? ` (${MENU_LOCATIONS.find((loc) => loc.value === menu.location)?.label || menu.location})` : ""}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                        </div>
+                    ) : null}
+
                     <div className="p-4 bg-slate-50 border-b flex justify-between items-center sticky top-0 z-10">
                         <div>
                             <button
