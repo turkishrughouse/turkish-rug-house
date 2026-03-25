@@ -94,7 +94,7 @@ function buildVariantCandidates(
     preferredVariant === "thumb"
       ? (["thumb", "large", "master"] as const)
       : preferredVariant === "large"
-        ? (["large", "thumb", "master"] as const)
+        ? (["large", "master", "thumb"] as const)
         : (["master", "large", "thumb"] as const)
 
   const candidates: string[] = []
@@ -219,6 +219,36 @@ export function getProductImageUrlCandidates(
   return buildVariantCandidates(image, preferredVariant)
 }
 
+export function getPrimaryProductImageCandidates(
+  value: unknown,
+  featuredImage?: string | null | undefined
+) {
+  const featuredRecord = parseProductImageRecords(featuredImage)[0]
+  if (featuredRecord) {
+    return uniqueNormalized([
+      ...getProductImageUrlCandidates(featuredRecord, "large"),
+      ...getProductImageUrlCandidates(featuredRecord, "master"),
+      ...getProductImageUrlCandidates(featuredRecord, "thumb"),
+    ])
+  }
+
+  const [primaryImage] = parseProductImageRecords(value)
+  if (!primaryImage) return [PLACEHOLDER_IMAGE_URL]
+
+  return uniqueNormalized([
+    ...getProductImageUrlCandidates(primaryImage, "large"),
+    ...getProductImageUrlCandidates(primaryImage, "master"),
+    ...getProductImageUrlCandidates(primaryImage, "thumb"),
+  ])
+}
+
+export function getPrimaryProductImage(
+  value: unknown,
+  featuredImage?: string | null | undefined
+) {
+  return getPrimaryProductImageCandidates(value, featuredImage)[0] || PLACEHOLDER_IMAGE_URL
+}
+
 export function parseProductImages(
   value: unknown,
   preferredVariant: "thumb" | "large" | "master" = "large"
@@ -231,6 +261,10 @@ export function pickPrimaryImage(
   imagesValue: unknown,
   preferredVariant: "thumb" | "large" | "master" = "large"
 ) {
+  if (preferredVariant === "large") {
+    return getPrimaryProductImage(imagesValue, featuredImage)
+  }
+
   const featured = typeof featuredImage === "string" ? getProductImageUrl(featuredImage.trim(), preferredVariant) : ""
   if (featured.length > 0 && featured !== PLACEHOLDER_IMAGE_URL) return featured
   const parsed = parseProductImages(imagesValue, preferredVariant)

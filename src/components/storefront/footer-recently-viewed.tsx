@@ -5,7 +5,7 @@ import Link from "next/link"
 
 import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
 import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
-import { buildProductImageAlt, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
+import { buildProductImageAlt, getPrimaryProductImageCandidates, parseProductImageRecords } from "@/lib/product-images"
 
 type RecentProduct = {
   id: string
@@ -80,9 +80,7 @@ function FooterRecentlyViewedItem({
   formatUsd: (value: number) => string
 }) {
   const images = parseProductImageRecords(item.images || JSON.stringify([item.image]))
-  const thumbCandidates = getProductImageUrlCandidates(images[0], "thumb")
-  const largeCandidates = getProductImageUrlCandidates(images[0], "large")
-  const candidates = [...thumbCandidates, ...largeCandidates]
+  const candidates = getPrimaryProductImageCandidates(item.images || JSON.stringify([item.image]))
   const alt = buildProductImageAlt({ title: item.title, fallbackAlt: images[0]?.alt })
 
   return (

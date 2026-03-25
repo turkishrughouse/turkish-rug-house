@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react"
 import { ChevronDown, ChevronRight, Heart, House, Menu, Search, Shuffle, ShoppingBag, UserCircle2, X } from "lucide-react"
 import { getCartSummary, getCartUpdateEventName, readCart } from "@/lib/storefront/cart"
 import { toast } from "sonner"
-import { buildProductImageAlt, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
+import { buildProductImageAlt, getPrimaryProductImageCandidates } from "@/lib/product-images"
 import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
 
 import { DiscoveryCapsule } from "./discovery-capsule"
@@ -75,21 +75,11 @@ export function MainHeader({
     const resolveCartImageCandidates = (
         item: ReturnType<typeof readCart>[number] & { images?: unknown }
     ) => {
-        const imageSource =
+        return getPrimaryProductImageCandidates(
             typeof item.images === "string" && item.images.trim().length > 0
                 ? item.images
-                : item.image
-
-        const records = parseProductImageRecords(imageSource)
-        if (records.length > 0) {
-            const largeCandidates = getProductImageUrlCandidates(records[0], "large")
-            const thumbCandidates = getProductImageUrlCandidates(records[0], "thumb")
-            return [...largeCandidates, ...thumbCandidates]
-        }
-
-        const largeCandidates = getProductImageUrlCandidates(item.image, "large")
-        const thumbCandidates = getProductImageUrlCandidates(item.image, "thumb")
-        return [...largeCandidates, ...thumbCandidates]
+                : JSON.stringify([item.image])
+        )
     }
 
     const refreshCart = () => {

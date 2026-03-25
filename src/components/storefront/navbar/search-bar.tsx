@@ -7,7 +7,7 @@ import Image from "next/image"
 import { Loader2, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { saveSearch } from "@/lib/storefront/saved-searches"
-import { getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
+import { getPrimaryProductImage, getPrimaryProductImageCandidates } from "@/lib/product-images"
 
 type ProductItem = {
     id: string
@@ -16,6 +16,8 @@ type ProductItem = {
     sku?: string | null
     price?: number
     images?: string
+    primaryImage?: string
+    primaryImageCandidates?: string[]
     categories?: Array<{ slug: string }>
     styles?: Array<{ slug: string; name?: string | null }>
     types?: Array<{ slug: string; name?: string | null }>
@@ -46,12 +48,9 @@ function getResultSubtitle(item: ProductItem) {
 }
 
 function parseFirstImage(images: string | undefined) {
-    const [firstImage] = parseProductImageRecords(images)
-    if (!firstImage) return { image: "", imageCandidates: [] as string[] }
-
     return {
-        image: getProductImageUrlCandidates(firstImage, "thumb")[0] || "",
-        imageCandidates: getProductImageUrlCandidates(firstImage, "thumb"),
+        image: getPrimaryProductImage(images),
+        imageCandidates: getPrimaryProductImageCandidates(images),
     }
 }
 
@@ -124,7 +123,9 @@ export function SearchBar() {
                 const seen = new Set<string>()
                 const productResults: SearchResult[] = products
                     .map((item): SearchResult => {
-                        const { image, imageCandidates } = parseFirstImage(item.images)
+                        const resolvedImage = parseFirstImage(item.images)
+                        const image = item.primaryImage || resolvedImage.image
+                        const imageCandidates = item.primaryImageCandidates || resolvedImage.imageCandidates
                         return {
                             id: `prod-${item.id}`,
                             title: item.title,

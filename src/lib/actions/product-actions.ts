@@ -13,6 +13,7 @@ import { addColumnIfMissing } from "@/lib/db-compat"
 import { normalizeSuppliers, type SupplierRecord } from "@/lib/supplier-prefix"
 import { syncProductSupplierBySku } from "@/lib/supplier-registry"
 import { buildProductSearchWhere, extractPriceIntent, normalizeListingColor, normalizeListingSize, normalizeListingText } from "@/lib/storefront/listing-filters"
+import { getPrimaryProductImage, getPrimaryProductImageCandidates } from "@/lib/product-images"
 
 type MaterialDelegate = {
     findMany: (...args: any[]) => Promise<any[]>
@@ -638,6 +639,8 @@ export async function getProducts(
         isFeatured: Boolean(product.isFeatured),
         price: product.price.toNumber(),
         compareAtPrice: product.compareAtPrice ? product.compareAtPrice.toNumber() : null,
+        primaryImage: getPrimaryProductImage(product.images),
+        primaryImageCandidates: getPrimaryProductImageCandidates(product.images),
     }))
 
     return {
