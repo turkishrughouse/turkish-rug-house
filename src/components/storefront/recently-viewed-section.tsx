@@ -14,7 +14,15 @@ type RecentProduct = {
 
 const STORAGE_KEY = "rughouse_recently_viewed_products"
 
-export function RecentlyViewedSection() {
+export function RecentlyViewedSection({
+  title = "Recently viewed items",
+  subtitle = "Shows automatically after the visitor views product pages.",
+  limit = 8,
+}: {
+  title?: string
+  subtitle?: string
+  limit?: number
+}) {
   const [products, setProducts] = useState<RecentProduct[]>([])
 
   useEffect(() => {
@@ -26,7 +34,7 @@ export function RecentlyViewedSection() {
         const safe = Array.isArray(parsed) ? parsed : []
         const normalized = safe
           .filter((item) => item && typeof item.slug === "string" && typeof item.title === "string")
-          .slice(0, 8)
+          .slice(0, limit)
           .map((item) => ({
             id: String(item.id || item.slug),
             slug: String(item.slug),
@@ -53,15 +61,15 @@ export function RecentlyViewedSection() {
       window.removeEventListener("pageshow", readRecentlyViewed)
       window.removeEventListener("rughouse:recently-viewed-updated", readRecentlyViewed)
     }
-  }, [])
+  }, [limit])
 
   if (products.length === 0) return null
 
   return (
     <section className="container mx-auto px-4 py-10">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900">Recently viewed items</h2>
-        <p className="mt-1 text-slate-500">Shows automatically after the visitor views product pages.</p>
+        <h2 className="text-2xl font-bold tracking-tight text-slate-900">{title}</h2>
+        {subtitle ? <p className="mt-1 text-slate-500">{subtitle}</p> : null}
       </div>
 
       <div className="grid grid-cols-1 items-start gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
