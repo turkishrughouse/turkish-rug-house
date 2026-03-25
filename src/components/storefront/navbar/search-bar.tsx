@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import Image from "next/image"
 import { Loader2, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
 import { saveSearch } from "@/lib/storefront/saved-searches"
 import { getPrimaryProductImage, getPrimaryProductImageCandidates } from "@/lib/product-images"
 
@@ -55,22 +55,18 @@ function parseFirstImage(images: string | undefined) {
 }
 
 function SearchResultImage({ title, image, imageCandidates = [] }: { title: string; image?: string; imageCandidates?: string[] }) {
-    const [candidateIndex, setCandidateIndex] = useState(0)
     const candidates = imageCandidates.length > 0 ? imageCandidates : image ? [image] : []
-    const currentImage = candidates[candidateIndex] || image || ""
 
-    if (!currentImage) return null
+    if (candidates.length === 0) return null
 
     return (
-        <Image
-            src={currentImage}
+        <StorefrontProductImage
+            candidates={candidates}
             alt={title}
             width={44}
             height={44}
+            sizes="44px"
             className="h-full w-full object-cover"
-            onError={() => {
-                setCandidateIndex((prev) => (prev + 1 < candidates.length ? prev + 1 : prev))
-            }}
         />
     )
 }
