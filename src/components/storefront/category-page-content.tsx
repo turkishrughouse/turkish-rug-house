@@ -188,10 +188,12 @@ export async function renderCategoryPage({
 
   const filterableAttributeGroups = options.attributeGroups.filter((group: any) => group.isFilterable && group.isActive)
   const selectedAttributeFilters = Object.fromEntries(
-    filterableAttributeGroups.map((group: any) => [
-      group.slug,
-      resolveAttributeFilterSelection(group.slug, getMultiParam(searchParams, group.slug), group.options),
-    ]),
+    filterableAttributeGroups
+      .map((group: any) => [
+        group.slug,
+        resolveAttributeFilterSelection(group.slug, getMultiParam(searchParams, group.slug), group.options),
+      ] as const)
+      .filter(([, values]) => values.length > 0),
   ) as Record<string, string[]>
   const baseFilters: {
     attributeFilters: Record<string, string[]>

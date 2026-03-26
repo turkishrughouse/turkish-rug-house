@@ -560,10 +560,18 @@ export async function getProducts(
         }
     }
 
-    if (filters?.attributeFilters && Object.keys(filters.attributeFilters).length > 0) {
-        const attributeMatchedIds = await getProductIdsMatchingAttributeFilters(filters.attributeFilters)
-        const allowedIds = new Set(attributeMatchedIds || [])
-        idFilter = (idFilter || []).filter((id) => allowedIds.has(id))
+    const activeAttributeFilters = filters?.attributeFilters
+        ? Object.fromEntries(
+            Object.entries(filters.attributeFilters).filter(([, values]) => Array.isArray(values) && values.length > 0)
+        ) as Record<string, string[]>
+        : undefined
+
+    if (activeAttributeFilters && Object.keys(activeAttributeFilters).length > 0) {
+        const attributeMatchedIds = await getProductIdsMatchingAttributeFilters(activeAttributeFilters)
+        if (attributeMatchedIds) {
+            const allowedIds = new Set(attributeMatchedIds)
+            idFilter = (idFilter || []).filter((id) => allowedIds.has(id))
+        }
     }
 
     const scheduleDateValue = filters?.scheduledDate?.trim()
