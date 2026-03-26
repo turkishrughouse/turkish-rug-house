@@ -270,11 +270,12 @@ function buildProductSpecificationRows(product: ProductDetailData) {
   if (normalizedRows.length === 0) return []
 
   const preferredOrder = [
-    { label: "Origin", keys: ["origin"] },
+    { label: "Type", keys: ["type"] },
     { label: "Style", keys: ["style"] },
     { label: "Material", keys: ["material"] },
     { label: "Size", keys: ["size", "dimensions"] },
-    { label: "Age/Circa", keys: ["age", "circa", "age/circa"] },
+    { label: "Age", keys: ["age", "circa", "age/circa"] },
+    { label: "Origin", keys: ["origin"] },
   ]
 
   const matchedKeys = new Set<string>()
