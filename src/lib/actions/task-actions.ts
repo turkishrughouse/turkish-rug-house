@@ -104,31 +104,10 @@ export type TaskSummary = {
 
 type TaskMetaRow = {
   id: string
-  relatedCategoryId: string | null
-  relatedProductIds: string | null
-  completedAt: Date | string | null
-  pausedAt: Date | string | null
 }
 
 function isSuperUser(viewer: TaskViewer) {
   return viewer.role === "SUPER_USER"
-}
-
-function parseTaskDate(value: string | Date | null | undefined) {
-  if (!value) return null
-  if (value instanceof Date) return value
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? null : parsed
-}
-
-function parseTaskJsonArray(value: string | null | undefined) {
-  if (!value) return [] as string[]
-  try {
-    const parsed = JSON.parse(value)
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : []
-  } catch {
-    return []
-  }
 }
 
 function normalizePriority(value: string): TaskPriority {
@@ -210,18 +189,7 @@ function buildBaseTaskWhere(viewer: TaskViewer, filters: TaskFilterInput = {}): 
 }
 
 async function fetchTaskMeta(taskIds: string[]) {
-  if (taskIds.length === 0) return new Map<string, TaskMetaRow>()
-  const rows = await prisma.task.findMany({
-    where: { id: { in: taskIds } },
-    select: {
-      id: true,
-      relatedCategoryId: true,
-      relatedProductIds: true,
-      completedAt: true,
-      pausedAt: true,
-    },
-  })
-  return new Map(rows.map((row) => [row.id, row]))
+  return new Map(taskIds.map((taskId) => [taskId, { id: taskId } satisfies TaskMetaRow]))
 }
 
 export async function getAssignableTaskUsers() {
@@ -237,37 +205,6 @@ export async function getAssignableTaskUsers() {
       role: true,
     },
     orderBy: [{ role: "asc" }, { name: "asc" }, { email: "asc" }],
-  })
-}
-
-export async function getTaskCategoryOptions(limit = 120): Promise<TaskCategoryOption[]> {
-  const categories = await prisma.category.findMany({
-    select: {
-      id: true,
-      slug: true,
-      title: true,
-      products: {
-        select: {
-          id: true,
-          isPublished: true,
-        },
-      },
-    },
-    orderBy: [{ title: "asc" }],
-    take: limit,
-  })
-
-  return categories.map((category) => {
-    const totalProducts = category.products.length
-    const uploadedProducts = category.products.filter((product) => product.isPublished).length
-    return {
-      id: category.id,
-      slug: category.slug,
-      title: category.title,
-      totalProducts,
-      uploadedProducts,
-      remainingProducts: Math.max(totalProducts - uploadedProducts, 0),
-    }
   })
 }
 
@@ -298,19 +235,10 @@ export async function getTasksForViewer(viewer: TaskViewer, filters: TaskFilterI
     take: filters.limit ? Math.max(filters.limit * 4, filters.limit) : undefined,
   })
 
-  const metaById = await fetchTaskMeta(baseTasks.map((task) => task.id))
-  const categoryIds = Array.from(
-    new Set(baseTasks.map((task) => metaById.get(task.id)?.relatedCategoryId).filter((value): value is string => Boolean(value))),
-  )
-  const categoryOptions = await getTaskCategoryOptions(Math.max(categoryIds.length, 120))
-  const categoryMap = new Map(categoryOptions.map((category) => [category.id, category]))
-
+  await fetchTaskMeta(baseTasks.map((task) => task.id))
   const relatedProductIds = Array.from(
     new Set(
-      baseTasks.flatMap((task) => {
-        const meta = metaById.get(task.id)
-        return [...parseTaskJsonArray(meta?.relatedProductIds), ...(task.relatedProductId ? [task.relatedProductId] : [])]
-      }),
+      baseTasks.flatMap((task) => (task.relatedProductId ? [task.relatedProductId] : [])),
     ),
   )
   const extraProducts = relatedProductIds.length > 0
@@ -326,12 +254,8 @@ export async function getTasksForViewer(viewer: TaskViewer, filters: TaskFilterI
 
   const filtered = baseTasks
     .map((task) => {
-      const meta = metaById.get(task.id)
       const normalizedStatus = normalizeTaskStatus(task.status)
-      const relatedCategory = meta?.relatedCategoryId ? categoryMap.get(meta.relatedCategoryId) || null : null
-      const relatedProductIdsForTask = Array.from(
-        new Set([...parseTaskJsonArray(meta?.relatedProductIds), ...(task.relatedProductId ? [task.relatedProductId] : [])]),
-      )
+      const relatedProductIdsForTask = task.relatedProductId ? [task.relatedProductId] : []
       const relatedProducts = relatedProductIdsForTask
         .map((productId) => productMap.get(productId))
         .filter((product): product is TaskProductOption => Boolean(product))
@@ -353,21 +277,15 @@ export async function getTasksForViewer(viewer: TaskViewer, filters: TaskFilterI
         archivedAt: task.archivedAt ? task.archivedAt.toISOString() : null,
         createdAt: task.createdAt.toISOString(),
         updatedAt: task.updatedAt.toISOString(),
-        completedAt: parseTaskDate(meta?.completedAt)?.toISOString() || null,
-        pausedAt: parseTaskDate(meta?.pausedAt)?.toISOString() || null,
-        relatedCategoryId: meta?.relatedCategoryId || null,
+        completedAt: null,
+        pausedAt: null,
+        relatedCategoryId: null,
         relatedProductIds: relatedProductIdsForTask,
         assignedTo: task.assignedTo,
         createdBy: task.createdBy,
-        relatedCategory,
+        relatedCategory: null,
         relatedProducts,
-        categoryContext: relatedCategory
-          ? {
-              totalProducts: relatedCategory.totalProducts,
-              uploadedProducts: relatedCategory.uploadedProducts,
-              remainingProducts: relatedCategory.remainingProducts,
-            }
-          : null,
+        categoryContext: null,
         permissions,
       } satisfies AdminTaskRecord
     })
@@ -382,7 +300,6 @@ export async function getTasksForViewer(viewer: TaskViewer, filters: TaskFilterI
           task.assignedTo?.email || "",
           task.createdBy.name || "",
           task.createdBy.email || "",
-          task.relatedCategory?.title || "",
           ...task.relatedProducts.flatMap((product) => [product.title, product.slug, product.sku || ""]),
         ].join(" ").toLowerCase()
         if (!haystack.includes(query)) return false
@@ -446,27 +363,18 @@ export async function updateTaskWorkflowColumns(input: {
   completedAt?: Date | null
   pausedAt?: Date | null
 }) {
-  await prisma.task.update({
-    where: { id: input.id },
-    data: {
-      relatedCategoryId: input.relatedCategoryId ?? null,
-      relatedProductIds: JSON.stringify(input.relatedProductIds ?? []),
-      completedAt: input.completedAt ?? null,
-      pausedAt: input.pausedAt ?? null,
-    },
-  })
+  void input
 }
 
 export async function getTaskBoardBootstrap(viewer: TaskViewer, filters: TaskFilterInput = {}) {
-  const [tasks, summary, users, products, categories] = await Promise.all([
+  const [tasks, summary, users, products] = await Promise.all([
     getTasksForViewer(viewer, filters),
     getTaskDashboardSummary(viewer),
     isSuperUser(viewer) ? getAssignableTaskUsers() : Promise.resolve([]),
     isSuperUser(viewer) ? getTaskProductOptions() : Promise.resolve([]),
-    getTaskCategoryOptions(),
   ])
 
-  return { tasks, summary, users, products, categories }
+  return { tasks, summary, users, products, categories: [] as TaskCategoryOption[] }
 }
 
 export function getTaskStatusUpdateMetadata(nextStatus: TaskStatus) {
