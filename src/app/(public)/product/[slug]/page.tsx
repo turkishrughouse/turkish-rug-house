@@ -8,6 +8,7 @@ import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
 import { fetchCategoryPathRows, getCategoryPathById, type CategoryPathRow } from "@/lib/category-paths"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { getShippingReturnsPage } from "@/lib/storefront/shipping-returns-page"
+import { getProductVisibleAttributes } from "@/lib/product-attributes"
 
 type Props = {
   params: Promise<{ slug: string }>
@@ -336,10 +337,11 @@ export default async function ProductPage({ params }: Props) {
           LIMIT 1
         `
         const record = rows[0]
+        const dynamicAttributes = await getProductVisibleAttributes(product.id).catch(() => [])
         return {
           sku: record?.sku ?? null,
           shortDescription: record?.shortDescription ?? null,
-          customAttributes: parseCustomAttributes(record?.customAttributes),
+          customAttributes: dynamicAttributes.length > 0 ? dynamicAttributes : parseCustomAttributes(record?.customAttributes),
         }
       } catch {
         return {

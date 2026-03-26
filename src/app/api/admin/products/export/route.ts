@@ -29,9 +29,7 @@ export async function GET() {
 
   await ensureDeletedAtColumn()
   const activeIds = (
-    await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-      `SELECT "id" FROM "Product" WHERE "deletedAt" IS NULL`
-    )
+    await prisma.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Product" WHERE "deletedAt" IS NULL`
   ).map((row) => row.id)
 
   const products = await prisma.product.findMany({

@@ -110,10 +110,12 @@ async function findOrderIdByStoredPaymentReference(input: {
 }) {
   const candidates = [input.sessionId, input.paymentIntentId].filter(Boolean) as string[]
   for (const candidate of candidates) {
-    const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-      `SELECT "id" FROM "Order" WHERE "detailsJson" LIKE ? LIMIT 1`,
-      `%${candidate}%`
-    )
+    const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id"
+      FROM "Order"
+      WHERE "detailsJson" LIKE ${`%${candidate}%`}
+      LIMIT 1
+    `
     if (rows[0]?.id) return rows[0].id
   }
   return ""

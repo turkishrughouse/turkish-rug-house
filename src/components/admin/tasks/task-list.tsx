@@ -41,7 +41,7 @@ function badgeClass(priority: string) {
 
 function statusTone(status: TaskStatus) {
   if (status === "COMPLETED") return "text-emerald-700"
-  if (status === "REVIEW") return "text-violet-700"
+  if (status === "PAUSED") return "text-amber-700"
   if (status === "IN_PROGRESS") return "text-blue-700"
   return "text-slate-700"
 }

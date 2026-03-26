@@ -72,6 +72,7 @@ import { cn } from "@/lib/utils"
 import { MediaPickerDialog } from "@/components/admin/media/media-picker-dialog"
 import type { AdminLanguage } from "@/lib/admin/i18n"
 import { parseProductImages } from "@/lib/product-images"
+import type { AttributeGroupRecord } from "@/lib/product-attributes"
 import { matchSupplierBySkuPrefix, type SupplierRecord } from "@/lib/supplier-prefix"
 
 type SelectOption = { id: string, name?: string, title?: string }
@@ -82,7 +83,8 @@ function DropdownMultiSelect({
     value,
     onChange,
     placeholder,
-    error
+    error,
+    selectionMode = "multiple",
 }: {
     label: string
     options: SelectOption[],
@@ -90,6 +92,7 @@ function DropdownMultiSelect({
     onChange: (val: string[]) => void,
     placeholder: string
     error?: string
+    selectionMode?: "single" | "multiple"
 }) {
     const [open, setOpen] = useState(false)
     const rootRef = useRef<HTMLDivElement | null>(null)
@@ -101,6 +104,10 @@ function DropdownMultiSelect({
     })
 
     const handleToggle = (id: string) => {
+        if (selectionMode === "single") {
+            onChange(value.includes(id) ? [] : [id])
+            return
+        }
         if (value.includes(id)) onChange(value.filter(v => v !== id))
         else onChange([...value, id])
     }
@@ -203,33 +210,17 @@ function DropdownMultiSelect({
     )
 }
 
-type CategoryAttributeMap = Record<string, {
-    typeIds: string[]
-    styleIds: string[]
-    colorIds: string[]
-    sizeIds: string[]
-    ageIds: string[]
-    materialIds: string[]
-}>
-
 interface ProductFormProps {
     lang?: AdminLanguage
     initialData?: ProductFormInitialData
     options: {
         categories: Category[]
-        types: SelectOption[]
-        styles: SelectOption[]
-        colors: SelectOption[]
-        sizes: SelectOption[]
-        ages: SelectOption[]
-        materials: SelectOption[]
-        categoryAttributeMap?: CategoryAttributeMap
+        attributeGroups: AttributeGroupRecord[]
     }
 }
 
 type ProductRelation = { id: string }
 type CustomAttributeInput = { name: string; values: string[]; visible: boolean }
-const EMPTY_CUSTOM_ATTRIBUTES: CustomAttributeInput[] = []
 
 type ProductFormInitialData = {
     id: string
@@ -250,13 +241,8 @@ type ProductFormInitialData = {
     seoKeywords: string | null
     updatedAt: Date
     categories: ProductRelation[]
-    types: ProductRelation[]
-    styles: ProductRelation[]
-    colors: ProductRelation[]
-    sizes: ProductRelation[]
-    ages: ProductRelation[]
-    materials: ProductRelation[]
     customAttributes?: CustomAttributeInput[]
+    attributeSelections?: Record<string, string[]>
 }
 
 type ProductDataTab = "general" | "inventory" | "shipping" | "linked" | "attributes" | "advanced" | "more"
@@ -275,18 +261,6 @@ const PRODUCT_DATA_TABS: Array<{
     { key: "advanced", label: { en: "Advanced", tr: "Gelismis" }, icon: Settings },
     { key: "more", label: { en: "Get more options", tr: "Daha fazla seçenek" }, icon: Sparkles },
 ]
-
-function filterOptionsByCategory(
-    allOptions: SelectOption[],
-    selectedCategoryIds: string[],
-    map: CategoryAttributeMap | undefined,
-    attributeKey: keyof CategoryAttributeMap[string]
-) {
-    void selectedCategoryIds
-    void map
-    void attributeKey
-    return allOptions
-}
 
 function parseImageList(value: unknown): string[] {
     return parseProductImages(value)
@@ -831,14 +805,9 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         shortDescription: initialData.shortDescription || "",
         seoKeywords: initialData.seoKeywords || "",
         customAttributes: initialData.customAttributes || [],
+        attributeSelections: initialData.attributeSelections || {},
         images: initialImages,
         categoryIds: initialData.categories.map((c) => c.id),
-        typeIds: initialData.types.map((t) => t.id),
-        styleIds: initialData.styles.map((s) => s.id),
-        colorIds: initialData.colors.map((c) => c.id),
-        sizeIds: initialData.sizes.map((s) => s.id),
-        ageIds: initialData.ages.map((a) => a.id),
-        materialIds: initialData.materials.map((m) => m.id),
     } : {
         title: "",
         slug: "",
@@ -855,14 +824,9 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         shortDescription: "",
         seoKeywords: "",
         customAttributes: [],
+        attributeSelections: {},
         images: [],
         categoryIds: [],
-        typeIds: [],
-        styleIds: [],
-        colorIds: [],
-        sizeIds: [],
-        ageIds: [],
-        materialIds: [],
     }
 
     const form = useForm<ProductFormInput, unknown, ProductFormValues>({
@@ -877,22 +841,9 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
     const seoTitleValue = watch("seoTitle") || ""
     const seoKeywordsValue = watch("seoKeywords") || ""
 
-    const customAttributeItems = watch("customAttributes") ?? EMPTY_CUSTOM_ATTRIBUTES
     const selectedCategoryIds = watch("categoryIds")
-    const selectedTypeIds = watch("typeIds") || []
-    const selectedStyleIds = watch("styleIds") || []
-    const selectedColorIds = watch("colorIds") || []
-    const selectedSizeIds = watch("sizeIds") || []
-    const selectedAgeIds = watch("ageIds") || []
-    const selectedMaterialIds = watch("materialIds") || []
-    const selectedAttributeCount =
-        customAttributeItems.length +
-        selectedTypeIds.length +
-        selectedStyleIds.length +
-        selectedColorIds.length +
-        selectedSizeIds.length +
-        selectedAgeIds.length +
-        selectedMaterialIds.length
+    const selectedAttributeSelections = watch("attributeSelections") || {}
+    const selectedAttributeCount = Object.values(selectedAttributeSelections).reduce((total, ids) => total + (Array.isArray(ids) ? ids.length : 0), 0)
     const descriptionValue = watch("description") || ""
     const shortDescriptionValue = watch("shortDescription") || ""
     const tagItems = useMemo(
@@ -927,29 +878,9 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
     const googlePreviewDescription = previewDescriptionSource.slice(0, 160)
     const googlePreviewTitleLength = resolvedSeoTitle.length
     const googlePreviewDescriptionLength = previewDescriptionSource.length
-    const availableTypeOptions = useMemo(
-        () => filterOptionsByCategory(options.types, selectedCategoryIds || [], options.categoryAttributeMap, "typeIds"),
-        [options.types, options.categoryAttributeMap, selectedCategoryIds]
-    )
-    const availableStyleOptions = useMemo(
-        () => filterOptionsByCategory(options.styles, selectedCategoryIds || [], options.categoryAttributeMap, "styleIds"),
-        [options.styles, options.categoryAttributeMap, selectedCategoryIds]
-    )
-    const availableColorOptions = useMemo(
-        () => filterOptionsByCategory(options.colors, selectedCategoryIds || [], options.categoryAttributeMap, "colorIds"),
-        [options.colors, options.categoryAttributeMap, selectedCategoryIds]
-    )
-    const availableSizeOptions = useMemo(
-        () => filterOptionsByCategory(options.sizes, selectedCategoryIds || [], options.categoryAttributeMap, "sizeIds"),
-        [options.sizes, options.categoryAttributeMap, selectedCategoryIds]
-    )
-    const availableAgeOptions = useMemo(
-        () => filterOptionsByCategory(options.ages, selectedCategoryIds || [], options.categoryAttributeMap, "ageIds"),
-        [options.ages, options.categoryAttributeMap, selectedCategoryIds]
-    )
-    const availableMaterialOptions = useMemo(
-        () => filterOptionsByCategory(options.materials, selectedCategoryIds || [], options.categoryAttributeMap, "materialIds"),
-        [options.materials, options.categoryAttributeMap, selectedCategoryIds]
+    const availableAttributeGroups = useMemo(
+        () => options.attributeGroups.filter((group) => group.isActive),
+        [options.attributeGroups]
     )
     const matchedSupplier = useMemo(
         () => matchSupplierBySkuPrefix(skuValue, supplierRegistry),
@@ -1005,23 +936,6 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         const currentIds = form.getValues("categoryIds") || []
         form.setValue("categoryIds", [...currentIds, newCategory.id])
         toast.success(tx("Category added and selected", "Kategori eklendi ve seçildi"))
-    }
-
-    const addCustomAttribute = () => {
-        const current = form.getValues("customAttributes") || []
-        setValue("customAttributes", [...current, { name: "", values: [], visible: true }], { shouldDirty: true, shouldTouch: true, shouldValidate: true })
-    }
-
-    const updateCustomAttribute = (index: number, patch: Partial<CustomAttributeInput>) => {
-        const current = form.getValues("customAttributes") || []
-        const next = current.map((item, idx) => (idx === index ? { ...item, ...patch } : item))
-        setValue("customAttributes", next, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
-    }
-
-    const removeCustomAttribute = (index: number) => {
-        const current = form.getValues("customAttributes") || []
-        const next = current.filter((_, idx) => idx !== index)
-        setValue("customAttributes", next, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
     }
 
     const syncImageState = (nextFeatured: string | null, nextGallery: string[]) => {
@@ -1107,6 +1021,13 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         } else {
             data.price = regularPrice
             data.compareAtPrice = undefined
+        }
+
+        const missingRequiredAttributes = availableAttributeGroups.filter((group) => group.isRequired && (selectedAttributeSelections[group.id] || []).length === 0)
+        if (missingRequiredAttributes.length > 0) {
+            toast.error(tx("Select all required product attributes before saving.", "Kaydetmeden önce tüm zorunlu ürün özelliklerini seçin"))
+            setIsLoading(false)
+            return
         }
 
         try {
@@ -1514,126 +1435,59 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                                     </p>
                                                 </div>
                                                 <div className="grid gap-4 p-4 md:grid-cols-2">
-                                                    <DropdownMultiSelect
-                                                        label={tx("Type", "Tip")}
-                                                        options={availableTypeOptions}
-                                                        value={selectedTypeIds}
-                                                        onChange={(val) => setValue("typeIds", val, { shouldDirty: true, shouldTouch: true, shouldValidate: true })}
-                                                        placeholder={tx("Select type", "Tip seç")}
-                                                        error={errors.typeIds?.message as string | undefined}
-                                                    />
-                                                    <DropdownMultiSelect
-                                                        label={tx("Style", "Stil")}
-                                                        options={availableStyleOptions}
-                                                        value={selectedStyleIds}
-                                                        onChange={(val) => setValue("styleIds", val, { shouldDirty: true, shouldTouch: true, shouldValidate: true })}
-                                                        placeholder={tx("Select style", "Stil seç")}
-                                                        error={errors.styleIds?.message as string | undefined}
-                                                    />
-                                                    <DropdownMultiSelect
-                                                        label={tx("Color", "Renk")}
-                                                        options={availableColorOptions}
-                                                        value={selectedColorIds}
-                                                        onChange={(val) => setValue("colorIds", val, { shouldDirty: true, shouldTouch: true, shouldValidate: true })}
-                                                        placeholder={tx("Select color", "Renk seç")}
-                                                        error={errors.colorIds?.message as string | undefined}
-                                                    />
-                                                    <DropdownMultiSelect
-                                                        label={tx("Size", "Boyut")}
-                                                        options={availableSizeOptions}
-                                                        value={selectedSizeIds}
-                                                        onChange={(val) => setValue("sizeIds", val, { shouldDirty: true, shouldTouch: true, shouldValidate: true })}
-                                                        placeholder={tx("Select size", "Boyut seç")}
-                                                        error={errors.sizeIds?.message as string | undefined}
-                                                    />
-                                                    <DropdownMultiSelect
-                                                        label={tx("Age", "Yaş")}
-                                                        options={availableAgeOptions}
-                                                        value={selectedAgeIds}
-                                                        onChange={(val) => setValue("ageIds", val, { shouldDirty: true, shouldTouch: true, shouldValidate: true })}
-                                                        placeholder={tx("Select age", "Yaş seç")}
-                                                        error={errors.ageIds?.message as string | undefined}
-                                                    />
-                                                    <DropdownMultiSelect
-                                                        label={tx("Material", "Malzeme")}
-                                                        options={availableMaterialOptions}
-                                                        value={selectedMaterialIds}
-                                                        onChange={(val) => setValue("materialIds", val, { shouldDirty: true, shouldTouch: true, shouldValidate: true })}
-                                                        placeholder={tx("Select material", "Malzeme seç")}
-                                                        error={errors.materialIds?.message as string | undefined}
-                                                    />
+                                                    {availableAttributeGroups.length === 0 ? (
+                                                        <div className="rounded-sm border border-dashed border-[#c3c4c7] bg-[#f6f7f7] px-4 py-3 text-sm text-slate-500 md:col-span-2">
+                                                            {tx("No active attribute groups found. Create them first in Products > Attributes.", "Aktif özellik grubu bulunamadı. Önce Products > Attributes altında oluşturun.")}
+                                                        </div>
+                                                    ) : (
+                                                        availableAttributeGroups.map((group) => {
+                                                            const selectedIds = selectedAttributeSelections[group.id] || []
+                                                            return (
+                                                                <div key={group.id} className="space-y-3 rounded-sm border border-[#dcdcde] bg-[#fbfcfd] p-3">
+                                                                    <div className="flex flex-wrap items-center gap-2">
+                                                                        <Label className="text-sm font-semibold text-slate-800">{group.name}</Label>
+                                                                        <Badge variant="outline" className="rounded-sm border-[#c3c4c7] bg-white text-[10px] uppercase tracking-wide text-slate-600">
+                                                                            {group.selectionMode === "single" ? tx("Single", "Tek seçim") : tx("Multiple", "Çoklu seçim")}
+                                                                        </Badge>
+                                                                        {group.isRequired ? (
+                                                                            <Badge variant="outline" className="rounded-sm border-amber-200 bg-amber-50 text-[10px] uppercase tracking-wide text-amber-700">
+                                                                                {tx("Required", "Zorunlu")}
+                                                                            </Badge>
+                                                                        ) : null}
+                                                                        {group.isFilterable ? (
+                                                                            <Badge variant="outline" className="rounded-sm border-emerald-200 bg-emerald-50 text-[10px] uppercase tracking-wide text-emerald-700">
+                                                                                {tx("Filterable", "Filtrelenir")}
+                                                                            </Badge>
+                                                                        ) : null}
+                                                                        {group.isVisibleOnProduct ? (
+                                                                            <Badge variant="outline" className="rounded-sm border-sky-200 bg-sky-50 text-[10px] uppercase tracking-wide text-sky-700">
+                                                                                {tx("Visible", "Görünür")}
+                                                                            </Badge>
+                                                                        ) : null}
+                                                                    </div>
+                                                                    <DropdownMultiSelect
+                                                                        label={group.name}
+                                                                        options={group.options.map((option) => ({
+                                                                            id: option.id,
+                                                                            name: option.value,
+                                                                        }))}
+                                                                        value={selectedIds}
+                                                                        onChange={(val) => setValue("attributeSelections", {
+                                                                            ...selectedAttributeSelections,
+                                                                            [group.id]: val,
+                                                                        }, { shouldDirty: true, shouldTouch: true, shouldValidate: true })}
+                                                                        placeholder={tx("Select values", "Değer seç")}
+                                                                        error={errors.attributeSelections?.message as string | undefined}
+                                                                        selectionMode={group.selectionMode}
+                                                                    />
+                                                                </div>
+                                                            )
+                                                        })
+                                                    )}
                                                 </div>
                                             </div>
                                             <div className="rounded-sm border border-[#dcdcde] bg-[#f6f7f7] p-4 text-sm text-slate-600">
-                                                {tx("Add descriptive pieces of information customers can see on the product page, such as Material, Size, or Origin.", "Müşterilerin ürün sayfasında göreceği açıklayıcı bilgileri ekleyin; örneğin Malzeme, Boyut veya Köken.")}
-                                            </div>
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <Button type="button" variant="outline" className="rounded-sm border-[#2271b1] bg-white text-[#2271b1] hover:bg-[#f0f6fc]" onClick={addCustomAttribute}>
-                                                    {tx("Add new", "Yeni ekle")}
-                                                </Button>
-                                            </div>
-
-                                            <p className="text-sm text-slate-500">{tx("Manual product attributes shown on the storefront Attributes tab.", "Elle eklenen ürün özellikleri ön taraftaki Özellikler sekmesinde gösterilir.")}</p>
-
-                                            <div className="space-y-3">
-                                                {customAttributeItems.length === 0 ? (
-                                                    <div className="rounded-sm border border-dashed border-[#c3c4c7] bg-[#f6f7f7] px-4 py-3 text-sm text-slate-500">
-                                                        {tx("No manual attributes yet. Click Add new.", "Henüz manuel özellik yok. Yeni ekle'ye tıklayın.")}
-                                                    </div>
-                                                ) : (
-                                                    customAttributeItems.map((attribute, index) => (
-                                                        <div key={`custom-attribute-${index}`} className="rounded-sm border border-[#dcdcde] bg-white">
-                                                            <div className="flex items-center justify-between border-b border-[#dcdcde] px-4 py-3">
-                                                                <h4 className="text-base font-semibold text-slate-700">
-                                                                    {attribute.name?.trim() || (isTr ? `Yeni özellik ${index + 1}` : `New attribute ${index + 1}`)}
-                                                                </h4>
-                                                                <button
-                                                                    type="button"
-                                                                    className="text-sm font-medium text-red-600 hover:underline"
-                                                                    onClick={() => removeCustomAttribute(index)}
-                                                                >
-                                                                    {tx("Remove", "Kaldır")}
-                                                                </button>
-                                                            </div>
-                                                            <div className="grid gap-4 p-4 md:grid-cols-[240px_minmax(0,1fr)]">
-                                                                <div className="space-y-3">
-                                                                    <div className="space-y-1">
-                                                                        <Label className="text-sm font-medium text-slate-700">{tx("Name", "Ad")}</Label>
-                                                                        <Input
-                                                                            value={attribute.name || ""}
-                                                                            onChange={(event) => updateCustomAttribute(index, { name: event.target.value })}
-                                                                            placeholder={tx("e.g. length or weight", "örnek: uzunluk veya ağırlık")}
-                                                                            className="h-10 rounded-sm border-[#8c8f94]"
-                                                                        />
-                                                                    </div>
-                                                                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                                                                        <Checkbox
-                                                                            checked={attribute.visible !== false}
-                                                                            onCheckedChange={(checked) => updateCustomAttribute(index, { visible: checked === true })}
-                                                                        />
-                                                                        {tx("Visible on the product page", "Ürün sayfasında görünsün")}
-                                                                    </label>
-                                                                </div>
-                                                                <div className="space-y-1">
-                                                                    <Label className="text-sm font-medium text-slate-700">{tx("Value(s)", "Değer(ler)")}</Label>
-                                                                    <textarea
-                                                                        value={(attribute.values || []).join(" | ")}
-                                                                        onChange={(event) =>
-                                                                            updateCustomAttribute(index, {
-                                                                                values: event.target.value
-                                                                                    .split("|")
-                                                                                    .map((item) => item.trim())
-                                                                                    .filter(Boolean),
-                                                                            })
-                                                                        }
-                                                                        placeholder={tx('Enter values. Use "|" to separate values.', 'Değerleri girin. Değerleri ayırmak için "|" kullanın.')}
-                                                                        className="min-h-[110px] w-full rounded-sm border border-[#8c8f94] px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#2271b1]"
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ))
-                                                )}
+                                                {tx("Attribute groups, values, visibility, and storefront filtering are managed centrally in Products > Attributes. This form only selects which values belong to the current product.", "Özellik grupları, değerler, görünürlük ve storefront filtreleri Products > Attributes altında merkezi olarak yönetilir. Bu form yalnızca mevcut ürüne ait değerleri seçer.")}
                                             </div>
                                         </div>
                                     ) : null}

@@ -5,6 +5,7 @@ import { LayoutGrid, Grid2x2, Rows3, List } from "lucide-react"
 import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
 import { prisma } from "@/lib/db"
 import { getProducts, getProductOptions } from "@/lib/actions/product-actions"
+import { getAttributeFacetGroupsForProductIds } from "@/lib/product-attributes"
 import { buildProductImageAlt, getProductImageUrl, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
 import { formatCurrency } from "@/lib/storefront/currency"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
@@ -20,12 +21,16 @@ type RenderCategoryPageInput = {
   redirectIfCanonicalMismatch?: boolean
 }
 
-function getMaterialDelegate() {
-  return (prisma as unknown as {
-    material?: {
-      findMany: (...args: any[]) => Promise<Array<{ id: string; slug: string; name: string; _count: { products: number } }>>
-    }
-  }).material
+function resolveAttributeFilterSelection(
+  groupSlug: string,
+  rawValues: string[],
+  options: Array<{ slug: string; value?: string }>,
+) {
+  if (groupSlug === "size") {
+    return resolveSelectedSizeSlugs(rawValues, options.map((option) => ({ slug: option.slug, name: option.value })))
+  }
+
+  return resolveSelectedOptionSlugs(rawValues, options.map((option) => ({ slug: option.slug, name: option.value })))
 }
 
 function getSiteUrl() {
@@ -129,10 +134,6 @@ export async function renderCategoryPage({
   const categoryPath = resolved.path
   const categoryId = resolved.category.id
 
-  const rawSelectedColors = getMultiParam(searchParams, "color")
-  const selectedStyles = getMultiParam(searchParams, "style")
-  const selectedAges = getMultiParam(searchParams, "age")
-  const selectedMaterials = getMultiParam(searchParams, "material")
   const query = getSingleParam(searchParams, "q")
   const viewInput = getSingleParam(searchParams, "view")
   const viewMode: "2" | "3" | "4" | "list" = viewInput === "2" || viewInput === "3" || viewInput === "4" || viewInput === "list" ? viewInput : "3"
@@ -185,25 +186,20 @@ export async function renderCategoryPage({
 
   if (!category) notFound()
 
-  const selectedColors = resolveSelectedOptionSlugs(rawSelectedColors, options.colors)
-  const selectedSizes = resolveSelectedSizeSlugs(getMultiParam(searchParams, "size"), options.sizes)
+  const filterableAttributeGroups = options.attributeGroups.filter((group: any) => group.isFilterable && group.isActive)
+  const selectedAttributeFilters = Object.fromEntries(
+    filterableAttributeGroups.map((group: any) => [
+      group.slug,
+      resolveAttributeFilterSelection(group.slug, getMultiParam(searchParams, group.slug), group.options),
+    ]),
+  ) as Record<string, string[]>
   const baseFilters: {
-    types: string[]
-    styles: string[]
-    colors: string[]
-    sizes: string[]
-    ages: string[]
-    materials: string[]
+    attributeFilters: Record<string, string[]>
     inStock: boolean
     priceMin: number | undefined
     priceMax: number | undefined
   } = {
-    types: getMultiParam(searchParams, "type"),
-    styles: selectedStyles,
-    colors: selectedColors,
-    sizes: selectedSizes,
-    ages: selectedAges,
-    materials: selectedMaterials,
+    attributeFilters: selectedAttributeFilters,
     inStock: inStockOnly,
     priceMin: hasPriceFilter ? priceMin : undefined,
     priceMax: hasPriceFilter ? priceMaxRaw : undefined,
@@ -303,112 +299,9 @@ export async function renderCategoryPage({
     categoryIds: categoryScopeIds,
   })
 
-  const colorCountWhere = {
-    isPublished: true,
-    categories: { some: { id: { in: categoryScopeIds } } },
-    AND: buildProductSearchWhere(query),
-    types: baseFilters.types.length ? { some: { slug: { in: baseFilters.types } } } : undefined,
-    styles: baseFilters.styles.length ? { some: { slug: { in: baseFilters.styles } } } : undefined,
-    sizes: baseFilters.sizes.length ? { some: { slug: { in: baseFilters.sizes } } } : undefined,
-    ages: baseFilters.ages.length ? { some: { slug: { in: baseFilters.ages } } } : undefined,
-    materials: baseFilters.materials.length ? { some: { slug: { in: baseFilters.materials } } } : undefined,
-    isStock: inStockOnly ? true : undefined,
-    price: hasPriceFilter ? { gte: priceMin, lte: priceMaxRaw } : undefined,
-  } as const
-
-  const colorCounters = await prisma.color.findMany({
-    select: {
-      id: true,
-      slug: true,
-      _count: {
-        select: {
-          products: {
-            where: colorCountWhere,
-          },
-        },
-      },
-    },
-  })
-  const colorCountMap = new Map(colorCounters.map((entry) => [entry.slug, entry._count.products]))
-
-  const buildFacetWhere = (facet: "styles" | "sizes" | "ages" | "colors" | "materials") => ({
-    isPublished: true,
-    categories: { some: { id: { in: categoryScopeIds } } },
-    AND: buildProductSearchWhere(query),
-    types: baseFilters.types.length ? { some: { slug: { in: baseFilters.types } } } : undefined,
-    styles: facet === "styles" || baseFilters.styles.length === 0 ? undefined : { some: { slug: { in: baseFilters.styles } } },
-    sizes: facet === "sizes" || baseFilters.sizes.length === 0 ? undefined : { some: { slug: { in: baseFilters.sizes } } },
-    ages: facet === "ages" || baseFilters.ages.length === 0 ? undefined : { some: { slug: { in: baseFilters.ages } } },
-    colors: facet === "colors" || baseFilters.colors.length === 0 ? undefined : { some: { slug: { in: baseFilters.colors } } },
-    materials: facet === "materials" || baseFilters.materials.length === 0 ? undefined : { some: { slug: { in: baseFilters.materials } } },
-    isStock: inStockOnly ? true : undefined,
-    price: hasPriceFilter ? { gte: priceMin, lte: priceMaxRaw } : undefined,
-    id: topRatedOnly && topRatedIds.length > 0 ? { in: topRatedIds } : undefined,
-  })
-
-  const materialDelegate = getMaterialDelegate()
-  const [styleCounters, sizeCounters, ageCounters, materialCounters] = await Promise.all([
-    prisma.style.findMany({
-      select: {
-        id: true,
-        slug: true,
-        _count: {
-          select: {
-            products: {
-              where: buildFacetWhere("styles"),
-            },
-          },
-        },
-      },
-    }),
-    prisma.size.findMany({
-      select: {
-        id: true,
-        slug: true,
-        _count: {
-          select: {
-            products: {
-              where: buildFacetWhere("sizes"),
-            },
-          },
-        },
-      },
-    }),
-    prisma.age.findMany({
-      select: {
-        id: true,
-        slug: true,
-        _count: {
-          select: {
-            products: {
-              where: buildFacetWhere("ages"),
-            },
-          },
-        },
-      },
-    }),
-    materialDelegate?.findMany
-      ? materialDelegate.findMany({
-          select: {
-            id: true,
-            slug: true,
-            name: true,
-            _count: {
-              select: {
-                products: {
-                  where: buildFacetWhere("materials"),
-                },
-              },
-            },
-          },
-        })
-      : Promise.resolve([]),
-  ])
-
-  const styleCountMap = new Map(styleCounters.map((entry) => [entry.slug, entry._count.products]))
-  const sizeCountMap = new Map(sizeCounters.map((entry) => [entry.slug, entry._count.products]))
-  const ageCountMap = new Map(ageCounters.map((entry) => [entry.slug, entry._count.products]))
-  const materialCountMap = new Map(materialCounters.map((entry) => [entry.slug, entry._count.products]))
+  const attributeFacetGroups = await getAttributeFacetGroupsForProductIds(products.map((product) => product.id))
+  const primaryAttributeFacetGroups = attributeFacetGroups.slice(0, 6)
+  const overflowAttributeFacetGroups = attributeFacetGroups.slice(6)
 
   const childCounts = await Promise.all(
     category.children.map(async (child) => ({
@@ -457,59 +350,18 @@ export async function renderCategoryPage({
   const pricePresets = buildListingPricePresets(maxCategoryPrice)
   const categoryMetaDescription = buildCategoryMetaDescription(category.title, category.description)
   const categoryCanonicalUrl = `${getSiteUrl()}${categoryPath}`
-  const facetNameBySlug = {
-    color: new Map(options.colors.map((item) => [item.slug, item.name])),
-    style: new Map(options.styles.map((item) => [item.slug, item.name])),
-    size: new Map(options.sizes.map((item) => [item.slug, item.name])),
-    age: new Map(options.ages.map((item) => [item.slug, item.name])),
-    material: new Map(options.materials.map((item) => [item.slug, item.name])),
-  }
   const activeFilterChips = [
-    ...selectedColors.map((slug) => ({
-      key: `color-${slug}`,
-      label: `Color: ${facetNameBySlug.color.get(slug) || slug}`,
-      href: `${categoryPath}${buildQuery((p) => {
-        const next = p.getAll("color").filter((item) => item !== slug)
-        p.delete("color")
-        next.forEach((item) => p.append("color", item))
-      })}`,
-    })),
-    ...selectedStyles.map((slug) => ({
-      key: `style-${slug}`,
-      label: `Style: ${facetNameBySlug.style.get(slug) || slug}`,
-      href: `${categoryPath}${buildQuery((p) => {
-        const next = p.getAll("style").filter((item) => item !== slug)
-        p.delete("style")
-        next.forEach((item) => p.append("style", item))
-      })}`,
-    })),
-    ...selectedSizes.map((slug) => ({
-      key: `size-${slug}`,
-      label: `Size: ${facetNameBySlug.size.get(slug) || slug}`,
-      href: `${categoryPath}${buildQuery((p) => {
-        const next = p.getAll("size").filter((item) => item !== slug)
-        p.delete("size")
-        next.forEach((item) => p.append("size", item))
-      })}`,
-    })),
-    ...selectedAges.map((slug) => ({
-      key: `age-${slug}`,
-      label: `Age: ${facetNameBySlug.age.get(slug) || slug}`,
-      href: `${categoryPath}${buildQuery((p) => {
-        const next = p.getAll("age").filter((item) => item !== slug)
-        p.delete("age")
-        next.forEach((item) => p.append("age", item))
-      })}`,
-    })),
-    ...selectedMaterials.map((slug) => ({
-      key: `material-${slug}`,
-      label: `Material: ${facetNameBySlug.material.get(slug) || slug}`,
-      href: `${categoryPath}${buildQuery((p) => {
-        const next = p.getAll("material").filter((item) => item !== slug)
-        p.delete("material")
-        next.forEach((item) => p.append("material", item))
-      })}`,
-    })),
+    ...filterableAttributeGroups.flatMap((group: any) =>
+      (selectedAttributeFilters[group.slug] || []).map((slug) => ({
+        key: `${group.slug}-${slug}`,
+        label: `${group.name}: ${group.options.find((item: any) => item.slug === slug)?.value || slug}`,
+        href: `${categoryPath}${buildQuery((p) => {
+          const next = p.getAll(group.slug).filter((item) => item !== slug)
+          p.delete(group.slug)
+          next.forEach((item) => p.append(group.slug, item))
+        })}`,
+      }))
+    ),
     ...(inStockOnly
       ? [{
           key: "in-stock",
@@ -604,145 +456,81 @@ export async function renderCategoryPage({
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filters</h2>
               </div>
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Color</h3>
-                <div className="mt-4 space-y-1.5">
-                  {options.colors.filter((color) => (colorCountMap.get(color.slug) || 0) > 0).map((color) => {
-                    const active = selectedColors.includes(color.slug)
-                    const count = colorCountMap.get(color.slug) || 0
-                    return (
-                      <Link
-                        key={color.id}
-                        href={`${categoryPath}${buildQuery((p) => {
-                          const existing = p.getAll("color")
-                          p.delete("color")
-                          if (existing.includes(color.slug)) existing.filter((item) => item !== color.slug).forEach((item) => p.append("color", item))
-                          else {
-                            existing.forEach((item) => p.append("color", item))
-                            p.append("color", color.slug)
-                          }
-                        })}`}
-                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
-                      >
-                        <span className="flex items-center gap-2"><span className="h-3 w-3 rounded-full border border-slate-300" style={{ backgroundColor: color.hex || "#d1d5db" }} />{color.name}</span>
-                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
-                      </Link>
-                    )
-                  })}
+              {primaryAttributeFacetGroups.map((group, groupIndex) => (
+                <div key={group.id} className={groupIndex === 0 ? "" : "border-t border-slate-200 pt-5"}>
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">{group.name}</h3>
+                  <div className="mt-4 space-y-1.5">
+                    {group.options.map((option) => {
+                      const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
+                      return (
+                        <Link
+                          key={option.id}
+                          href={`${categoryPath}${buildQuery((p) => {
+                            const existing = p.getAll(group.slug)
+                            p.delete(group.slug)
+                            if (existing.includes(option.slug)) {
+                              existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
+                            } else {
+                              const nextValues = group.selectionMode === "single" ? [] : existing
+                              nextValues.forEach((item) => p.append(group.slug, item))
+                              p.append(group.slug, option.slug)
+                            }
+                          })}`}
+                          className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
+                        >
+                          <span className="flex items-center gap-2">
+                            {option.hex ? <span className="h-3 w-3 rounded-full border border-slate-300" style={{ backgroundColor: option.hex || "#d1d5db" }} /> : null}
+                            {option.value}
+                          </span>
+                          <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{option.count}</span>
+                        </Link>
+                      )
+                    })}
+                  </div>
                 </div>
-              </div>
-
-              <div className="border-t border-slate-200 pt-5">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Style</h3>
-                <div className="mt-4 space-y-1.5">
-                  {options.styles.filter((style) => (styleCountMap.get(style.slug) || 0) > 0).map((style) => {
-                    const active = selectedStyles.includes(style.slug)
-                    const count = styleCountMap.get(style.slug) || 0
-                    return (
-                      <Link
-                        key={style.id}
-                        href={`${categoryPath}${buildQuery((p) => {
-                          const existing = p.getAll("style")
-                          p.delete("style")
-                          if (existing.includes(style.slug)) existing.filter((item) => item !== style.slug).forEach((item) => p.append("style", item))
-                          else {
-                            existing.forEach((item) => p.append("style", item))
-                            p.append("style", style.slug)
-                          }
-                        })}`}
-                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
-                      >
-                        <span>{style.name}</span>
-                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
-                      </Link>
-                    )
-                  })}
+              ))}
+              {overflowAttributeFacetGroups.length > 0 ? (
+                <div className="border-t border-slate-200 pt-5">
+                  <details className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+                    <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Show more filters</summary>
+                    <div className="mt-4 space-y-5">
+                      {overflowAttributeFacetGroups.map((group) => (
+                        <div key={group.id}>
+                          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">{group.name}</h3>
+                          <div className="mt-3 space-y-1.5">
+                            {group.options.map((option) => {
+                              const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
+                              return (
+                                <Link
+                                  key={option.id}
+                                  href={`${categoryPath}${buildQuery((p) => {
+                                    const existing = p.getAll(group.slug)
+                                    p.delete(group.slug)
+                                    if (existing.includes(option.slug)) {
+                                      existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
+                                    } else {
+                                      const nextValues = group.selectionMode === "single" ? [] : existing
+                                      nextValues.forEach((item) => p.append(group.slug, item))
+                                      p.append(group.slug, option.slug)
+                                    }
+                                  })}`}
+                                  className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
+                                >
+                                  <span className="flex items-center gap-2">
+                                    {option.hex ? <span className="h-3 w-3 rounded-full border border-slate-300" style={{ backgroundColor: option.hex || "#d1d5db" }} /> : null}
+                                    {option.value}
+                                  </span>
+                                  <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{option.count}</span>
+                                </Link>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
                 </div>
-              </div>
-
-              <div className="border-t border-slate-200 pt-5">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Size</h3>
-                <div className="mt-4 space-y-1.5">
-                  {options.sizes.filter((size) => (sizeCountMap.get(size.slug) || 0) > 0).map((size) => {
-                    const active = selectedSizes.includes(size.slug)
-                    const count = sizeCountMap.get(size.slug) || 0
-                    return (
-                      <Link
-                        key={size.id}
-                        href={`${categoryPath}${buildQuery((p) => {
-                          const existing = p.getAll("size")
-                          p.delete("size")
-                          if (existing.includes(size.slug)) existing.filter((item) => item !== size.slug).forEach((item) => p.append("size", item))
-                          else {
-                            existing.forEach((item) => p.append("size", item))
-                            p.append("size", size.slug)
-                          }
-                        })}`}
-                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
-                      >
-                        <span>{size.name}</span>
-                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
-                      </Link>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div className="border-t border-slate-200 pt-5">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Age</h3>
-                <div className="mt-4 space-y-1.5">
-                  {options.ages.filter((age) => (ageCountMap.get(age.slug) || 0) > 0).map((age) => {
-                    const active = selectedAges.includes(age.slug)
-                    const count = ageCountMap.get(age.slug) || 0
-                    return (
-                      <Link
-                        key={age.id}
-                        href={`${categoryPath}${buildQuery((p) => {
-                          const existing = p.getAll("age")
-                          p.delete("age")
-                          if (existing.includes(age.slug)) existing.filter((item) => item !== age.slug).forEach((item) => p.append("age", item))
-                          else {
-                            existing.forEach((item) => p.append("age", item))
-                            p.append("age", age.slug)
-                          }
-                        })}`}
-                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
-                      >
-                        <span>{age.name}</span>
-                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
-                      </Link>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div className="border-t border-slate-200 pt-5">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Material</h3>
-                <div className="mt-4 space-y-1.5">
-                  {options.materials.filter((material) => (materialCountMap.get(material.slug) || 0) > 0).map((material) => {
-                    const active = selectedMaterials.includes(material.slug)
-                    const count = materialCountMap.get(material.slug) || 0
-                    return (
-                      <Link
-                        key={material.id}
-                        href={`${categoryPath}${buildQuery((p) => {
-                          const existing = p.getAll("material")
-                          p.delete("material")
-                          if (existing.includes(material.slug)) existing.filter((item) => item !== material.slug).forEach((item) => p.append("material", item))
-                          else {
-                            existing.forEach((item) => p.append("material", item))
-                            p.append("material", material.slug)
-                          }
-                        })}`}
-                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
-                      >
-                        <span>{material.name}</span>
-                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
-                      </Link>
-                    )
-                  })}
-                </div>
-              </div>
+              ) : null}
 
               <div className="border-t border-slate-200 pt-5">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Price</h3>
@@ -803,141 +591,79 @@ export async function renderCategoryPage({
                     <p className="text-xs text-slate-500">{products.length} products</p>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Color</summary>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        {options.colors.filter((color) => (colorCountMap.get(color.slug) || 0) > 0).map((color) => {
-                          const active = selectedColors.includes(color.slug)
-                          const count = colorCountMap.get(color.slug) || 0
-                          return (
-                            <Link
-                              key={color.id}
-                              href={`${categoryPath}${buildQuery((p) => {
-                                const existing = p.getAll("color")
-                                p.delete("color")
-                                if (existing.includes(color.slug)) existing.filter((item) => item !== color.slug).forEach((item) => p.append("color", item))
-                                else {
-                                  existing.forEach((item) => p.append("color", item))
-                                  p.append("color", color.slug)
-                                }
-                              })}`}
-                              className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
-                            >
-                              <span className="flex items-center gap-2 truncate"><span className="h-2.5 w-2.5 rounded-full border border-slate-300" style={{ backgroundColor: color.hex || "#d1d5db" }} />{color.name}</span>
-                              <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
-                            </Link>
-                          )
-                        })}
-                      </div>
-                    </details>
-                    <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Style</summary>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        {options.styles.filter((style) => (styleCountMap.get(style.slug) || 0) > 0).map((style) => {
-                          const active = selectedStyles.includes(style.slug)
-                          const count = styleCountMap.get(style.slug) || 0
-                          return (
-                            <Link
-                              key={style.id}
-                              href={`${categoryPath}${buildQuery((p) => {
-                                const existing = p.getAll("style")
-                                p.delete("style")
-                                if (existing.includes(style.slug)) existing.filter((item) => item !== style.slug).forEach((item) => p.append("style", item))
-                                else {
-                                  existing.forEach((item) => p.append("style", item))
-                                  p.append("style", style.slug)
-                                }
-                              })}`}
-                              className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
-                            >
-                              <span className="block truncate">{style.name}</span>
-                              <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
-                            </Link>
-                          )
-                        })}
-                      </div>
-                    </details>
-                    <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Size</summary>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        {options.sizes.filter((size) => (sizeCountMap.get(size.slug) || 0) > 0).map((size) => {
-                          const active = selectedSizes.includes(size.slug)
-                          const count = sizeCountMap.get(size.slug) || 0
-                          return (
-                            <Link
-                              key={size.id}
-                              href={`${categoryPath}${buildQuery((p) => {
-                                const existing = p.getAll("size")
-                                p.delete("size")
-                                if (existing.includes(size.slug)) existing.filter((item) => item !== size.slug).forEach((item) => p.append("size", item))
-                                else {
-                                  existing.forEach((item) => p.append("size", item))
-                                  p.append("size", size.slug)
-                                }
-                              })}`}
-                              className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
-                            >
-                              <span className="block truncate">{size.name}</span>
-                              <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
-                            </Link>
-                          )
-                        })}
-                      </div>
-                    </details>
-                    <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Age</summary>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        {options.ages.filter((age) => (ageCountMap.get(age.slug) || 0) > 0).map((age) => {
-                          const active = selectedAges.includes(age.slug)
-                          const count = ageCountMap.get(age.slug) || 0
-                          return (
-                            <Link
-                              key={age.id}
-                              href={`${categoryPath}${buildQuery((p) => {
-                                const existing = p.getAll("age")
-                                p.delete("age")
-                                if (existing.includes(age.slug)) existing.filter((item) => item !== age.slug).forEach((item) => p.append("age", item))
-                                else {
-                                  existing.forEach((item) => p.append("age", item))
-                                  p.append("age", age.slug)
-                                }
-                              })}`}
-                              className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
-                            >
-                              <span className="block truncate">{age.name}</span>
-                              <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
-                            </Link>
-                          )
-                        })}
-                      </div>
-                    </details>
-                    <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Material</summary>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        {options.materials.filter((material) => (materialCountMap.get(material.slug) || 0) > 0).map((material) => {
-                          const active = selectedMaterials.includes(material.slug)
-                          const count = materialCountMap.get(material.slug) || 0
-                          return (
-                            <Link
-                              key={material.id}
-                              href={`${categoryPath}${buildQuery((p) => {
-                                const existing = p.getAll("material")
-                                p.delete("material")
-                                if (existing.includes(material.slug)) existing.filter((item) => item !== material.slug).forEach((item) => p.append("material", item))
-                                else {
-                                  existing.forEach((item) => p.append("material", item))
-                                  p.append("material", material.slug)
-                                }
-                              })}`}
-                              className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
-                            >
-                              <span className="block truncate">{material.name}</span>
-                              <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
-                            </Link>
-                          )
-                        })}
-                      </div>
-                    </details>
+                    {primaryAttributeFacetGroups.map((group) => (
+                      <details key={group.id} className={`rounded-xl border border-slate-200 bg-slate-50 p-3 ${group.options.length > 6 ? "col-span-2" : ""}`}>
+                        <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">{group.name}</summary>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          {group.options.map((option) => {
+                            const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
+                            return (
+                              <Link
+                                key={option.id}
+                                href={`${categoryPath}${buildQuery((p) => {
+                                  const existing = p.getAll(group.slug)
+                                  p.delete(group.slug)
+                                  if (existing.includes(option.slug)) {
+                                    existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
+                                  } else {
+                                    const nextValues = group.selectionMode === "single" ? [] : existing
+                                    nextValues.forEach((item) => p.append(group.slug, item))
+                                    p.append(group.slug, option.slug)
+                                  }
+                                })}`}
+                                className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
+                              >
+                                <span className="flex items-center gap-2 truncate">
+                                  {option.hex ? <span className="h-2.5 w-2.5 rounded-full border border-slate-300" style={{ backgroundColor: option.hex || "#d1d5db" }} /> : null}
+                                  {option.value}
+                                </span>
+                                <span className="mt-1 block text-[11px] text-slate-500">{option.count}</span>
+                              </Link>
+                            )
+                          })}
+                        </div>
+                      </details>
+                    ))}
+                    {overflowAttributeFacetGroups.length > 0 ? (
+                      <details className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Show more filters</summary>
+                        <div className="mt-3 grid grid-cols-1 gap-3">
+                          {overflowAttributeFacetGroups.map((group) => (
+                            <details key={group.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                              <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">{group.name}</summary>
+                              <div className="mt-3 grid grid-cols-2 gap-2">
+                                {group.options.map((option) => {
+                                  const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
+                                  return (
+                                    <Link
+                                      key={option.id}
+                                      href={`${categoryPath}${buildQuery((p) => {
+                                        const existing = p.getAll(group.slug)
+                                        p.delete(group.slug)
+                                        if (existing.includes(option.slug)) {
+                                          existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
+                                        } else {
+                                          const nextValues = group.selectionMode === "single" ? [] : existing
+                                          nextValues.forEach((item) => p.append(group.slug, item))
+                                          p.append(group.slug, option.slug)
+                                        }
+                                      })}`}
+                                      className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
+                                    >
+                                      <span className="flex items-center gap-2 truncate">
+                                        {option.hex ? <span className="h-2.5 w-2.5 rounded-full border border-slate-300" style={{ backgroundColor: option.hex || "#d1d5db" }} /> : null}
+                                        {option.value}
+                                      </span>
+                                      <span className="mt-1 block text-[11px] text-slate-500">{option.count}</span>
+                                    </Link>
+                                  )
+                                })}
+                              </div>
+                            </details>
+                          ))}
+                        </div>
+                      </details>
+                    ) : null}
                     <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                       <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Price</summary>
                       <div className="mt-3 grid grid-cols-2 gap-2">

@@ -5,7 +5,7 @@ import LegacySuperuserDashboard from "@/components/admin/dashboard/legacy-superu
 import { RoleBasedDashboard } from "@/components/admin/dashboard/role-based-dashboard"
 import { getRoleDashboardData } from "@/lib/admin-role-dashboard"
 import { TasksDashboardCard } from "@/components/admin/tasks/task-dashboard-card"
-import { getAssignableTaskUsers, getTaskDashboardSummary, getTaskProductOptions, getTasksForViewer } from "@/lib/actions/task-actions"
+import { getTaskDashboardSummary, getTasksForViewer } from "@/lib/actions/task-actions"
 
 export default async function DashboardPage() {
   await requireAdminSection("dashboard")
@@ -13,16 +13,14 @@ export default async function DashboardPage() {
   if (!user) {
     redirect("/rughouse/login")
   }
-  const [taskSummary, taskItems, taskUsers, taskProducts] = await Promise.all([
+  const [taskSummary, taskItems] = await Promise.all([
     getTaskDashboardSummary(user),
     getTasksForViewer(user, { limit: 6, scope: user.role === "SUPER_USER" ? "all" : "open" }),
-    user.role === "SUPER_USER" ? getAssignableTaskUsers() : Promise.resolve([]),
-    user.role === "SUPER_USER" ? getTaskProductOptions() : Promise.resolve([]),
   ])
   const tasksCard = (
     <div className="bg-[#f6f8fb]">
       <div className="mx-auto w-full max-w-7xl px-6 pt-8">
-        <TasksDashboardCard currentUser={user} initialSummary={taskSummary} initialTasks={taskItems} users={taskUsers} products={taskProducts} />
+        <TasksDashboardCard currentUser={user} initialSummary={taskSummary} initialTasks={taskItems} />
       </div>
     </div>
   )

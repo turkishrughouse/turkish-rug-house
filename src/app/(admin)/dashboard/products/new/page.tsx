@@ -16,33 +16,14 @@ export default async function NewProductPage() {
 
     let options: {
         categories: any[];
-        types: any[];
-        styles: any[];
-        colors: any[];
-        sizes: any[];
-        ages: any[];
-        materials: any[];
-        categoryAttributeMap?: Record<string, {
-            typeIds: string[]
-            styleIds: string[]
-            colorIds: string[]
-            sizeIds: string[]
-            ageIds: string[]
-            materialIds: string[]
-        }>;
+        attributeGroups: any[];
     } = {
         categories: [],
-        types: [],
-        styles: [],
-        colors: [],
-        sizes: [],
-        ages: [],
-        materials: [],
-        categoryAttributeMap: {}
+        attributeGroups: [],
     }
 
     try {
-        options = await getProductOptions()
+        options = await getProductOptions({ ensureDynamicAttributes: true })
     } catch (error) {
         console.error("Failed to fetch product options:", error)
         // We continue with empty options to verify if page renders

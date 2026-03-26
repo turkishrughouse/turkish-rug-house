@@ -6,6 +6,8 @@ const customAttributeSchema = z.object({
     visible: z.boolean().default(true),
 })
 
+const dynamicAttributeSelectionsSchema = z.record(z.string(), z.array(z.string()).default([])).default({})
+
 export const productFormSchema = z.object({
     title: z.string().min(1, "Title is required"),
     slug: z.string().min(1, "Slug is required").regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Invalid slug format"),
@@ -31,6 +33,7 @@ export const productFormSchema = z.object({
     sizeIds: z.array(z.string()).default([]),
     ageIds: z.array(z.string()).default([]),
     materialIds: z.array(z.string()).default([]),
+    attributeSelections: dynamicAttributeSelectionsSchema,
 
     // SEO
     seoTitle: z.string().optional(),

@@ -62,9 +62,9 @@ export async function saveSupplierRegistry(input: SupplierRecord[]) {
 
 export async function getLegacySuppliersFromProducts() {
   await ensureSupplierColumns()
-  const rows = await prisma.$queryRawUnsafe<Array<{ suppliers: string | null; deletedAt: string | null }>>(
-    `SELECT "suppliers", "deletedAt" FROM "Product"`
-  )
+  const rows = await prisma.$queryRaw<Array<{ suppliers: string | null; deletedAt: string | null }>>`
+    SELECT "suppliers", "deletedAt" FROM "Product"
+  `
 
   const collected: SupplierRecord[] = []
   for (const row of rows) {
@@ -105,9 +105,9 @@ export async function syncProductSupplierBySku(productId: string, sku: string | 
 export async function syncAllProductSuppliersFromRegistry(registry?: SupplierRecord[]) {
   await ensureSupplierColumns()
   const suppliers = registry ? normalizeSuppliers(registry) : (await ensureSupplierRegistrySeeded()).suppliers
-  const rows = await prisma.$queryRawUnsafe<ProductSupplierRow[]>(
-    `SELECT "id", "sku", "suppliers", "deletedAt", "stockCount" FROM "Product"`
-  )
+  const rows = await prisma.$queryRaw<ProductSupplierRow[]>`
+    SELECT "id", "sku", "suppliers", "deletedAt", "stockCount" FROM "Product"
+  `
 
   let updatedProducts = 0
   for (const row of rows) {
@@ -130,9 +130,9 @@ export async function getSupplierSummaries() {
     await syncAllProductSuppliersFromRegistry(suppliers)
   }
 
-  const rows = await prisma.$queryRawUnsafe<Array<{ sku: string | null; deletedAt: string | null; stockCount: number | null }>>(
-    `SELECT "sku", "deletedAt", "stockCount" FROM "Product"`
-  )
+  const rows = await prisma.$queryRaw<Array<{ sku: string | null; deletedAt: string | null; stockCount: number | null }>>`
+    SELECT "sku", "deletedAt", "stockCount" FROM "Product"
+  `
   const activeRows = rows.filter((row) => !row.deletedAt)
 
   return suppliers.map((supplier) => {

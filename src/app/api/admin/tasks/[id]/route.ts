@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSessionUser } from "@/lib/auth-server"
+import {
+  assertAdminTaskTransitionAllowed,
+  ensureTaskWorkflowColumns,
+  getTaskStatusUpdateMetadata,
+  updateTaskWorkflowColumns,
+} from "@/lib/actions/task-actions"
 import { prisma } from "@/lib/db"
-import { type TaskPriority, type TaskStatus } from "@/lib/tasks"
+import { normalizeTaskStatus, type TaskPriority, type TaskStatus } from "@/lib/tasks"
 import { taskAdminUpdateSchema, taskSuperUpdateSchema } from "@/lib/validations/task"
 
 function parseDueDate(value: string | null | undefined) {
@@ -19,6 +25,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
 
   const { id } = await context.params
   const body = await req.json()
+  await ensureTaskWorkflowColumns()
 
   if (user.role === "SUPER_USER") {
     const parsed = taskSuperUpdateSchema.safeParse(body)
@@ -27,21 +34,37 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     }
 
     const payload = parsed.data
+    const nextStatus = payload.status === undefined ? undefined : normalizeTaskStatus(payload.status)
     await prisma.task.update({
       where: { id },
       data: {
         title: payload.title,
         description: payload.description === undefined ? undefined : payload.description || null,
         priority: payload.priority as TaskPriority | undefined,
-        status: payload.status as TaskStatus | undefined,
+        status: nextStatus as TaskStatus | undefined,
         dueDate: payload.dueDate === undefined ? undefined : parseDueDate(payload.dueDate),
-        relatedProductId: payload.relatedProductId === undefined ? undefined : payload.relatedProductId || null,
+        relatedProductId: payload.relatedProductId === undefined ? undefined : payload.relatedProductId || payload.relatedProductIds?.[0] || null,
         assignedToId: payload.assignedToId === undefined ? undefined : payload.assignedToId || null,
         progressNote: payload.progressNote === undefined ? undefined : payload.progressNote || null,
         archivedAt: payload.archived === undefined ? undefined : payload.archived ? new Date() : null,
         updatedAt: new Date(),
       },
     })
+
+    if (
+      payload.relatedCategoryId !== undefined ||
+      payload.relatedProductIds !== undefined ||
+      nextStatus !== undefined
+    ) {
+      const metadata = nextStatus ? getTaskStatusUpdateMetadata(nextStatus) : null
+      await updateTaskWorkflowColumns({
+        id,
+        relatedCategoryId: payload.relatedCategoryId === undefined ? undefined : payload.relatedCategoryId || null,
+        relatedProductIds: payload.relatedProductIds,
+        completedAt: metadata?.completedAt,
+        pausedAt: metadata?.pausedAt,
+      })
+    }
 
     return NextResponse.json({ success: true })
   }
@@ -57,20 +80,34 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       assignedToId: user.id,
       archivedAt: null,
     },
-    select: { id: true },
+    select: { id: true, status: true },
   })
   if (!task) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 })
   }
 
+  const nextStatus = parsed.data.status ? normalizeTaskStatus(parsed.data.status) : undefined
+  if (nextStatus) {
+    assertAdminTaskTransitionAllowed(normalizeTaskStatus(task.status), nextStatus)
+  }
+
   await prisma.task.update({
     where: { id },
     data: {
-      status: parsed.data.status as TaskStatus | undefined,
+      status: nextStatus as TaskStatus | undefined,
       progressNote: parsed.data.progressNote === undefined ? undefined : parsed.data.progressNote || null,
       updatedAt: new Date(),
     },
   })
+
+  if (nextStatus) {
+    const metadata = getTaskStatusUpdateMetadata(nextStatus)
+    await updateTaskWorkflowColumns({
+      id,
+      completedAt: metadata.completedAt,
+      pausedAt: metadata.pausedAt,
+    })
+  }
 
   return NextResponse.json({ success: true })
 }

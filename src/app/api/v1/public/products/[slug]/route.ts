@@ -1,6 +1,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { getProductVisibleAttributes } from "@/lib/product-attributes";
 
 export const dynamic = 'force-dynamic';
 
@@ -74,11 +75,13 @@ export async function GET(
         `;
         const attributeRecord = attributeRows[0];
 
+        const dynamicAttributes = await getProductVisibleAttributes(product.id).catch(() => [])
+
         return NextResponse.json({
             ...serialized,
             sku: attributeRecord?.sku ?? null,
             shortDescription: attributeRecord?.shortDescription ?? null,
-            customAttributes: parseCustomAttributes(attributeRecord?.customAttributes),
+            customAttributes: dynamicAttributes.length > 0 ? dynamicAttributes : parseCustomAttributes(attributeRecord?.customAttributes),
         });
 
     } catch (error) {

@@ -14,6 +14,13 @@ import { normalizeSuppliers, type SupplierRecord } from "@/lib/supplier-prefix"
 import { syncProductSupplierBySku } from "@/lib/supplier-registry"
 import { buildProductSearchWhere, extractPriceIntent, normalizeListingColor, normalizeListingSize, normalizeListingText } from "@/lib/storefront/listing-filters"
 import { getPrimaryProductImage, getPrimaryProductImageCandidates } from "@/lib/product-images"
+import {
+    buildVisibleAttributesFromSelections,
+    getAttributeGroups,
+    getProductAttributeSelections,
+    getProductIdsMatchingAttributeFilters,
+    saveProductAttributeSelections,
+} from "@/lib/product-attributes"
 
 type MaterialDelegate = {
     findMany: (...args: any[]) => Promise<any[]>
@@ -493,6 +500,7 @@ export async function getProducts(
         sizes?: string[],
         ages?: string[],
         materials?: string[],
+        attributeFilters?: Record<string, string[]>,
         categoryIds?: string[],
         priceMin?: number,
         priceMax?: number,
@@ -550,6 +558,12 @@ export async function getProducts(
         } else {
             idFilter = featuredIds
         }
+    }
+
+    if (filters?.attributeFilters && Object.keys(filters.attributeFilters).length > 0) {
+        const attributeMatchedIds = await getProductIdsMatchingAttributeFilters(filters.attributeFilters)
+        const allowedIds = new Set(attributeMatchedIds || [])
+        idFilter = (idFilter || []).filter((id) => allowedIds.has(id))
     }
 
     const scheduleDateValue = filters?.scheduledDate?.trim()
@@ -760,7 +774,10 @@ export async function getProduct(id: string) {
     const sku = await getSkuByProductId(product.id)
     const isFeatured = await getFeaturedByProductId(product.id)
     const shortDescription = await getShortDescriptionByProductId(product.id)
-    const customAttributes = await getCustomAttributesByProductId(product.id)
+    const [customAttributes, attributeSelections] = await Promise.all([
+        getCustomAttributesByProductId(product.id),
+        getProductAttributeSelections(product.id),
+    ])
     const suppliers = await getSuppliersByProductId(product.id)
 
     return {
@@ -769,6 +786,7 @@ export async function getProduct(id: string) {
         isFeatured,
         shortDescription,
         customAttributes,
+        attributeSelections,
         suppliers,
         price: product.price.toNumber(),
         compareAtPrice: product.compareAtPrice ? product.compareAtPrice.toNumber() : null,
@@ -813,6 +831,9 @@ export async function createProduct(data: ProductFormValues) {
             categoryTitles: categoryRows.map((item) => item.title),
         })
 
+        const attributeGroups = await getAttributeGroups()
+        const dynamicCustomAttributes = buildVisibleAttributesFromSelections(attributeGroups, validated.attributeSelections || {})
+
         const created = await db.product.create({
             data: {
                 title: validated.title,
@@ -828,18 +849,13 @@ export async function createProduct(data: ProductFormValues) {
                 seoDescription: seo.seoDescription,
                 seoKeywords: seo.seoKeywords,
                 categories: { connect: connect(validated.categoryIds) },
-                types: { connect: connect(validated.typeIds) },
-                styles: { connect: connect(validated.styleIds) },
-                colors: { connect: connect(validated.colorIds) },
-                sizes: { connect: connect(validated.sizeIds) },
-                ages: { connect: connect(validated.ageIds) },
-                materials: { connect: connect(validated.materialIds) },
             }
         })
         await setSkuByProductId(created.id, validated.sku || null)
         await setFeaturedByProductId(created.id, validated.isFeatured)
         await setShortDescriptionByProductId(created.id, validated.shortDescription)
-        await setCustomAttributesByProductId(created.id, validated.customAttributes)
+        await saveProductAttributeSelections(created.id, validated.attributeSelections || {})
+        await setCustomAttributesByProductId(created.id, dynamicCustomAttributes)
         const resolvedSuppliers = await syncProductSupplierBySku(created.id, validated.sku || null)
         await setProductCreatorByProductId(created.id, {
             id: actor?.id || null,
@@ -884,7 +900,7 @@ export async function createProduct(data: ProductFormValues) {
                     seoDescription: seo.seoDescription,
                     seoKeywords: seo.seoKeywords,
                     images: normalizedImages,
-                    customAttributes: validated.customAttributes,
+                    customAttributes: dynamicCustomAttributes,
                     suppliers: resolvedSuppliers,
                     categories: categoryRows.map((c) => ({ id: c.id, slug: c.slug, title: c.title })),
                 },
@@ -954,6 +970,9 @@ export async function updateProduct(id: string, data: ProductFormValues) {
         // Disconnect all first then connect new to handle "replace" logic for m-n
         // Or strictly set. set is cleaner for m-n in Prisma.
 
+        const attributeGroups = await getAttributeGroups()
+        const dynamicCustomAttributes = buildVisibleAttributesFromSelections(attributeGroups, validated.attributeSelections || {})
+
         await db.product.update({
             where: { id },
             data: {
@@ -970,18 +989,13 @@ export async function updateProduct(id: string, data: ProductFormValues) {
                 seoDescription: seo.seoDescription,
                 seoKeywords: seo.seoKeywords,
                 categories: { set: connect(validated.categoryIds) },
-                types: { set: connect(validated.typeIds) },
-                styles: { set: connect(validated.styleIds) },
-                colors: { set: connect(validated.colorIds) },
-                sizes: { set: connect(validated.sizeIds) },
-                ages: { set: connect(validated.ageIds) },
-                materials: { set: connect(validated.materialIds) },
             }
         })
         await setSkuByProductId(id, validated.sku || null)
         await setFeaturedByProductId(id, validated.isFeatured)
         await setShortDescriptionByProductId(id, validated.shortDescription)
-        await setCustomAttributesByProductId(id, validated.customAttributes)
+        await saveProductAttributeSelections(id, validated.attributeSelections || {})
+        await setCustomAttributesByProductId(id, dynamicCustomAttributes)
         const resolvedSuppliers = await syncProductSupplierBySku(id, validated.sku || null)
         const hadDiscount = Boolean(
             before?.isPublished &&
@@ -1024,7 +1038,7 @@ export async function updateProduct(id: string, data: ProductFormValues) {
                     seoDescription: seo.seoDescription,
                     seoKeywords: seo.seoKeywords,
                     images: normalizedImages,
-                    customAttributes: validated.customAttributes,
+                    customAttributes: dynamicCustomAttributes,
                     suppliers: resolvedSuppliers,
                     categories: categoryRows.map((c) => ({ id: c.id, slug: c.slug, title: c.title })),
                 },
@@ -1069,6 +1083,8 @@ export async function duplicateProduct(id: string) {
 
     try {
         const actor = await getSessionUser("admin")
+        const attributeGroups = await getAttributeGroups()
+        const originalAttributeSelections = await getProductAttributeSelections(id)
         const newSlug = await ensureUniqueProductSlug(
             buildSlugBaseWithSku(`copy-${original.title}`, original.sku)
         )
@@ -1097,7 +1113,11 @@ export async function duplicateProduct(id: string) {
         await setSkuByProductId(newProduct.id, original.sku || null)
         await setFeaturedByProductId(newProduct.id, Boolean(original.isFeatured))
         await setShortDescriptionByProductId(newProduct.id, original.shortDescription || null)
-        await setCustomAttributesByProductId(newProduct.id, original.customAttributes || [])
+        await saveProductAttributeSelections(newProduct.id, originalAttributeSelections)
+        await setCustomAttributesByProductId(
+            newProduct.id,
+            buildVisibleAttributesFromSelections(attributeGroups, originalAttributeSelections),
+        )
         await syncProductSupplierBySku(newProduct.id, original.sku || null)
         await setProductCreatorByProductId(newProduct.id, {
             id: actor?.id || null,
@@ -1183,8 +1203,12 @@ export async function bulkPublishProducts(ids: string[], isPublished: boolean) {
     }
 }
 
-export async function getProductOptions() {
-    await ensureCanonicalProductMediaMigration()
+export async function getProductOptions(input?: { ensureDynamicAttributes?: boolean }) {
+    if (input?.ensureDynamicAttributes) {
+        const { ensureDynamicAttributeTables } = await import("@/lib/product-attributes")
+        await ensureDynamicAttributeTables()
+    }
+    const attributeGroupsPromise = getAttributeGroups({ activeOnly: true })
     const categoriesWithProductsPromise = db.category.findMany({
         select: {
             id: true,
@@ -1202,7 +1226,7 @@ export async function getProductOptions() {
         }
     })
 
-    const [categories, types, styles, colors, sizes, ages, materials, categoriesWithProducts] = await Promise.all([
+    const [categories, types, styles, colors, sizes, ages, materials, categoriesWithProducts, attributeGroups] = await Promise.all([
         db.category.findMany(),
         db.type.findMany(),
         db.style.findMany(),
@@ -1211,6 +1235,7 @@ export async function getProductOptions() {
         db.age.findMany(),
         findMaterials(),
         categoriesWithProductsPromise,
+        attributeGroupsPromise,
     ])
 
     const categoryAttributeMap: Record<string, {
@@ -1268,5 +1293,6 @@ export async function getProductOptions() {
         ages,
         materials,
         categoryAttributeMap,
+        attributeGroups,
     }
 }

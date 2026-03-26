@@ -52,7 +52,7 @@ export default async function ProductsPage({
             }
         ),
         getProductAdminStats(query),
-        getProductOptions(),
+        getProductOptions({ ensureDynamicAttributes: true }),
     ])
 
     return (

@@ -19,7 +19,7 @@ export type MediaRegistryRow = {
 }
 
 export async function ensureMediaRegistryTable() {
-  await prisma.$executeRawUnsafe(`
+  await prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS "MediaAsset" (
       "id" TEXT PRIMARY KEY,
       "image_url" TEXT NOT NULL UNIQUE,
@@ -38,7 +38,7 @@ export async function ensureMediaRegistryTable() {
       "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
-  `)
+  `
 }
 
 export async function findMediaByChecksum(checksum: string) {

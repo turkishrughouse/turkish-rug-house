@@ -5,6 +5,7 @@ import { ResponsiveImage } from "@/components/ui/responsive-image"
 import { ShopProductCardServer } from "@/components/storefront/shop-product-card-server"
 import { getProducts, getProductOptions } from "@/lib/actions/product-actions"
 import { prisma } from "@/lib/db"
+import { getAttributeFacetGroupsForProductIds } from "@/lib/product-attributes"
 import { getSiteSettings } from "@/lib/site-settings"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { formatCurrency } from "@/lib/storefront/currency"
@@ -17,12 +18,16 @@ type ShopPageProps = {
 
 export const revalidate = 300
 
-function getMaterialDelegate() {
-  return (prisma as unknown as {
-    material?: {
-      findMany: (...args: any[]) => Promise<Array<{ id: string; slug: string; name: string; _count: { products: number } }>>
-    }
-  }).material
+function resolveAttributeFilterSelection(
+  groupSlug: string,
+  rawValues: string[],
+  options: Array<{ slug: string; value?: string }>,
+) {
+  if (groupSlug === "size") {
+    return resolveSelectedSizeSlugs(rawValues, options.map((option) => ({ slug: option.slug, name: option.value })))
+  }
+
+  return resolveSelectedOptionSlugs(rawValues, options.map((option) => ({ slug: option.slug, name: option.value })))
 }
 
 export default async function ShopPage({ searchParams }: ShopPageProps) {
@@ -40,30 +45,26 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
   const showInput = Number(getSingleParam(resolved, "show") || 24)
   const showValue = [8, 16, 24, 36].includes(showInput) ? showInput : 24
   const inStockOnly = resolved["inStock"] === "true"
-  const rawSelectedColors = getMultiParam(resolved, "color")
-  const selectedMaterials = getMultiParam(resolved, "material")
   const selectedCategories = getMultiParam(resolved, "category")
-  const selectedStyles = getMultiParam(resolved, "style")
   const priceMin = Number(getSingleParam(resolved, "priceMin") || 0)
   const priceMaxRaw = Number(getSingleParam(resolved, "priceMax") || 0)
   const hasPriceFilter = Number.isFinite(priceMin) && Number.isFinite(priceMaxRaw) && priceMaxRaw > 0
 
-  const materialDelegate = getMaterialDelegate()
   const [options, siteSettings] = await Promise.all([
     getProductOptions(),
     getSiteSettings(),
   ])
-  const selectedColors = resolveSelectedOptionSlugs(rawSelectedColors, options.colors)
-  const selectedSizes = resolveSelectedSizeSlugs(getMultiParam(resolved, "size"), options.sizes)
+  const filterableAttributeGroups = options.attributeGroups.filter((group: any) => group.isFilterable && group.isActive)
+  const selectedAttributeFilters = Object.fromEntries(
+    filterableAttributeGroups.map((group: any) => [
+      group.slug,
+      resolveAttributeFilterSelection(group.slug, getMultiParam(resolved, group.slug), group.options),
+    ]),
+  ) as Record<string, string[]>
   const selectedCategoryIds = options.categories.filter((category) => selectedCategories.includes(category.slug)).map((category) => category.id)
 
   const filters = {
-    types: getMultiParam(resolved, "type"),
-    styles: selectedStyles,
-    colors: selectedColors,
-    sizes: selectedSizes,
-    ages: getMultiParam(resolved, "age"),
-    materials: selectedMaterials,
+    attributeFilters: selectedAttributeFilters,
     categoryIds: selectedCategoryIds.length > 0 ? selectedCategoryIds : undefined,
     inStock: inStockOnly,
     priceMin: hasPriceFilter ? priceMin : undefined,
@@ -74,50 +75,12 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
     isPublished: true,
     AND: buildProductSearchWhere(query),
     categories: selectedCategoryIds.length > 0 ? { some: { id: { in: selectedCategoryIds } } } : undefined,
-    types: filters.types.length ? { some: { slug: { in: filters.types } } } : undefined,
-    styles: filters.styles.length ? { some: { slug: { in: filters.styles } } } : undefined,
-    colors: filters.colors.length ? { some: { slug: { in: filters.colors } } } : undefined,
-    sizes: filters.sizes.length ? { some: { slug: { in: filters.sizes } } } : undefined,
-    ages: filters.ages.length ? { some: { slug: { in: filters.ages } } } : undefined,
-    materials: filters.materials.length ? { some: { slug: { in: filters.materials } } } : undefined,
     isStock: inStockOnly ? true : undefined,
     price: hasPriceFilter ? { gte: priceMin, lte: priceMaxRaw } : undefined,
   } as const
 
-  const [{ products }, colorCounters, styleCounters, sizeCounters, categoryCounters, materialCounters] = await Promise.all([
+  const [{ products }, categoryCounters] = await Promise.all([
     getProducts(1, showValue, query, "published", sort, undefined, filters),
-    prisma.color.findMany({
-      select: {
-        id: true,
-        slug: true,
-        name: true,
-        _count: {
-          select: {
-            products: {
-              where: {
-                ...facetBaseWhere,
-              },
-            },
-          },
-        },
-      },
-    }),
-    prisma.style.findMany({
-      select: {
-        id: true,
-        slug: true,
-        name: true,
-        _count: { select: { products: { where: facetBaseWhere } } },
-      },
-    }),
-    prisma.size.findMany({
-      select: {
-        id: true,
-        slug: true,
-        name: true,
-        _count: { select: { products: { where: facetBaseWhere } } },
-      },
-    }),
     prisma.category.findMany({
       select: {
         id: true,
@@ -126,24 +89,6 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
         _count: { select: { products: { where: facetBaseWhere } } },
       },
     }),
-    materialDelegate?.findMany
-      ? materialDelegate.findMany({
-          select: {
-            id: true,
-            slug: true,
-            name: true,
-            _count: {
-              select: {
-                products: {
-                  where: {
-                    ...facetBaseWhere,
-                  },
-                },
-              },
-            },
-          },
-        })
-      : Promise.resolve([]),
   ])
 
   const visibleProducts = siteSettings.hideOutOfStockOnShop
@@ -165,11 +110,10 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
   })
   const heroCategories = Array.from(categoryMap.values()).slice(0, 6)
 
-  const colorCountMap = new Map(colorCounters.map((entry) => [entry.slug, entry._count.products]))
-  const styleCountMap = new Map(styleCounters.map((entry) => [entry.slug, entry._count.products]))
-  const sizeCountMap = new Map(sizeCounters.map((entry) => [entry.slug, entry._count.products]))
+  const attributeFacetGroups = await getAttributeFacetGroupsForProductIds(visibleProducts.map((product) => product.id))
+  const primaryAttributeFacetGroups = attributeFacetGroups.slice(0, 6)
+  const overflowAttributeFacetGroups = attributeFacetGroups.slice(6)
   const categoryCountMap = new Map(categoryCounters.map((entry) => [entry.slug, entry._count.products]))
-  const materialCountMap = new Map(materialCounters.map((entry) => [entry.slug, entry._count.products]))
 
   const maxShopPrice = visibleProducts.reduce((max, product) => Math.max(max, Number(product.price || 0)), 0)
   const pricePresets = buildListingPricePresets(maxShopPrice)
@@ -201,33 +145,17 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
         next.forEach((item) => p.append("category", item))
       })}`,
     })),
-    ...selectedStyles.map((slug) => ({
-      key: `style-${slug}`,
-      label: `Style: ${options.styles.find((item) => item.slug === slug)?.name || slug}`,
-      href: `/shop${buildQuery((p) => {
-        const next = p.getAll("style").filter((item) => item !== slug)
-        p.delete("style")
-        next.forEach((item) => p.append("style", item))
-      })}`,
-    })),
-    ...selectedColors.map((slug) => ({
-      key: `color-${slug}`,
-      label: `Color: ${options.colors.find((item) => item.slug === slug)?.name || slug}`,
-      href: `/shop${buildQuery((p) => {
-        const next = p.getAll("color").filter((item) => item !== slug)
-        p.delete("color")
-        next.forEach((item) => p.append("color", item))
-      })}`,
-    })),
-    ...selectedSizes.map((slug) => ({
-      key: `size-${slug}`,
-      label: `Size: ${options.sizes.find((item) => item.slug === slug)?.name || slug}`,
-      href: `/shop${buildQuery((p) => {
-        const next = p.getAll("size").filter((item) => item !== slug)
-        p.delete("size")
-        next.forEach((item) => p.append("size", item))
-      })}`,
-    })),
+    ...filterableAttributeGroups.flatMap((group: any) =>
+      (selectedAttributeFilters[group.slug] || []).map((slug) => ({
+        key: `${group.slug}-${slug}`,
+        label: `${group.name}: ${group.options.find((item: any) => item.slug === slug)?.value || slug}`,
+        href: `/shop${buildQuery((p) => {
+          const next = p.getAll(group.slug).filter((item) => item !== slug)
+          p.delete(group.slug)
+          next.forEach((item) => p.append(group.slug, item))
+        })}`,
+      }))
+    ),
     ...(hasPriceFilter
       ? [{
           key: "price",
@@ -368,93 +296,81 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                 </div>
               </div>
 
-              <div className="border-t border-slate-200 pt-5">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Style</h3>
-                <div className="mt-4 space-y-1.5">
-                  {options.styles.filter((style) => (styleCountMap.get(style.slug) || 0) > 0).map((style) => {
-                    const active = selectedStyles.includes(style.slug)
-                    const count = styleCountMap.get(style.slug) || 0
-                    return (
-                      <Link
-                        key={style.id}
-                        href={`/shop${buildQuery((p) => {
-                          const existing = p.getAll("style")
-                          p.delete("style")
-                          if (existing.includes(style.slug)) existing.filter((item) => item !== style.slug).forEach((item) => p.append("style", item))
-                          else {
-                            existing.forEach((item) => p.append("style", item))
-                            p.append("style", style.slug)
-                          }
-                        })}`}
-                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
-                      >
-                        <span>{style.name}</span>
-                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
-                      </Link>
-                    )
-                  })}
+              {primaryAttributeFacetGroups.map((group) => (
+                <div key={group.id} className="border-t border-slate-200 pt-5">
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">{group.name}</h3>
+                  <div className="mt-4 space-y-1.5">
+                    {group.options.map((option) => {
+                      const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
+                      return (
+                        <Link
+                          key={option.id}
+                          href={`/shop${buildQuery((p) => {
+                            const existing = p.getAll(group.slug)
+                            p.delete(group.slug)
+                            if (existing.includes(option.slug)) {
+                              existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
+                            } else {
+                              const nextValues = group.selectionMode === "single" ? [] : existing
+                              nextValues.forEach((item) => p.append(group.slug, item))
+                              p.append(group.slug, option.slug)
+                            }
+                          })}`}
+                          className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
+                        >
+                          <span className="flex items-center gap-2">
+                            {option.hex ? <span className="h-3 w-3 rounded-full border border-slate-300" style={{ backgroundColor: option.hex || "#d1d5db" }} /> : null}
+                            {option.value}
+                          </span>
+                          <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{option.count}</span>
+                        </Link>
+                      )
+                    })}
+                  </div>
                 </div>
-              </div>
-
-              <div className="border-t border-slate-200 pt-5">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Size</h3>
-                <div className="mt-4 space-y-1.5">
-                  {options.sizes.filter((size) => (sizeCountMap.get(size.slug) || 0) > 0).map((size) => {
-                    const active = selectedSizes.includes(size.slug)
-                    const count = sizeCountMap.get(size.slug) || 0
-                    return (
-                      <Link
-                        key={size.id}
-                        href={`/shop${buildQuery((p) => {
-                          const existing = p.getAll("size")
-                          p.delete("size")
-                          if (existing.includes(size.slug)) existing.filter((item) => item !== size.slug).forEach((item) => p.append("size", item))
-                          else {
-                            existing.forEach((item) => p.append("size", item))
-                            p.append("size", size.slug)
-                          }
-                        })}`}
-                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
-                      >
-                        <span>{size.name}</span>
-                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
-                      </Link>
-                    )
-                  })}
+              ))}
+              {overflowAttributeFacetGroups.length > 0 ? (
+                <div className="border-t border-slate-200 pt-5">
+                  <details className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+                    <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Show more filters</summary>
+                    <div className="mt-4 space-y-5">
+                      {overflowAttributeFacetGroups.map((group) => (
+                        <div key={group.id}>
+                          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">{group.name}</h3>
+                          <div className="mt-3 space-y-1.5">
+                            {group.options.map((option) => {
+                              const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
+                              return (
+                                <Link
+                                  key={option.id}
+                                  href={`/shop${buildQuery((p) => {
+                                    const existing = p.getAll(group.slug)
+                                    p.delete(group.slug)
+                                    if (existing.includes(option.slug)) {
+                                      existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
+                                    } else {
+                                      const nextValues = group.selectionMode === "single" ? [] : existing
+                                      nextValues.forEach((item) => p.append(group.slug, item))
+                                      p.append(group.slug, option.slug)
+                                    }
+                                  })}`}
+                                  className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
+                                >
+                                  <span className="flex items-center gap-2">
+                                    {option.hex ? <span className="h-3 w-3 rounded-full border border-slate-300" style={{ backgroundColor: option.hex || "#d1d5db" }} /> : null}
+                                    {option.value}
+                                  </span>
+                                  <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{option.count}</span>
+                                </Link>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
                 </div>
-              </div>
-
-              <div className="border-t border-slate-200 pt-5">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Color</h3>
-                <div className="mt-4 space-y-1.5">
-                  {options.colors.filter((color) => (colorCountMap.get(color.slug) || 0) > 0).map((color) => {
-                    const active = selectedColors.includes(color.slug)
-                    const count = colorCountMap.get(color.slug) || 0
-                    return (
-                      <Link
-                        key={color.id}
-                        href={`/shop${buildQuery((p) => {
-                          const existing = p.getAll("color")
-                          p.delete("color")
-                          if (existing.includes(color.slug)) {
-                            existing.filter((item) => item !== color.slug).forEach((item) => p.append("color", item))
-                          } else {
-                            existing.forEach((item) => p.append("color", item))
-                            p.append("color", color.slug)
-                          }
-                        })}`}
-                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
-                      >
-                        <span className="flex items-center gap-2">
-                          <span className="h-3 w-3 rounded-full border border-slate-300" style={{ backgroundColor: color.hex || "#d1d5db" }} />
-                          {color.name}
-                        </span>
-                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
-                      </Link>
-                    )
-                  })}
-                </div>
-              </div>
+              ) : null}
 
               <div className="border-t border-slate-200 pt-5">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Price</h3>
@@ -472,35 +388,6 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                         className={`block rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
                       >
                         {preset.label}
-                      </Link>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div className="border-t border-slate-200 pt-5">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Material</h3>
-                <div className="mt-4 space-y-1.5">
-                  {options.materials.map((material) => {
-                    const active = selectedMaterials.includes(material.slug)
-                    const count = materialCountMap.get(material.slug) || 0
-                    return (
-                      <Link
-                        key={material.id}
-                        href={`/shop${buildQuery((p) => {
-                          const existing = p.getAll("material")
-                          p.delete("material")
-                          if (existing.includes(material.slug)) {
-                            existing.filter((item) => item !== material.slug).forEach((item) => p.append("material", item))
-                          } else {
-                            existing.forEach((item) => p.append("material", item))
-                            p.append("material", material.slug)
-                          }
-                        })}`}
-                        className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
-                      >
-                        <span>{material.name}</span>
-                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{count}</span>
                       </Link>
                     )
                   })}
@@ -584,90 +471,79 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                       })}
                     </div>
                   </details>
-                  <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Style</summary>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      {options.styles.filter((style) => (styleCountMap.get(style.slug) || 0) > 0).map((style) => {
-                        const active = selectedStyles.includes(style.slug)
-                        const count = styleCountMap.get(style.slug) || 0
-                        return (
-                          <Link
-                            key={style.id}
-                            href={`/shop${buildQuery((p) => {
-                              const existing = p.getAll("style")
-                              p.delete("style")
-                              if (existing.includes(style.slug)) existing.filter((item) => item !== style.slug).forEach((item) => p.append("style", item))
-                              else {
-                                existing.forEach((item) => p.append("style", item))
-                                p.append("style", style.slug)
-                              }
-                            })}`}
-                            className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
-                          >
-                            <span className="block truncate">{style.name}</span>
-                            <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
-                          </Link>
-                        )
-                      })}
-                    </div>
-                  </details>
-                  <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Size</summary>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      {options.sizes.filter((size) => (sizeCountMap.get(size.slug) || 0) > 0).map((size) => {
-                        const active = selectedSizes.includes(size.slug)
-                        const count = sizeCountMap.get(size.slug) || 0
-                        return (
-                          <Link
-                            key={size.id}
-                            href={`/shop${buildQuery((p) => {
-                              const existing = p.getAll("size")
-                              p.delete("size")
-                              if (existing.includes(size.slug)) existing.filter((item) => item !== size.slug).forEach((item) => p.append("size", item))
-                              else {
-                                existing.forEach((item) => p.append("size", item))
-                                p.append("size", size.slug)
-                              }
-                            })}`}
-                            className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
-                          >
-                            <span className="block truncate">{size.name}</span>
-                            <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
-                          </Link>
-                        )
-                      })}
-                    </div>
-                  </details>
-                  <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Color</summary>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      {options.colors.filter((color) => (colorCountMap.get(color.slug) || 0) > 0).map((color) => {
-                        const active = selectedColors.includes(color.slug)
-                        const count = colorCountMap.get(color.slug) || 0
-                        return (
-                          <Link
-                            key={color.id}
-                            href={`/shop${buildQuery((p) => {
-                              const existing = p.getAll("color")
-                              p.delete("color")
-                              if (existing.includes(color.slug)) existing.filter((item) => item !== color.slug).forEach((item) => p.append("color", item))
-                              else {
-                                existing.forEach((item) => p.append("color", item))
-                                p.append("color", color.slug)
-                              }
-                            })}`}
-                            className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
-                          >
-                            <span className="flex items-center gap-2 truncate">
-                              <span className="h-2.5 w-2.5 rounded-full border border-slate-300" style={{ backgroundColor: color.hex || "#d1d5db" }} />
-                              {color.name}
-                            </span>
-                            <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
-                          </Link>
-                        )
-                      })}
-                    </div>
-                  </details>
+                  {primaryAttributeFacetGroups.map((group) => (
+                    <details key={group.id} className={`rounded-xl border border-slate-200 bg-slate-50 p-3 ${group.options.length > 6 ? "col-span-2" : ""}`}>
+                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">{group.name}</summary>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {group.options.map((option) => {
+                          const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
+                          return (
+                            <Link
+                              key={option.id}
+                              href={`/shop${buildQuery((p) => {
+                                const existing = p.getAll(group.slug)
+                                p.delete(group.slug)
+                                if (existing.includes(option.slug)) {
+                                  existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
+                                } else {
+                                  const nextValues = group.selectionMode === "single" ? [] : existing
+                                  nextValues.forEach((item) => p.append(group.slug, item))
+                                  p.append(group.slug, option.slug)
+                                }
+                              })}`}
+                              className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
+                            >
+                              <span className="flex items-center gap-2 truncate">
+                                {option.hex ? <span className="h-2.5 w-2.5 rounded-full border border-slate-300" style={{ backgroundColor: option.hex || "#d1d5db" }} /> : null}
+                                {option.value}
+                              </span>
+                              <span className="mt-1 block text-[11px] text-slate-500">{option.count}</span>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    </details>
+                  ))}
+                  {overflowAttributeFacetGroups.length > 0 ? (
+                    <details className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Show more filters</summary>
+                      <div className="mt-3 grid grid-cols-1 gap-3">
+                        {overflowAttributeFacetGroups.map((group) => (
+                          <details key={group.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                            <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">{group.name}</summary>
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                              {group.options.map((option) => {
+                                const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
+                                return (
+                                  <Link
+                                    key={option.id}
+                                    href={`/shop${buildQuery((p) => {
+                                      const existing = p.getAll(group.slug)
+                                      p.delete(group.slug)
+                                      if (existing.includes(option.slug)) {
+                                        existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
+                                      } else {
+                                        const nextValues = group.selectionMode === "single" ? [] : existing
+                                        nextValues.forEach((item) => p.append(group.slug, item))
+                                        p.append(group.slug, option.slug)
+                                      }
+                                    })}`}
+                                    className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
+                                  >
+                                    <span className="flex items-center gap-2 truncate">
+                                      {option.hex ? <span className="h-2.5 w-2.5 rounded-full border border-slate-300" style={{ backgroundColor: option.hex || "#d1d5db" }} /> : null}
+                                      {option.value}
+                                    </span>
+                                    <span className="mt-1 block text-[11px] text-slate-500">{option.count}</span>
+                                  </Link>
+                                )
+                              })}
+                            </div>
+                          </details>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
                   <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                     <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Price</summary>
                     <div className="mt-3 grid grid-cols-2 gap-2">
@@ -683,33 +559,6 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                             className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
                           >
                             {preset.label}
-                          </Link>
-                        )
-                      })}
-                    </div>
-                  </details>
-                  <details className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Material</summary>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      {options.materials.map((material) => {
-                        const active = selectedMaterials.includes(material.slug)
-                        const count = materialCountMap.get(material.slug) || 0
-                        return (
-                          <Link
-                            key={material.id}
-                            href={`/shop${buildQuery((p) => {
-                              const existing = p.getAll("material")
-                              p.delete("material")
-                              if (existing.includes(material.slug)) existing.filter((item) => item !== material.slug).forEach((item) => p.append("material", item))
-                              else {
-                                existing.forEach((item) => p.append("material", item))
-                                p.append("material", material.slug)
-                              }
-                            })}`}
-                            className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
-                          >
-                            <span className="block truncate">{material.name}</span>
-                            <span className="mt-1 block text-[11px] text-slate-500">{count}</span>
                           </Link>
                         )
                       })}

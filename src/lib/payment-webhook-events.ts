@@ -5,7 +5,7 @@ let ensurePaymentWebhookEventsTablePromise: Promise<void> | null = null
 export async function ensurePaymentWebhookEventsTable() {
   if (!ensurePaymentWebhookEventsTablePromise) {
     ensurePaymentWebhookEventsTablePromise = (async () => {
-      await prisma.$executeRawUnsafe(`
+      await prisma.$executeRaw`
         CREATE TABLE IF NOT EXISTS "PaymentWebhookEvent" (
           "id" TEXT PRIMARY KEY,
           "eventId" TEXT NOT NULL UNIQUE,
@@ -17,10 +17,8 @@ export async function ensurePaymentWebhookEventsTable() {
           "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
           "processedAt" TIMESTAMP(3)
         )
-      `)
-      await prisma.$executeRawUnsafe(
-        `CREATE INDEX IF NOT EXISTS "idx_payment_webhook_event_order" ON "PaymentWebhookEvent" ("orderId", "createdAt" DESC)`
-      )
+      `
+      await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS "idx_payment_webhook_event_order" ON "PaymentWebhookEvent" ("orderId", "createdAt" DESC)`
     })().catch((error) => {
       ensurePaymentWebhookEventsTablePromise = null
       throw error

@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client"
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getSessionUser } from "@/lib/auth"
@@ -91,7 +92,7 @@ export async function GET(req: NextRequest) {
       }),
     ])
 
-    const productRows = await prisma.$queryRawUnsafe<Array<{
+    const productRows = await prisma.$queryRaw<Array<{
       id: string
       title: string
       slug: string
@@ -99,12 +100,12 @@ export async function GET(req: NextRequest) {
       createdAt: Date | string | number
       createdById: string | null
       createdByName: string | null
-    }>>(
-      `SELECT "id", "title", "slug", "sku", "createdAt", "createdById", "createdByName"
-       FROM "Product"
-       WHERE "deletedAt" IS NULL
-       ORDER BY "createdAt" DESC`
-    )
+    }>>(Prisma.sql`
+      SELECT "id", "title", "slug", "sku", "createdAt", "createdById", "createdByName"
+      FROM "Product"
+      WHERE "deletedAt" IS NULL
+      ORDER BY "createdAt" DESC
+    `)
 
     const rowsByPeriod = (period: string) => {
       const startAt = getPeriodStart(period)

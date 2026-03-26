@@ -23,33 +23,14 @@ export default async function EditProductPage({ params }: PageProps) {
     let product = null
     let options: {
         categories: any[];
-        types: any[];
-        styles: any[];
-        colors: any[];
-        sizes: any[];
-        ages: any[];
-        materials: any[];
-        categoryAttributeMap?: Record<string, {
-            typeIds: string[]
-            styleIds: string[]
-            colorIds: string[]
-            sizeIds: string[]
-            ageIds: string[]
-            materialIds: string[]
-        }>;
+        attributeGroups: any[];
     } = {
         categories: [],
-        types: [],
-        styles: [],
-        colors: [],
-        sizes: [],
-        ages: [],
-        materials: [],
-        categoryAttributeMap: {}
+        attributeGroups: [],
     }
 
     try {
-        options = await getProductOptions()
+        options = await getProductOptions({ ensureDynamicAttributes: true })
     } catch (error) {
         console.error("Error fetching product options:", error)
     }

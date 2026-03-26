@@ -1,6 +1,14 @@
-import type { PrismaClient } from "@prisma/client"
+import { Prisma, type PrismaClient } from "@prisma/client"
 
-type PrismaLike = Pick<PrismaClient, "$executeRawUnsafe" | "$queryRawUnsafe">
+type PrismaLike = Pick<PrismaClient, "$executeRaw" | "$queryRaw">
+
+function sanitizeIdentifier(input: string) {
+  const value = input.trim()
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+    throw new Error(`Invalid SQL identifier: ${input}`)
+  }
+  return value
+}
 
 function isDuplicateColumnError(error: unknown, columnName: string) {
   const message = error instanceof Error ? error.message : String(error)
@@ -20,7 +28,11 @@ export async function addColumnIfMissing(
   definition: string
 ) {
   try {
-    await prisma.$executeRawUnsafe(`ALTER TABLE "${tableName}" ADD COLUMN "${columnName}" ${definition}`)
+    const safeTableName = sanitizeIdentifier(tableName)
+    const safeColumnName = sanitizeIdentifier(columnName)
+    await prisma.$executeRaw(
+      Prisma.sql`ALTER TABLE ${Prisma.raw(`"${safeTableName}"`)} ADD COLUMN ${Prisma.raw(`"${safeColumnName}"`)} ${Prisma.raw(definition)}`
+    )
   } catch (error) {
     if (isDuplicateColumnError(error, columnName)) return
     throw error
@@ -33,23 +45,20 @@ export async function hasTableColumn(
   columnName: string
 ): Promise<boolean> {
   try {
-    const rows = await prisma.$queryRawUnsafe<Array<{ column_name: string }>>(
-      `
+    const rows = await prisma.$queryRaw<Array<{ column_name: string }>>`
       SELECT column_name
       FROM information_schema.columns
-      WHERE table_name = $1
-        AND column_name = $2
+      WHERE table_name = ${tableName}
+        AND column_name = ${columnName}
       LIMIT 1
-      `,
-      tableName,
-      columnName
-    )
+    `
     if (rows.length > 0) return true
   } catch {}
 
   try {
-    const rows = await prisma.$queryRawUnsafe<Array<{ name?: string }>>(
-      `PRAGMA table_info("${tableName}")`
+    const safeTableName = sanitizeIdentifier(tableName)
+    const rows = await prisma.$queryRaw<Array<{ name?: string }>>(
+      Prisma.raw(`PRAGMA table_info("${safeTableName}")`)
     )
     return rows.some((row) => row.name === columnName)
   } catch {}

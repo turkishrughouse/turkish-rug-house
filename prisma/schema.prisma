@@ -50,8 +50,10 @@ model Task {
   title        String
   description  String?
   priority     String       @default("MEDIUM") // LOW | MEDIUM | HIGH | URGENT
-  status       String       @default("TODO") // TODO | IN_PROGRESS | REVIEW | COMPLETED
+  status       String       @default("BACKLOG") // BACKLOG | IN_PROGRESS | PAUSED | COMPLETED
   dueDate      DateTime?
+  relatedCategoryId String?
+  relatedProductIds String? @default("[]")
   relatedProductId String?
   relatedProduct Product?   @relation("TaskRelatedProduct", fields: [relatedProductId], references: [id], onDelete: SetNull)
   assignedToId String?
@@ -59,6 +61,8 @@ model Task {
   createdById  String
   createdBy    User         @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
   progressNote String?
+  completedAt  DateTime?
+  pausedAt     DateTime?
   archivedAt   DateTime?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
@@ -67,6 +71,7 @@ model Task {
   @@index([createdById, createdAt(sort: Desc)])
   @@index([archivedAt, updatedAt(sort: Desc)])
   @@index([relatedProductId, status])
+  @@index([relatedCategoryId, status])
 }
 
 model SupportFaq {
@@ -162,8 +167,63 @@ model Product {
   ages        Age[]
   materials   Material[]
   origins     Origin[]
+  attributeValues ProductAttributeValue[]
   reviews     ProductReview[]
   tasks       Task[]   @relation("TaskRelatedProduct")
+}
+
+model AttributeGroup {
+  id                String   @id @default(cuid())
+  key               String   @unique
+  name              String
+  slug              String
+  sortOrder         Int      @default(0)
+  isFilterable      Boolean  @default(false)
+  isVisibleOnProduct Boolean @default(true)
+  isRequired        Boolean  @default(false)
+  isMultiSelect     Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  selectionMode     String   @default("multiple")
+  source            String   @default("dynamic")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  values            AttributeValue[]
+  productValues     ProductAttributeValue[]
+}
+
+model AttributeValue {
+  id          String   @id @default(cuid())
+  groupId     String
+  group       AttributeGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  value       String
+  slug        String
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  hex         String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  productValues ProductAttributeValue[]
+
+  @@unique([groupId, slug])
+}
+
+model ProductAttributeValue {
+  id        String   @id @default(cuid())
+  productId String
+  groupId   String
+  valueId   String
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  group   AttributeGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  value   AttributeValue @relation(fields: [valueId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, groupId, valueId])
+  @@unique([productId, valueId])
+  @@index([productId, valueId])
+  @@index([valueId])
 }
 
 model ProductReview {

@@ -247,7 +247,7 @@ export async function getAnalyticsSnapshot(rangeKey: AnalyticsRangeKey = "30d"):
         },
       },
     }),
-    prisma.$queryRawUnsafe<
+    prisma.$queryRaw<
       Array<{
         id: string
         slug: string
@@ -261,12 +261,12 @@ export async function getAnalyticsSnapshot(rangeKey: AnalyticsRangeKey = "30d"):
         createdById: string | null
         createdByName: string | null
       }>
-    >(
-      `SELECT "id", "slug", "sku", "title", "price", "isStock", "stockCount", "isPublished", "createdAt", "createdById", "createdByName"
+    >`
+      SELECT "id", "slug", "sku", "title", "price", "isStock", "stockCount", "isPublished", "createdAt", "createdById", "createdByName"
        FROM "Product"
        WHERE "deletedAt" IS NULL
-       ORDER BY "createdAt" DESC`
-    ),
+       ORDER BY "createdAt" DESC
+    `,
     prisma.category.findMany({
       select: {
         id: true,

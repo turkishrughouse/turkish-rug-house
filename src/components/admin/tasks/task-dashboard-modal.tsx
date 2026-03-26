@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { TaskForm } from "@/components/admin/tasks/task-form"
 import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
 import { buildProductImageAlt, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
+import type { TaskCategoryOption } from "@/components/admin/tasks/task-board-types"
 
 type AssignableUser = {
   id: string
@@ -44,6 +45,7 @@ export function TaskDashboardModal({
   tasks,
   users,
   products,
+  categories,
   onRefresh,
 }: {
   open: boolean
@@ -52,6 +54,7 @@ export function TaskDashboardModal({
   tasks: TaskRecord[]
   users: AssignableUser[]
   products: TaskProductOption[]
+  categories: TaskCategoryOption[]
   onRefresh: () => Promise<void>
 }) {
   const [createOpen, setCreateOpen] = useState(false)
@@ -102,9 +105,9 @@ export function TaskDashboardModal({
                             await onRefresh()
                           }}
                         >
-                          <option value="TODO">TODO</option>
+                          <option value="BACKLOG">BACKLOG</option>
                           <option value="IN_PROGRESS">IN_PROGRESS</option>
-                          <option value="REVIEW">REVIEW</option>
+                          <option value="PAUSED">PAUSED</option>
                           <option value="COMPLETED">COMPLETED</option>
                         </select>
                       ) : (
@@ -167,6 +170,7 @@ export function TaskDashboardModal({
         onOpenChange={setCreateOpen}
         users={users}
         products={products}
+        categories={categories}
         onSubmit={async (payload) => {
           await fetch("/api/admin/tasks", {
             method: "POST",

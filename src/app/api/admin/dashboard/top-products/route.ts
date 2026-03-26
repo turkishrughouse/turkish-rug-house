@@ -10,18 +10,18 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const topSellingRows = await prisma.$queryRawUnsafe<Array<{ productId: string; soldCount: number | string }>>(
-      `SELECT
-         oi."productId" as "productId",
-         SUM(CAST(oi."quantity" as REAL)) as "soldCount"
-       FROM "OrderItem" oi
-       JOIN "Order" o ON o."id" = oi."orderId"
-       WHERE oi."productId" IS NOT NULL
-         AND o."status" != 'CANCELLED'
-       GROUP BY oi."productId"
-       ORDER BY "soldCount" DESC
-       LIMIT 10`
-    )
+    const topSellingRows = await prisma.$queryRaw<Array<{ productId: string; soldCount: number | string }>>`
+      SELECT
+        oi."productId" as "productId",
+        SUM(CAST(oi."quantity" as REAL)) as "soldCount"
+      FROM "OrderItem" oi
+      JOIN "Order" o ON o."id" = oi."orderId"
+      WHERE oi."productId" IS NOT NULL
+        AND o."status" != 'CANCELLED'
+      GROUP BY oi."productId"
+      ORDER BY "soldCount" DESC
+      LIMIT 10
+    `
 
     if (topSellingRows.length === 0) {
       return NextResponse.json({ products: [] })

@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSessionUser } from "@/lib/auth-server"
-import { getAssignableTaskUsers, getTaskDashboardSummary, getTasksForViewer } from "@/lib/actions/task-actions"
+import {
+  getTaskBoardBootstrap,
+  getTaskStatusUpdateMetadata,
+  ensureTaskWorkflowColumns,
+  updateTaskWorkflowColumns,
+} from "@/lib/actions/task-actions"
 import { prisma } from "@/lib/db"
-import { type TaskPriority, type TaskStatus } from "@/lib/tasks"
+import { normalizeTaskStatus, type TaskPriority, type TaskStatus } from "@/lib/tasks"
 import { taskCreateSchema } from "@/lib/validations/task"
 
 function parseBoolean(value: string | null) {
@@ -24,22 +29,21 @@ export async function GET(req: NextRequest) {
 
   const searchParams = req.nextUrl.searchParams
   const filters = {
+    search: searchParams.get("search") || undefined,
     status: searchParams.get("status") || undefined,
     priority: searchParams.get("priority") || undefined,
     assignedToId: searchParams.get("assignedToId") || undefined,
+    relatedCategoryId: searchParams.get("relatedCategoryId") || undefined,
+    unassigned: parseBoolean(searchParams.get("unassigned")),
+    highPriority: parseBoolean(searchParams.get("highPriority")),
     overdue: parseBoolean(searchParams.get("overdue")),
     dueToday: parseBoolean(searchParams.get("dueToday")),
     scope: (searchParams.get("scope") as "open" | "completed" | "all" | null) || "all",
     limit: searchParams.get("limit") ? Number(searchParams.get("limit")) : undefined,
   }
 
-  const [tasks, summary, users] = await Promise.all([
-    getTasksForViewer(user, filters),
-    getTaskDashboardSummary(user),
-    user.role === "SUPER_USER" ? getAssignableTaskUsers() : Promise.resolve([]),
-  ])
-
-  return NextResponse.json({ tasks, summary, users })
+  const data = await getTaskBoardBootstrap(user, filters)
+  return NextResponse.json(data)
 }
 
 export async function POST(req: NextRequest) {
@@ -55,18 +59,29 @@ export async function POST(req: NextRequest) {
   }
 
   const payload = parsed.data
+  await ensureTaskWorkflowColumns()
+  const nextStatus = normalizeTaskStatus(payload.status)
   const created = await prisma.task.create({
     data: {
       title: payload.title,
       description: payload.description || null,
       priority: (payload.priority || "MEDIUM") as TaskPriority,
-      status: (payload.status || "TODO") as TaskStatus,
+      status: nextStatus as TaskStatus,
       dueDate: parseDueDate(payload.dueDate),
-      relatedProductId: payload.relatedProductId || null,
+      relatedProductId: payload.relatedProductId || payload.relatedProductIds?.[0] || null,
       assignedToId: payload.assignedToId || null,
       createdById: user.id,
       progressNote: payload.progressNote || null,
     },
+  })
+
+  const metadata = getTaskStatusUpdateMetadata(nextStatus)
+  await updateTaskWorkflowColumns({
+    id: created.id,
+    relatedCategoryId: payload.relatedCategoryId || null,
+    relatedProductIds: payload.relatedProductIds || [],
+    completedAt: metadata.completedAt,
+    pausedAt: metadata.pausedAt,
   })
 
   return NextResponse.json({ success: true, id: created.id })
