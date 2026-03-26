@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server"
 import { getSessionUser } from "@/lib/auth-server"
 import {
   assertAdminTaskTransitionAllowed,
-  ensureTaskWorkflowColumns,
   getTaskStatusUpdateMetadata,
   updateTaskWorkflowColumns,
 } from "@/lib/actions/task-actions"
@@ -25,8 +24,6 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
 
   const { id } = await context.params
   const body = await req.json()
-  await ensureTaskWorkflowColumns()
-
   if (user.role === "SUPER_USER") {
     const parsed = taskSuperUpdateSchema.safeParse(body)
     if (!parsed.success) {

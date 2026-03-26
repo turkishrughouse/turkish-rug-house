@@ -3,7 +3,6 @@ import { getSessionUser } from "@/lib/auth-server"
 import {
   getTaskBoardBootstrap,
   getTaskStatusUpdateMetadata,
-  ensureTaskWorkflowColumns,
   updateTaskWorkflowColumns,
 } from "@/lib/actions/task-actions"
 import { prisma } from "@/lib/db"
@@ -59,7 +58,6 @@ export async function POST(req: NextRequest) {
   }
 
   const payload = parsed.data
-  await ensureTaskWorkflowColumns()
   const nextStatus = normalizeTaskStatus(payload.status)
   const created = await prisma.task.create({
     data: {

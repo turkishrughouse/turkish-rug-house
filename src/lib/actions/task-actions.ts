@@ -1,7 +1,5 @@
-import { execFileSync } from "node:child_process"
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
-import { addColumnIfMissing } from "@/lib/db-compat"
 import {
   canAdminTransitionTask,
   getAllowedAdminTaskTransitions,
@@ -112,9 +110,6 @@ type TaskMetaRow = {
   pausedAt: Date | string | null
 }
 
-let taskColumnsReadyPromise: Promise<void> | null = null
-const databaseUrl = process.env.DATABASE_URL || ""
-
 function isSuperUser(viewer: TaskViewer) {
   return viewer.role === "SUPER_USER"
 }
@@ -175,21 +170,6 @@ function buildPermissions(viewer: TaskViewer, input: { assignedToId: string | nu
   }
 }
 
-export async function ensureTaskWorkflowColumns() {
-  if (!taskColumnsReadyPromise) {
-    taskColumnsReadyPromise = (async () => {
-      await addColumnIfMissing(prisma, "Task", "relatedCategoryId", "TEXT")
-      await addColumnIfMissing(prisma, "Task", "relatedProductIds", `TEXT DEFAULT '[]'`)
-      await addColumnIfMissing(prisma, "Task", "completedAt", "TIMESTAMP(3)")
-      await addColumnIfMissing(prisma, "Task", "pausedAt", "TIMESTAMP(3)")
-    })().catch((error) => {
-      taskColumnsReadyPromise = null
-      throw error
-    })
-  }
-  await taskColumnsReadyPromise
-}
-
 function startOfToday() {
   const date = new Date()
   date.setHours(0, 0, 0, 0)
@@ -231,30 +211,16 @@ function buildBaseTaskWhere(viewer: TaskViewer, filters: TaskFilterInput = {}): 
 
 async function fetchTaskMeta(taskIds: string[]) {
   if (taskIds.length === 0) return new Map<string, TaskMetaRow>()
-  let rows: TaskMetaRow[] = []
-
-  if (databaseUrl.startsWith("file:")) {
-    const databasePath = databaseUrl.slice("file:".length)
-    const quotedIds = taskIds.map((taskId) => `'${taskId.replace(/'/g, "''")}'`).join(", ")
-    const sql = `SELECT "id", "relatedCategoryId", "relatedProductIds", "completedAt", "pausedAt" FROM "Task" WHERE "id" IN (${quotedIds});`
-    const output = execFileSync("sqlite3", ["-json", databasePath, sql], { encoding: "utf8" })
-    rows = JSON.parse(output || "[]") as TaskMetaRow[]
-  } else {
-    rows = (
-      await Promise.all(
-        taskIds.map(async (taskId) => {
-          const [row] = await prisma.$queryRaw<Array<TaskMetaRow>>`
-            SELECT "id", "relatedCategoryId", "relatedProductIds", "completedAt", "pausedAt"
-            FROM "Task"
-            WHERE "id" = ${taskId}
-            LIMIT 1
-          `
-          return row || null
-        }),
-      )
-    ).filter((row): row is TaskMetaRow => Boolean(row))
-  }
-
+  const rows = await prisma.task.findMany({
+    where: { id: { in: taskIds } },
+    select: {
+      id: true,
+      relatedCategoryId: true,
+      relatedProductIds: true,
+      completedAt: true,
+      pausedAt: true,
+    },
+  })
   return new Map(rows.map((row) => [row.id, row]))
 }
 
@@ -275,7 +241,6 @@ export async function getAssignableTaskUsers() {
 }
 
 export async function getTaskCategoryOptions(limit = 120): Promise<TaskCategoryOption[]> {
-  await ensureTaskWorkflowColumns()
   const categories = await prisma.category.findMany({
     select: {
       id: true,
@@ -322,7 +287,6 @@ export async function getTaskProductOptions(limit = 200): Promise<TaskProductOpt
 }
 
 export async function getTasksForViewer(viewer: TaskViewer, filters: TaskFilterInput = {}) {
-  await ensureTaskWorkflowColumns()
   const baseTasks = await prisma.task.findMany({
     where: buildBaseTaskWhere(viewer, filters),
     include: {
@@ -482,16 +446,15 @@ export async function updateTaskWorkflowColumns(input: {
   completedAt?: Date | null
   pausedAt?: Date | null
 }) {
-  await ensureTaskWorkflowColumns()
-  await prisma.$executeRaw`
-    UPDATE "Task"
-    SET
-      "relatedCategoryId" = ${input.relatedCategoryId ?? null},
-      "relatedProductIds" = ${JSON.stringify(input.relatedProductIds ?? [])},
-      "completedAt" = ${input.completedAt ?? null},
-      "pausedAt" = ${input.pausedAt ?? null}
-    WHERE "id" = ${input.id}
-  `
+  await prisma.task.update({
+    where: { id: input.id },
+    data: {
+      relatedCategoryId: input.relatedCategoryId ?? null,
+      relatedProductIds: JSON.stringify(input.relatedProductIds ?? []),
+      completedAt: input.completedAt ?? null,
+      pausedAt: input.pausedAt ?? null,
+    },
+  })
 }
 
 export async function getTaskBoardBootstrap(viewer: TaskViewer, filters: TaskFilterInput = {}) {
