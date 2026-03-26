@@ -134,7 +134,7 @@ export function ProductDetailView({
                   {specificationRows.map((row) => (
                     <div key={row.label} className="grid grid-cols-[120px_1fr] gap-4 px-4 py-3.5 sm:grid-cols-[150px_1fr] sm:px-5">
                       <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{row.label}</span>
-                      <span className="text-sm font-medium text-slate-800">{row.value}</span>
+                      <span className="text-sm font-medium text-slate-800 break-words [overflow-wrap:anywhere]">{row.value}</span>
                     </div>
                   ))}
                 </div>
@@ -259,9 +259,15 @@ export function ProductDetailView({
 
 function buildProductSpecificationRows(product: ProductDetailData) {
   const visibleAttributes = (product.customAttributes || []).filter((item) => item.visible !== false)
-  const attributeMap = new Map(
-    visibleAttributes.map((item) => [item.name.trim().toLowerCase(), item.values.filter(Boolean).join(", ").trim()]),
-  )
+  const normalizedRows = visibleAttributes
+    .map((item) => ({
+      key: item.name.trim().toLowerCase(),
+      label: item.name.trim(),
+      value: item.values.filter(Boolean).join(", ").trim(),
+    }))
+    .filter((item) => item.label.length > 0 && item.value.length > 0)
+
+  if (normalizedRows.length === 0) return []
 
   const preferredOrder = [
     { label: "Origin", keys: ["origin"] },
@@ -271,14 +277,21 @@ function buildProductSpecificationRows(product: ProductDetailData) {
     { label: "Age/Circa", keys: ["age", "circa", "age/circa"] },
   ]
 
-  const rows = preferredOrder
+  const matchedKeys = new Set<string>()
+  const preferredRows = preferredOrder
     .map((item) => {
-      const value = item.keys.map((key) => attributeMap.get(key)).find((entry) => entry && entry.length > 0)
-      return value ? { label: item.label, value } : null
+      const match = normalizedRows.find((row) => item.keys.includes(row.key))
+      if (!match) return null
+      matchedKeys.add(match.key)
+      return { label: item.label, value: match.value }
     })
     .filter((item): item is { label: string; value: string } => Boolean(item))
 
-  return rows
+  const remainingRows = normalizedRows
+    .filter((row) => !matchedKeys.has(row.key))
+    .map((row) => ({ label: row.label, value: row.value }))
+
+  return [...preferredRows, ...remainingRows]
 }
 
 function ProductNavigationPreview({

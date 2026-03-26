@@ -4,6 +4,37 @@ import { prisma } from "@/lib/db";
 
 export const dynamic = 'force-dynamic';
 
+type CustomAttribute = {
+    name: string
+    values: string[]
+    visible: boolean
+}
+
+function parseCustomAttributes(raw: string | null | undefined): CustomAttribute[] {
+    if (!raw) return []
+    try {
+        const parsed = JSON.parse(raw)
+        if (!Array.isArray(parsed)) return []
+        return parsed
+            .map((item) => {
+                if (!item || typeof item !== "object") return null
+                const name = typeof item.name === "string" ? item.name.trim() : ""
+                const values = Array.isArray(item.values)
+                    ? item.values.filter((value: unknown): value is string => typeof value === "string").map((value: string) => value.trim()).filter(Boolean)
+                    : []
+                if (!name || values.length === 0) return null
+                return {
+                    name,
+                    values,
+                    visible: item.visible !== false,
+                } as CustomAttribute
+            })
+            .filter((item): item is CustomAttribute => Boolean(item))
+    } catch {
+        return []
+    }
+}
+
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ slug: string }> }
@@ -35,7 +66,20 @@ export async function GET(
             compareAtPrice: product.compareAtPrice ? product.compareAtPrice.toNumber() : null,
         };
 
-        return NextResponse.json(serialized);
+        const attributeRows = await prisma.$queryRaw<Array<{ sku: string | null; shortDescription: string | null; customAttributes: string | null }>>`
+            SELECT "sku", "shortDescription", "customAttributes"
+            FROM "Product"
+            WHERE "id" = ${product.id}
+            LIMIT 1
+        `;
+        const attributeRecord = attributeRows[0];
+
+        return NextResponse.json({
+            ...serialized,
+            sku: attributeRecord?.sku ?? null,
+            shortDescription: attributeRecord?.shortDescription ?? null,
+            customAttributes: parseCustomAttributes(attributeRecord?.customAttributes),
+        });
 
     } catch (error) {
         console.error("API Product Detail Error:", error);
