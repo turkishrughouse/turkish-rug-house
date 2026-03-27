@@ -262,13 +262,6 @@ export function ProductDetailView({
 const CM_PER_INCH = 2.54
 const INCHES_PER_FOOT = 12
 
-function formatFeetAndInchesFromFeetValue(feetValue: number) {
-  const totalInches = Math.round(feetValue * INCHES_PER_FOOT)
-  const feet = Math.floor(totalInches / INCHES_PER_FOOT)
-  const inches = totalInches % INCHES_PER_FOOT
-  return `${feet}'${inches}"`
-}
-
 function formatFeetAndInchesFromCmValue(cmValue: number) {
   const totalInches = Math.round(cmValue / CM_PER_INCH)
   const feet = Math.floor(totalInches / INCHES_PER_FOOT)
@@ -283,27 +276,17 @@ function formatExactProductDimensions(value: string) {
     return value.trim()
   }
 
-  const sizeMatch = normalized.match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)(?:\s*(cm|ft))?$/)
+  const sizeMatch = normalized.match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)(?:\s*cm)?$/)
   if (!sizeMatch) return value
 
   const widthValue = Number(sizeMatch[1])
   const heightValue = Number(sizeMatch[2])
-  const explicitUnit = sizeMatch[3] || ""
-
   if (!Number.isFinite(widthValue) || !Number.isFinite(heightValue)) return value
+  if (widthValue <= 50 || heightValue <= 50) return value
 
-  const treatAsCm =
-    explicitUnit === "cm" ||
-    (explicitUnit !== "ft" && (widthValue > 50 || heightValue > 50))
-
-  if (treatAsCm) {
-    const widthCm = Math.round(widthValue)
-    const heightCm = Math.round(heightValue)
-    if (!Number.isFinite(widthCm) || !Number.isFinite(heightCm)) return value
-    return `${formatFeetAndInchesFromCmValue(widthCm)} x ${formatFeetAndInchesFromCmValue(heightCm)} ft (${widthCm} x ${heightCm} cm)`
-  }
-
-  return value
+  const widthCm = Math.round(widthValue)
+  const heightCm = Math.round(heightValue)
+  return `${formatFeetAndInchesFromCmValue(widthCm)} x ${formatFeetAndInchesFromCmValue(heightCm)} (${widthCm} x ${heightCm} cm)`
 }
 
 function buildProductSpecificationRows(product: ProductDetailData) {
@@ -319,7 +302,7 @@ function buildProductSpecificationRows(product: ProductDetailData) {
   if (normalizedRows.length === 0) return []
 
   const exactDimensionRow = normalizedRows.find((row) =>
-    ["dimensions", "dimension", "measurements", "measurements (cm)", "dimensions (cm)", "size cm", "exact size"].includes(row.key)
+    ["dimensions", "dimension", "measurements", "measurements (cm)", "dimensions (cm)", "size cm", "exact size", "size (cm)"].includes(row.key)
   )
 
   const preferredOrder = [
