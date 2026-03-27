@@ -786,6 +786,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
     const [supplierRegistry, setSupplierRegistry] = useState<SupplierRecord[]>([])
     const [loadingSupplierRegistry, setLoadingSupplierRegistry] = useState(false)
     const [sizeInput, setSizeInput] = useState("")
+    const [committedSizeInput, setCommittedSizeInput] = useState("")
     const [sizeHelpMessage, setSizeHelpMessage] = useState<string | null>(null)
 
     const defaultValues: Partial<ProductFormValues> = initialData ? {
@@ -904,9 +905,9 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         if (!sizeAttributeGroup) return
 
         const compactValue = rawValue.replace(/\s+/g, "")
-        setSizeInput(compactValue)
 
         if (!compactValue) {
+            setCommittedSizeInput("")
             setSizeHelpMessage(null)
             setValue("attributeSelections", {
                 ...selectedAttributeSelections,
@@ -917,6 +918,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
 
         const parsed = parseCmSizeInput(compactValue)
         if (!parsed) {
+            setCommittedSizeInput("")
             setSizeHelpMessage(null)
             setValue("attributeSelections", {
                 ...selectedAttributeSelections,
@@ -928,6 +930,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         const matchedOption = resolveClosestSizeOptionFromCmInput(compactValue, sizeAttributeGroup.options, 6)
 
         if (!matchedOption || !matchedOption.id) {
+            setCommittedSizeInput(parsed.normalized)
             setSizeHelpMessage(tx("No close Size option exists in Products > Attributes.", "Products > Attributes içinde yakın bir Boyut seçeneği bulunamadı."))
             setValue("attributeSelections", {
                 ...selectedAttributeSelections,
@@ -936,6 +939,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
             return
         }
 
+        setCommittedSizeInput(parsed.normalized)
         setSizeHelpMessage(tx(`Matched to existing size option: ${matchedOption.value}`, `Mevcut boyut seçeneği ile eşleşti: ${matchedOption.value}`))
         setValue("attributeSelections", {
             ...selectedAttributeSelections,
@@ -1540,10 +1544,33 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                                                                 type="text"
                                                                                 inputMode="numeric"
                                                                                 value={sizeInput}
-                                                                                onChange={(event) => applySizeSelectionFromInput(event.target.value)}
+                                                                                onChange={(event) => {
+                                                                                    const nextValue = event.target.value.replace(/\s+/g, "")
+                                                                                    setSizeInput(nextValue)
+                                                                                    if (!nextValue) {
+                                                                                        setCommittedSizeInput("")
+                                                                                        setSizeHelpMessage(null)
+                                                                                    }
+                                                                                }}
+                                                                                onKeyDown={(event) => {
+                                                                                    if (event.key !== "Enter") return
+                                                                                    event.preventDefault()
+                                                                                    applySizeSelectionFromInput(sizeInput)
+                                                                                }}
+                                                                                onBlur={() => {
+                                                                                    if (!sizeInput) return
+                                                                                    applySizeSelectionFromInput(sizeInput)
+                                                                                }}
                                                                                 className="h-10 rounded-sm border-[#8c8f94]"
                                                                                 placeholder="Enter size (e.g. 120x180 cm)"
                                                                             />
+                                                                            {committedSizeInput ? (
+                                                                                <div className="flex flex-wrap gap-1">
+                                                                                    <Badge variant="outline" className="rounded-sm border-[#c3c4c7] bg-[#f6f7f7] text-[10px] font-medium text-slate-700">
+                                                                                        {committedSizeInput} cm
+                                                                                    </Badge>
+                                                                                </div>
+                                                                            ) : null}
                                                                             {sizePreview ? (
                                                                                 <p className="text-xs text-slate-600">{sizePreview}</p>
                                                                             ) : null}
