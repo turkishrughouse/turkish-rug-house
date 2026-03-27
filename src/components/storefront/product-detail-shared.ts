@@ -127,8 +127,7 @@ export function buildProductGallery(product: ProductDetailData): ProductGalleryI
 }
 
 export function getProductDescriptionState(product: ProductDetailData, shippingContent?: string | null) {
-  const shortDescriptionHtml =
-    normalizeRichTextHtml(product.shortDescription?.trim()) || normalizeRichTextHtml(product.description)
+  const shortDescriptionHtml = normalizeRichTextHtml(product.shortDescription?.trim())
   const longDescriptionHtml = normalizeRichTextHtml(product.description)
   const bottomDescriptionHtml = longDescriptionHtml || "<p>Detailed product information is not available yet.</p>"
   const bottomDescriptionTextLength = bottomDescriptionHtml.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().length

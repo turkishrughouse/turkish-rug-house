@@ -122,12 +122,6 @@ export function ProductDetailView({
               ) : null}
             </div>
 
-            {shortDescriptionHtml ? (
-              <div className="mt-6">
-                <div className={`product-short-description ${richContentClassName}`} dangerouslySetInnerHTML={{ __html: shortDescriptionHtml }} />
-              </div>
-            ) : null}
-
             {specificationRows.length > 0 ? (
               <div className="mt-7 overflow-hidden rounded-2xl border border-[#e8eef5] bg-[#fcfdff]">
                 <div className="divide-y divide-[#edf2f7]">
@@ -138,6 +132,16 @@ export function ProductDetailView({
                     </div>
                   ))}
                 </div>
+              </div>
+            ) : null}
+
+            <div className="mt-6">
+              <ProductDetailPurchase product={product} image={heroImage} />
+            </div>
+
+            {shortDescriptionHtml ? (
+              <div className="mt-6">
+                <div className={`product-short-description ${richContentClassName}`} dangerouslySetInnerHTML={{ __html: shortDescriptionHtml }} />
               </div>
             ) : null}
 
@@ -163,8 +167,6 @@ export function ProductDetailView({
                 ) : null}
               </div>
             ) : null}
-
-            <ProductDetailPurchase product={product} image={heroImage} />
 
             <div className="mt-7 border-y border-[#e6edf5]">
               <div className="grid grid-cols-2 md:flex md:items-center md:gap-8">

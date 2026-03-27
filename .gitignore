@@ -45,3 +45,4 @@ prisma/dev.db
 *.zip
 SELECT
 public/uploads/
+CLAUDE.md
