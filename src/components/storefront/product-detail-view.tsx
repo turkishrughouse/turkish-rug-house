@@ -286,7 +286,7 @@ function formatExactProductDimensions(value: string) {
 
   const widthCm = Math.round(widthValue)
   const heightCm = Math.round(heightValue)
-  return `${formatFeetAndInchesFromCmValue(widthCm)} x ${formatFeetAndInchesFromCmValue(heightCm)} (${widthCm} x ${heightCm} cm)`
+  return `[REAL-SIZE] ${formatFeetAndInchesFromCmValue(widthCm)} x ${formatFeetAndInchesFromCmValue(heightCm)} (${widthCm} x ${heightCm} cm)`
 }
 
 function buildProductSpecificationRows(product: ProductDetailData) {
