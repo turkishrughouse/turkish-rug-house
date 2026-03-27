@@ -787,6 +787,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
     const [loadingSupplierRegistry, setLoadingSupplierRegistry] = useState(false)
     const [sizeInput, setSizeInput] = useState("")
     const [committedSizeInput, setCommittedSizeInput] = useState("")
+    const [committedSizeMatchLabel, setCommittedSizeMatchLabel] = useState("")
     const [sizeHelpMessage, setSizeHelpMessage] = useState<string | null>(null)
 
     const defaultValues: Partial<ProductFormValues> = initialData ? {
@@ -908,6 +909,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
 
         if (!compactValue) {
             setCommittedSizeInput("")
+            setCommittedSizeMatchLabel("")
             setSizeHelpMessage(null)
             setValue("attributeSelections", {
                 ...selectedAttributeSelections,
@@ -919,6 +921,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         const parsed = parseCmSizeInput(compactValue)
         if (!parsed) {
             setCommittedSizeInput("")
+            setCommittedSizeMatchLabel("")
             setSizeHelpMessage(null)
             setValue("attributeSelections", {
                 ...selectedAttributeSelections,
@@ -931,6 +934,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
 
         if (!matchedOption || !matchedOption.id) {
             setCommittedSizeInput(parsed.normalized)
+            setCommittedSizeMatchLabel("")
             setSizeHelpMessage(tx("No close Size option exists in Products > Attributes.", "Products > Attributes içinde yakın bir Boyut seçeneği bulunamadı."))
             setValue("attributeSelections", {
                 ...selectedAttributeSelections,
@@ -940,7 +944,8 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         }
 
         setCommittedSizeInput(parsed.normalized)
-        setSizeHelpMessage(tx(`Matched to existing size option: ${matchedOption.value}`, `Mevcut boyut seçeneği ile eşleşti: ${matchedOption.value}`))
+        setCommittedSizeMatchLabel(matchedOption.value || "")
+        setSizeHelpMessage(tx(`Matched size: ${matchedOption.value}`, `Eşleşen boyut: ${matchedOption.value}`))
         setValue("attributeSelections", {
             ...selectedAttributeSelections,
             [sizeAttributeGroup.id]: [matchedOption.id],
@@ -1549,13 +1554,14 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                                                                     setSizeInput(nextValue)
                                                                                     if (!nextValue) {
                                                                                         setCommittedSizeInput("")
+                                                                                        setCommittedSizeMatchLabel("")
                                                                                         setSizeHelpMessage(null)
                                                                                     }
                                                                                 }}
                                                                                 onKeyDown={(event) => {
                                                                                     if (event.key !== "Enter") return
                                                                                     event.preventDefault()
-                                                                                    applySizeSelectionFromInput(sizeInput)
+                                                                                    applySizeSelectionFromInput(event.currentTarget.value)
                                                                                 }}
                                                                                 onBlur={() => {
                                                                                     if (!sizeInput) return
@@ -1565,10 +1571,10 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                                                                 placeholder="Enter size (e.g. 120x180 cm)"
                                                                             />
                                                                             {committedSizeInput ? (
-                                                                                <div className="flex flex-wrap gap-1">
-                                                                                    <Badge variant="outline" className="rounded-sm border-[#c3c4c7] bg-[#f6f7f7] text-[10px] font-medium text-slate-700">
+                                                                                <div className="mt-2 flex flex-wrap gap-2">
+                                                                                    <span className="inline-flex items-center rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
                                                                                         {committedSizeInput} cm
-                                                                                    </Badge>
+                                                                                    </span>
                                                                                 </div>
                                                                             ) : null}
                                                                             {sizePreview ? (
@@ -1576,6 +1582,10 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                                                             ) : null}
                                                                             {sizeHelpMessage ? (
                                                                                 <p className="text-xs text-slate-500">{sizeHelpMessage}</p>
+                                                                            ) : committedSizeMatchLabel ? (
+                                                                                <p className="text-xs text-slate-500">
+                                                                                    {tx(`Matched size: ${committedSizeMatchLabel}`, `Eşleşen boyut: ${committedSizeMatchLabel}`)}
+                                                                                </p>
                                                                             ) : selectedSizeOption && !sizeInput ? (
                                                                                 <p className="text-xs text-slate-500">
                                                                                     {tx(`Current size option: ${selectedSizeOption.value}`, `Mevcut boyut seçeneği: ${selectedSizeOption.value}`)}
