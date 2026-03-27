@@ -259,7 +259,6 @@ export function ProductDetailView({
   )
 }
 
-const CM_PER_FOOT = 30.48
 const CM_PER_INCH = 2.54
 const INCHES_PER_FOOT = 12
 
@@ -277,12 +276,12 @@ function formatFeetAndInchesFromCmValue(cmValue: number) {
   return `${feet}'${inches}"`
 }
 
-function normalizeRugSizeCm(cmValue: number) {
-  return Math.round(cmValue / 10) * 10
-}
-
-function formatProductSizeValue(value: string) {
+function formatExactProductDimensions(value: string) {
   const normalized = value.trim().toLowerCase().replace(/\s+/g, " ").replace(/\s*x\s*/g, "x")
+
+  if (normalized.includes("cm") && normalized.includes("'")) {
+    return value.trim()
+  }
 
   const sizeMatch = normalized.match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)(?:\s*(cm|ft))?$/)
   if (!sizeMatch) return value
@@ -301,16 +300,10 @@ function formatProductSizeValue(value: string) {
     const widthCm = Math.round(widthValue)
     const heightCm = Math.round(heightValue)
     if (!Number.isFinite(widthCm) || !Number.isFinite(heightCm)) return value
-    const normalizedWidthCm = normalizeRugSizeCm(widthCm)
-    const normalizedHeightCm = normalizeRugSizeCm(heightCm)
-    return `${formatFeetAndInchesFromCmValue(widthCm)} x ${formatFeetAndInchesFromCmValue(heightCm)} ft (${normalizedWidthCm} x ${normalizedHeightCm} cm)`
+    return `${formatFeetAndInchesFromCmValue(widthCm)} x ${formatFeetAndInchesFromCmValue(heightCm)} ft (${widthCm} x ${heightCm} cm)`
   }
 
-  const widthFeet = widthValue
-  const heightFeet = heightValue
-  const widthCm = normalizeRugSizeCm(Math.round(widthFeet * CM_PER_FOOT))
-  const heightCm = normalizeRugSizeCm(Math.round(heightFeet * CM_PER_FOOT))
-  return `${formatFeetAndInchesFromFeetValue(widthFeet)} x ${formatFeetAndInchesFromFeetValue(heightFeet)} ft (${widthCm} x ${heightCm} cm)`
+  return value
 }
 
 function buildProductSpecificationRows(product: ProductDetailData) {
@@ -325,11 +318,15 @@ function buildProductSpecificationRows(product: ProductDetailData) {
 
   if (normalizedRows.length === 0) return []
 
+  const exactDimensionRow = normalizedRows.find((row) =>
+    ["dimensions", "dimension", "measurements", "measurements (cm)", "dimensions (cm)", "size cm", "exact size"].includes(row.key)
+  )
+
   const preferredOrder = [
     { label: "Type", keys: ["type"] },
     { label: "Style", keys: ["style"] },
     { label: "Material", keys: ["material"] },
-    { label: "Size", keys: ["size", "dimensions"] },
+    { label: "Size", keys: exactDimensionRow ? [exactDimensionRow.key] : [] },
     { label: "Age", keys: ["age", "circa", "age/circa"] },
     { label: "Origin", keys: ["origin"] },
   ]
@@ -342,7 +339,7 @@ function buildProductSpecificationRows(product: ProductDetailData) {
       matchedKeys.add(match.key)
       return {
         label: item.label,
-        value: item.label === "Size" ? formatProductSizeValue(match.value) : match.value,
+        value: item.label === "Size" ? formatExactProductDimensions(match.value) : match.value,
       }
     })
     .filter((item): item is { label: string; value: string } => Boolean(item))
