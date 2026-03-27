@@ -258,6 +258,24 @@ function parseCustomAttributes(raw: string | null | undefined): CustomAttribute[
   }
 }
 
+function normalizeAttributeNameKey(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+function mergeVisibleAttributes(primary: CustomAttribute[], secondary: CustomAttribute[]) {
+  const seen = new Set(primary.map((item) => normalizeAttributeNameKey(item.name)))
+  const merged = [...primary]
+
+  for (const item of secondary) {
+    const key = normalizeAttributeNameKey(item.name)
+    if (seen.has(key)) continue
+    merged.push(item)
+    seen.add(key)
+  }
+
+  return merged
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const product = await getPublishedProductBySlug(slug)
@@ -338,10 +356,11 @@ export default async function ProductPage({ params }: Props) {
         `
         const record = rows[0]
         const dynamicAttributes = await getProductVisibleAttributes(product.id).catch(() => [])
+        const persistedAttributes = parseCustomAttributes(record?.customAttributes)
         return {
           sku: record?.sku ?? null,
           shortDescription: record?.shortDescription ?? null,
-          customAttributes: dynamicAttributes.length > 0 ? dynamicAttributes : parseCustomAttributes(record?.customAttributes),
+          customAttributes: mergeVisibleAttributes(dynamicAttributes, persistedAttributes),
         }
       } catch {
         return {

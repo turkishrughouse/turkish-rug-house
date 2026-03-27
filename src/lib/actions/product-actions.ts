@@ -409,6 +409,22 @@ function normalizeCustomAttributes(input: unknown): CustomAttribute[] {
         .filter((value): value is CustomAttribute => Boolean(value))
 }
 
+function normalizeAttributeNameKey(value: string) {
+    return value.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+function mergeCustomAttributes(primary: CustomAttribute[], secondary: CustomAttribute[]) {
+    const merged = new Map<string, CustomAttribute>()
+
+    for (const item of [...primary, ...secondary]) {
+        const key = normalizeAttributeNameKey(item.name)
+        if (!key || !item.values.length) continue
+        merged.set(key, item)
+    }
+
+    return Array.from(merged.values())
+}
+
 async function findConflictingProductSku(sku: string, currentProductId?: string) {
     await ensureSkuColumn()
     await ensureDeletedAtColumn()
@@ -839,8 +855,9 @@ export async function createProduct(data: ProductFormValues) {
             categoryTitles: categoryRows.map((item) => item.title),
         })
 
-        const attributeGroups = await getAttributeGroups()
+        const attributeGroups = await getAttributeGroups({ activeOnly: true })
         const dynamicCustomAttributes = buildVisibleAttributesFromSelections(attributeGroups, validated.attributeSelections || {})
+        const persistedCustomAttributes = mergeCustomAttributes(dynamicCustomAttributes, validated.customAttributes || [])
 
         const created = await db.product.create({
             data: {
@@ -863,7 +880,7 @@ export async function createProduct(data: ProductFormValues) {
         await setFeaturedByProductId(created.id, validated.isFeatured)
         await setShortDescriptionByProductId(created.id, validated.shortDescription)
         await saveProductAttributeSelections(created.id, validated.attributeSelections || {})
-        await setCustomAttributesByProductId(created.id, dynamicCustomAttributes)
+        await setCustomAttributesByProductId(created.id, persistedCustomAttributes)
         const resolvedSuppliers = await syncProductSupplierBySku(created.id, validated.sku || null)
         await setProductCreatorByProductId(created.id, {
             id: actor?.id || null,
@@ -908,7 +925,7 @@ export async function createProduct(data: ProductFormValues) {
                     seoDescription: seo.seoDescription,
                     seoKeywords: seo.seoKeywords,
                     images: normalizedImages,
-                    customAttributes: dynamicCustomAttributes,
+                    customAttributes: persistedCustomAttributes,
                     suppliers: resolvedSuppliers,
                     categories: categoryRows.map((c) => ({ id: c.id, slug: c.slug, title: c.title })),
                 },
@@ -978,8 +995,9 @@ export async function updateProduct(id: string, data: ProductFormValues) {
         // Disconnect all first then connect new to handle "replace" logic for m-n
         // Or strictly set. set is cleaner for m-n in Prisma.
 
-        const attributeGroups = await getAttributeGroups()
+        const attributeGroups = await getAttributeGroups({ activeOnly: true })
         const dynamicCustomAttributes = buildVisibleAttributesFromSelections(attributeGroups, validated.attributeSelections || {})
+        const persistedCustomAttributes = mergeCustomAttributes(dynamicCustomAttributes, validated.customAttributes || [])
 
         await db.product.update({
             where: { id },
@@ -1003,7 +1021,7 @@ export async function updateProduct(id: string, data: ProductFormValues) {
         await setFeaturedByProductId(id, validated.isFeatured)
         await setShortDescriptionByProductId(id, validated.shortDescription)
         await saveProductAttributeSelections(id, validated.attributeSelections || {})
-        await setCustomAttributesByProductId(id, dynamicCustomAttributes)
+        await setCustomAttributesByProductId(id, persistedCustomAttributes)
         const resolvedSuppliers = await syncProductSupplierBySku(id, validated.sku || null)
         const hadDiscount = Boolean(
             before?.isPublished &&
@@ -1046,7 +1064,7 @@ export async function updateProduct(id: string, data: ProductFormValues) {
                     seoDescription: seo.seoDescription,
                     seoKeywords: seo.seoKeywords,
                     images: normalizedImages,
-                    customAttributes: dynamicCustomAttributes,
+                    customAttributes: persistedCustomAttributes,
                     suppliers: resolvedSuppliers,
                     categories: categoryRows.map((c) => ({ id: c.id, slug: c.slug, title: c.title })),
                 },
@@ -1091,7 +1109,7 @@ export async function duplicateProduct(id: string) {
 
     try {
         const actor = await getSessionUser("admin")
-        const attributeGroups = await getAttributeGroups()
+        const attributeGroups = await getAttributeGroups({ activeOnly: true })
         const originalAttributeSelections = await getProductAttributeSelections(id)
         const newSlug = await ensureUniqueProductSlug(
             buildSlugBaseWithSku(`copy-${original.title}`, original.sku)

@@ -223,6 +223,36 @@ interface ProductFormProps {
 type ProductRelation = { id: string }
 type CustomAttributeInput = { name: string; values: string[]; visible: boolean }
 
+const EXACT_SIZE_ATTRIBUTE_NAMES = ["Dimensions (cm)", "Size (cm)", "Exact Size"]
+
+function normalizeAttributeNameKey(value: string) {
+    return value.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+function findExactSizeAttribute(attributes: CustomAttributeInput[] | undefined) {
+    const exactKeys = new Set(EXACT_SIZE_ATTRIBUTE_NAMES.map(normalizeAttributeNameKey))
+    return (attributes || []).find((item) => exactKeys.has(normalizeAttributeNameKey(item.name)))
+}
+
+function upsertExactSizeAttribute(attributes: CustomAttributeInput[] | undefined, exactSizeValue: string) {
+    const exactKeys = new Set(EXACT_SIZE_ATTRIBUTE_NAMES.map(normalizeAttributeNameKey))
+    const nextAttributes = [...(attributes || [])]
+    const existingIndex = nextAttributes.findIndex((item) => exactKeys.has(normalizeAttributeNameKey(item.name)))
+
+    const exactAttribute: CustomAttributeInput = {
+        name: "Dimensions (cm)",
+        values: [exactSizeValue],
+        visible: true,
+    }
+
+    if (existingIndex >= 0) {
+        nextAttributes[existingIndex] = exactAttribute
+        return nextAttributes
+    }
+
+    return [...nextAttributes, exactAttribute]
+}
+
 type ProductFormInitialData = {
     id: string
     title: string
@@ -902,6 +932,19 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         return sizeAttributeGroup.options.find((option) => selectedIds.includes(option.id)) || null
     }, [sizeAttributeGroup, selectedAttributeSelections])
 
+    useEffect(() => {
+        if (!initialData) return
+        const exactSizeAttribute = findExactSizeAttribute(initialData.customAttributes)
+        const exactSizeValue = exactSizeAttribute?.values?.[0]?.trim() || ""
+        if (exactSizeValue) {
+            setSizeInput(exactSizeValue)
+            setCommittedSizeInput(exactSizeValue)
+        }
+        if (selectedSizeOption?.value) {
+            setCommittedSizeMatchLabel(selectedSizeOption.value)
+        }
+    }, [initialData, selectedSizeOption])
+
     const applySizeSelectionFromInput = (rawValue: string) => {
         if (!sizeAttributeGroup) return
 
@@ -1054,6 +1097,12 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                 visible: item.visible !== false,
             }))
             .filter((item) => item.name.length > 0 && item.values.length > 0)
+
+        const exactSizeValue = committedSizeInput.trim()
+        const parsedExactSize = parseCmSizeInput(exactSizeValue)
+        if (parsedExactSize) {
+            data.customAttributes = upsertExactSizeAttribute(data.customAttributes, parsedExactSize.normalized)
+        }
 
         if (!data.slug && data.title) {
             data.slug = toSlug(data.title)
@@ -1591,8 +1640,8 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                                                                     {tx(`Current size option: ${selectedSizeOption.value}`, `Mevcut boyut seçeneği: ${selectedSizeOption.value}`)}
                                                                                 </p>
                                                                             ) : null}
-                                                                            {errors.attributeSelections?.message ? (
-                                                                                <p className="text-xs text-red-600">{errors.attributeSelections.message as string}</p>
+                                                                            {typeof errors.attributeSelections?.message === "string" ? (
+                                                                                <p className="text-xs text-red-600">{errors.attributeSelections.message}</p>
                                                                             ) : null}
                                                                         </div>
                                                                     ) : (

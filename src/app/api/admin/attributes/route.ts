@@ -14,7 +14,7 @@ function slugify(input: string) {
 export async function GET() {
   try {
     await ensureDynamicAttributeTables()
-    const groups = await getAttributeGroups()
+    const groups = await getAttributeGroups({ activeOnly: true })
     return NextResponse.json({
       groups: groups.map((group) => ({
         ...group,

@@ -197,12 +197,51 @@ const STANDARD_ATTRIBUTE_GROUPS = [
   },
 ] as const
 
+const CANONICAL_ATTRIBUTE_ALIASES: Record<string, string[]> = {
+  type: ["type", "types"],
+  material: ["material", "materials"],
+  size: ["size", "sizes"],
+  age: ["age", "ages", "circa", "age-circa"],
+  origin: ["origin", "origins"],
+  color: ["color", "colors", "colour", "colours"],
+  pattern: ["pattern", "patterns"],
+  condition: ["condition", "conditions"],
+  "weave-type": ["weave-type", "weave type", "weavetype"],
+  "pile-height": ["pile-height", "pile height", "pileheight"],
+  style: ["style", "styles"],
+  "style-feel": ["style-feel", "style feel", "stylefeel"],
+  "best-for-room": ["best-for-room", "best for room"],
+  "key-feature": ["key-feature", "key feature"],
+}
+
 function slugify(input: string) {
   return input
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "")
+}
+
+function normalizeAttributeToken(input: string | null | undefined) {
+  if (!input) return ""
+  return slugify(String(input).replace(/^custom:/i, "").trim())
+}
+
+function resolveCanonicalAttributeKey(input: { key?: string | null; slug?: string | null; name?: string | null }) {
+  const tokens = [
+    normalizeAttributeToken(input.key),
+    normalizeAttributeToken(input.slug),
+    normalizeAttributeToken(input.name),
+  ].filter(Boolean)
+
+  for (const [canonicalKey, aliases] of Object.entries(CANONICAL_ATTRIBUTE_ALIASES)) {
+    const aliasSet = new Set(aliases.map((alias) => normalizeAttributeToken(alias)))
+    if (tokens.some((token) => aliasSet.has(token))) {
+      return canonicalKey
+    }
+  }
+
+  return null
 }
 
 function isMissingDynamicAttributeTableError(error: unknown) {
@@ -528,6 +567,168 @@ async function ensureStandardAttributeSeeds() {
   }
 }
 
+type DuplicateGroupRow = {
+  id: string
+  key: string
+  name: string
+  slug: string
+  source: "dynamic" | "legacy"
+  isActive: boolean
+  sortOrder: number
+  createdAt: string | number | Date
+  productLinks: bigint | number
+}
+
+type NormalizedDuplicateGroupRow = Omit<DuplicateGroupRow, "productLinks"> & {
+  productLinks: number
+}
+
+async function mergeDuplicateAttributeGroups() {
+  const rawGroups = await prisma.$queryRaw<DuplicateGroupRow[]>(Prisma.sql`
+    SELECT
+      g."id" AS "id",
+      g."key" AS "key",
+      g."name" AS "name",
+      g."slug" AS "slug",
+      g."source" AS "source",
+      g."isActive" AS "isActive",
+      g."sortOrder" AS "sortOrder",
+      g."createdAt" AS "createdAt",
+      COUNT(DISTINCT pav."id") AS "productLinks"
+    FROM "AttributeGroup" g
+    LEFT JOIN "ProductAttributeValue" pav ON pav."groupId" = g."id"
+    GROUP BY g."id", g."key", g."name", g."slug", g."source", g."isActive", g."sortOrder", g."createdAt"
+  `)
+  const groups: NormalizedDuplicateGroupRow[] = rawGroups.map((group) => ({
+    ...group,
+    productLinks: Number(group.productLinks || 0),
+  }))
+
+  const groupsByCanonical = new Map<string, NormalizedDuplicateGroupRow[]>()
+  for (const group of groups) {
+    const canonicalKey = resolveCanonicalAttributeKey(group)
+    if (!canonicalKey) continue
+    const current = groupsByCanonical.get(canonicalKey) || []
+    current.push(group)
+    groupsByCanonical.set(canonicalKey, current)
+  }
+
+  for (const [canonicalKey, candidates] of groupsByCanonical.entries()) {
+    if (candidates.length <= 1) continue
+
+    const sortedCandidates = [...candidates].sort((a, b) => {
+      const score = (row: NormalizedDuplicateGroupRow) => {
+        let value = 0
+        if (normalizeAttributeToken(row.key) === canonicalKey) value += 100
+        if (normalizeAttributeToken(row.slug) === canonicalKey) value += 50
+        if (row.source === "dynamic") value += 20
+        if (row.isActive) value += 10
+        value += Math.min(row.productLinks, 1000)
+        return value
+      }
+
+      const scoreDelta = score(b) - score(a)
+      if (scoreDelta !== 0) return scoreDelta
+      return String(a.createdAt).localeCompare(String(b.createdAt))
+    })
+
+    const canonicalGroup = sortedCandidates[0]
+    const duplicateGroups = sortedCandidates.slice(1)
+    if (duplicateGroups.length === 0) continue
+
+    const involvedGroupIds = [canonicalGroup.id, ...duplicateGroups.map((group) => group.id)]
+    const allValues = await prisma.$queryRaw<Array<{
+      id: string
+      groupId: string
+      value: string
+      slug: string
+      sortOrder: number
+      isActive: boolean
+      hex: string | null
+    }>>(Prisma.sql`
+      SELECT "id","groupId","value","slug","sortOrder","isActive","hex"
+      FROM "AttributeValue"
+      WHERE "groupId" IN (${Prisma.join(involvedGroupIds)})
+      ORDER BY "sortOrder" ASC, "value" ASC
+    `)
+
+    for (const value of allValues.filter((row) => row.groupId !== canonicalGroup.id)) {
+      const alreadyExists = allValues.some((candidate) =>
+        candidate.groupId === canonicalGroup.id &&
+        (
+          normalizeAttributeToken(candidate.slug) === normalizeAttributeToken(value.slug) ||
+          normalizeAttributeToken(candidate.value) === normalizeAttributeToken(value.value)
+        ),
+      )
+
+      if (!alreadyExists) {
+        await upsertValue({
+          groupId: canonicalGroup.id,
+          slug: value.slug || slugify(value.value),
+          value: value.value,
+          sortOrder: value.sortOrder,
+          isActive: value.isActive,
+          hex: value.hex,
+        })
+      }
+    }
+
+    const canonicalValues = await prisma.$queryRaw<Array<{
+      id: string
+      value: string
+      slug: string
+    }>>(Prisma.sql`
+      SELECT "id","value","slug"
+      FROM "AttributeValue"
+      WHERE "groupId" = ${canonicalGroup.id}
+    `)
+
+    const canonicalValueByToken = new Map<string, { id: string; value: string; slug: string }>()
+    canonicalValues.forEach((value) => {
+      canonicalValueByToken.set(normalizeAttributeToken(value.slug), value)
+      canonicalValueByToken.set(normalizeAttributeToken(value.value), value)
+    })
+
+    const duplicateLinks = await prisma.$queryRaw<Array<{
+      productId: string
+      valueSlug: string
+      valueText: string
+    }>>(Prisma.sql`
+      SELECT
+        pav."productId" AS "productId",
+        v."slug" AS "valueSlug",
+        v."value" AS "valueText"
+      FROM "ProductAttributeValue" pav
+      JOIN "AttributeValue" v ON v."id" = pav."valueId"
+      WHERE pav."groupId" IN (${Prisma.join(duplicateGroups.map((group) => group.id))})
+    `)
+
+    for (const link of duplicateLinks) {
+      const canonicalValue =
+        canonicalValueByToken.get(normalizeAttributeToken(link.valueSlug)) ||
+        canonicalValueByToken.get(normalizeAttributeToken(link.valueText))
+      if (!canonicalValue) continue
+
+      await prisma.$executeRaw`
+        INSERT INTO "ProductAttributeValue" ("id","productId","groupId","valueId","createdAt")
+        VALUES (${randomUUID()},${link.productId},${canonicalGroup.id},${canonicalValue.id},${new Date()})
+        ON CONFLICT ("productId","groupId","valueId") DO NOTHING
+      `
+    }
+
+    await prisma.$executeRaw`
+      DELETE FROM "ProductAttributeValue"
+      WHERE "groupId" IN (${Prisma.join(duplicateGroups.map((group) => group.id))})
+    `
+
+    await prisma.$executeRaw`
+      UPDATE "AttributeGroup"
+      SET "isActive" = FALSE, "updatedAt" = ${new Date()}
+      WHERE "id" IN (${Prisma.join(duplicateGroups.map((group) => group.id))})
+    `
+  }
+}
+
 export async function ensureDynamicAttributeTables() {
   if (!ensurePromise) {
     ensurePromise = (async () => {
@@ -580,6 +781,7 @@ export async function ensureDynamicAttributeTables() {
       await prisma.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS "ProductAttributeValue_productId_valueId_key" ON "ProductAttributeValue" ("productId","valueId")`
       await migrateLegacySources()
       await ensureStandardAttributeSeeds()
+      await mergeDuplicateAttributeGroups()
     })().catch((error) => {
       ensurePromise = null
       throw error
@@ -590,7 +792,7 @@ export async function ensureDynamicAttributeTables() {
 
 export async function getAttributeGroups(input?: { activeOnly?: boolean; filterableOnly?: boolean; visibleOnly?: boolean }) {
   try {
-    const activeClause = input?.activeOnly ? `AND g."isActive" = TRUE` : ""
+    const activeClause = input?.activeOnly === false ? "" : `AND g."isActive" = TRUE`
     const filterableClause = input?.filterableOnly ? `AND g."isFilterable" = TRUE` : ""
     const visibleClause = input?.visibleOnly ? `AND g."isVisibleOnProduct" = TRUE` : ""
     const groups = await prisma.$queryRaw<Array<{
