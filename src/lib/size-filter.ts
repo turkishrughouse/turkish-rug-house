@@ -9,7 +9,8 @@ export type ParsedCmSize = {
   normalized: string
 }
 
-type SizeOptionLike = {
+export type SizeOptionLike = {
+  id?: string
   slug?: string
   name?: string
   value?: string
@@ -141,7 +142,7 @@ export function resolveClosestSizeOptionFromCmInput(
   input: string,
   sizeOptions: SizeOptionLike[],
   toleranceInches = 6,
-) {
+): SizeOptionLike | null {
   const parsed = parseCmSizeInput(input)
   if (!parsed) return null
 

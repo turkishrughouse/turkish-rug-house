@@ -927,7 +927,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
 
         const matchedOption = resolveClosestSizeOptionFromCmInput(compactValue, sizeAttributeGroup.options, 6)
 
-        if (!matchedOption) {
+        if (!matchedOption || !matchedOption.id) {
             setSizeHelpMessage(tx("No close Size option exists in Products > Attributes.", "Products > Attributes içinde yakın bir Boyut seçeneği bulunamadı."))
             setValue("attributeSelections", {
                 ...selectedAttributeSelections,
