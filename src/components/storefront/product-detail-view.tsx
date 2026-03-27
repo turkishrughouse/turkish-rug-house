@@ -304,12 +304,13 @@ function buildProductSpecificationRows(product: ProductDetailData) {
   const exactDimensionRow = normalizedRows.find((row) =>
     ["dimensions", "dimension", "measurements", "measurements (cm)", "dimensions (cm)", "size cm", "exact size", "size (cm)"].includes(row.key)
   )
+  const storefrontSizeBucketKeys = new Set(["size"])
 
   const preferredOrder = [
     { label: "Type", keys: ["type"] },
     { label: "Style", keys: ["style"] },
     { label: "Material", keys: ["material"] },
-    { label: "Size", keys: exactDimensionRow ? [exactDimensionRow.key] : [] },
+    { label: "Size", keys: exactDimensionRow ? [exactDimensionRow.key] : ["size", "dimensions"] },
     { label: "Age", keys: ["age", "circa", "age/circa"] },
     { label: "Origin", keys: ["origin"] },
   ]
@@ -328,7 +329,11 @@ function buildProductSpecificationRows(product: ProductDetailData) {
     .filter((item): item is { label: string; value: string } => Boolean(item))
 
   const remainingRows = normalizedRows
-    .filter((row) => !matchedKeys.has(row.key))
+    .filter((row) => {
+      if (matchedKeys.has(row.key)) return false
+      if (exactDimensionRow && storefrontSizeBucketKeys.has(row.key)) return false
+      return true
+    })
     .map((row) => ({ label: row.label, value: row.value }))
 
   return [...preferredRows, ...remainingRows]
