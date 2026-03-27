@@ -31,6 +31,20 @@ function formatFeetInches(value: FeetInches) {
   return `${value.feet}'${value.inches}"`
 }
 
+function formatCmValue(value: number) {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)))
+}
+
+export function formatExactCmSizeDisplay(input: string) {
+  const parsed = parseCmSizeInput(input)
+  if (!parsed) return null
+
+  const widthFeet = convertCmToFeet(parsed.widthCm)
+  const heightFeet = convertCmToFeet(parsed.heightCm)
+
+  return `${formatCmValue(parsed.widthCm)} x ${formatCmValue(parsed.heightCm)} cm - ${formatFeetInches(widthFeet)}x${formatFeetInches(heightFeet)} Feet`
+}
+
 export function parseCmSizeInput(input: string): ParsedCmSize | null {
   const normalized = input.toLowerCase().replace(/\s+/g, "").replace(/cm/g, "")
   const match = normalized.match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/)
@@ -50,13 +64,7 @@ export function parseCmSizeInput(input: string): ParsedCmSize | null {
 }
 
 export function formatCmSizeWithFeet(input: string) {
-  const parsed = parseCmSizeInput(input)
-  if (!parsed) return null
-
-  const widthFeet = convertCmToFeet(parsed.widthCm)
-  const heightFeet = convertCmToFeet(parsed.heightCm)
-
-  return `${parsed.normalized} cm (${formatFeetInches(widthFeet)} x ${formatFeetInches(heightFeet)})`
+  return formatExactCmSizeDisplay(input)
 }
 
 function toTotalInchesFromFeetString(value: string) {

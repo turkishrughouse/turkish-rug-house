@@ -17,6 +17,7 @@ import {
 } from "@/components/storefront/product-detail-shared"
 import { ResponsiveImage } from "@/components/ui/responsive-image"
 import { formatCurrency, type CurrencySettings } from "@/lib/storefront/currency"
+import { formatExactCmSizeDisplay } from "@/lib/size-filter"
 
 const ProductDetailShare = dynamic(
   () => import("@/components/storefront/product-detail-share").then((mod) => mod.ProductDetailShare)
@@ -259,34 +260,8 @@ export function ProductDetailView({
   )
 }
 
-const CM_PER_INCH = 2.54
-const INCHES_PER_FOOT = 12
-
-function formatFeetAndInchesFromCmValue(cmValue: number) {
-  const totalInches = Math.round(cmValue / CM_PER_INCH)
-  const feet = Math.floor(totalInches / INCHES_PER_FOOT)
-  const inches = totalInches % INCHES_PER_FOOT
-  return `${feet}'${inches}"`
-}
-
 function formatExactProductDimensions(value: string) {
-  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ").replace(/\s*x\s*/g, "x")
-
-  if (normalized.includes("cm") && normalized.includes("'")) {
-    return value.trim()
-  }
-
-  const sizeMatch = normalized.match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)(?:\s*cm)?$/)
-  if (!sizeMatch) return value
-
-  const widthValue = Number(sizeMatch[1])
-  const heightValue = Number(sizeMatch[2])
-  if (!Number.isFinite(widthValue) || !Number.isFinite(heightValue)) return value
-  if (widthValue <= 50 || heightValue <= 50) return value
-
-  const widthCm = Math.round(widthValue)
-  const heightCm = Math.round(heightValue)
-  return `${widthCm}x${heightCm} - ${formatFeetAndInchesFromCmValue(widthCm)}x${formatFeetAndInchesFromCmValue(heightCm)}`
+  return formatExactCmSizeDisplay(value) || value
 }
 
 function buildProductSpecificationRows(product: ProductDetailData) {
