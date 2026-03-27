@@ -12,6 +12,7 @@ export type ParsedCmSize = {
 type SizeOptionLike = {
   slug?: string
   name?: string
+  value?: string
 }
 
 const CM_PER_INCH = 2.54
@@ -86,6 +87,17 @@ function parseFeetSizeToInches(value: string) {
   return [width, height] as const
 }
 
+function normalizeDimensions(width: number, height: number) {
+  return width <= height ? ([width, height] as const) : ([height, width] as const)
+}
+
+function getOptionDimensionCandidates(option: SizeOptionLike) {
+  return [option.slug || "", option.name || "", option.value || ""]
+    .map((value) => parseFeetSizeToInches(value))
+    .filter((value): value is readonly [number, number] => Boolean(value))
+    .map(([width, height]) => normalizeDimensions(width, height))
+}
+
 function isWithinTolerance(
   targetWidth: number,
   targetHeight: number,
@@ -112,16 +124,46 @@ export function resolveMatchingSizeSlugsFromCmInput(
 
   const targetWidth = Math.round(parsed.widthCm / CM_PER_INCH)
   const targetHeight = Math.round(parsed.heightCm / CM_PER_INCH)
+  const [normalizedTargetWidth, normalizedTargetHeight] = normalizeDimensions(targetWidth, targetHeight)
 
   return sizeOptions.flatMap((option) => {
-    const candidates = [option.slug || "", option.name || ""]
-      .map((value) => parseFeetSizeToInches(value))
-      .filter((value): value is readonly [number, number] => Boolean(value))
+    const candidates = getOptionDimensionCandidates(option)
 
     const matched = candidates.some(([width, height]) =>
-      isWithinTolerance(targetWidth, targetHeight, width, height, toleranceInches),
+      isWithinTolerance(normalizedTargetWidth, normalizedTargetHeight, width, height, toleranceInches),
     )
 
     return matched && option.slug ? [option.slug] : []
   })
+}
+
+export function resolveClosestSizeOptionFromCmInput(
+  input: string,
+  sizeOptions: SizeOptionLike[],
+  toleranceInches = 6,
+) {
+  const parsed = parseCmSizeInput(input)
+  if (!parsed) return null
+
+  const targetWidth = Math.round(parsed.widthCm / CM_PER_INCH)
+  const targetHeight = Math.round(parsed.heightCm / CM_PER_INCH)
+  const [normalizedTargetWidth, normalizedTargetHeight] = normalizeDimensions(targetWidth, targetHeight)
+
+  let bestMatch: { option: SizeOptionLike; score: number } | null = null
+
+  for (const option of sizeOptions) {
+    const candidates = getOptionDimensionCandidates(option)
+    for (const [width, height] of candidates) {
+      const widthDelta = Math.abs(normalizedTargetWidth - width)
+      const heightDelta = Math.abs(normalizedTargetHeight - height)
+      if (widthDelta > toleranceInches || heightDelta > toleranceInches) continue
+
+      const score = widthDelta + heightDelta
+      if (!bestMatch || score < bestMatch.score) {
+        bestMatch = { option, score }
+      }
+    }
+  }
+
+  return bestMatch?.option ?? null
 }

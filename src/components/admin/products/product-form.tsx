@@ -74,6 +74,7 @@ import type { AdminLanguage } from "@/lib/admin/i18n"
 import { parseProductImages } from "@/lib/product-images"
 import type { AttributeGroupRecord } from "@/lib/product-attributes"
 import { matchSupplierBySkuPrefix, type SupplierRecord } from "@/lib/supplier-prefix"
+import { formatCmSizeWithFeet, parseCmSizeInput, resolveClosestSizeOptionFromCmInput } from "@/lib/size-filter"
 
 type SelectOption = { id: string, name?: string, title?: string }
 
@@ -784,6 +785,8 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
     const [tagInput, setTagInput] = useState("")
     const [supplierRegistry, setSupplierRegistry] = useState<SupplierRecord[]>([])
     const [loadingSupplierRegistry, setLoadingSupplierRegistry] = useState(false)
+    const [sizeInput, setSizeInput] = useState("")
+    const [sizeHelpMessage, setSizeHelpMessage] = useState<string | null>(null)
 
     const defaultValues: Partial<ProductFormValues> = initialData ? {
         title: initialData.title,
@@ -882,10 +885,63 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         () => options.attributeGroups.filter((group) => group.isActive),
         [options.attributeGroups]
     )
+    const sizeAttributeGroup = useMemo(
+        () => availableAttributeGroups.find((group) => group.slug === "size" || group.key === "size"),
+        [availableAttributeGroups]
+    )
     const matchedSupplier = useMemo(
         () => matchSupplierBySkuPrefix(skuValue, supplierRegistry),
         [skuValue, supplierRegistry]
     )
+    const sizePreview = useMemo(() => formatCmSizeWithFeet(sizeInput), [sizeInput])
+    const selectedSizeOption = useMemo(() => {
+        if (!sizeAttributeGroup) return null
+        const selectedIds = selectedAttributeSelections[sizeAttributeGroup.id] || []
+        return sizeAttributeGroup.options.find((option) => selectedIds.includes(option.id)) || null
+    }, [sizeAttributeGroup, selectedAttributeSelections])
+
+    const applySizeSelectionFromInput = (rawValue: string) => {
+        if (!sizeAttributeGroup) return
+
+        const compactValue = rawValue.replace(/\s+/g, "")
+        setSizeInput(compactValue)
+
+        if (!compactValue) {
+            setSizeHelpMessage(null)
+            setValue("attributeSelections", {
+                ...selectedAttributeSelections,
+                [sizeAttributeGroup.id]: [],
+            }, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
+            return
+        }
+
+        const parsed = parseCmSizeInput(compactValue)
+        if (!parsed) {
+            setSizeHelpMessage(null)
+            setValue("attributeSelections", {
+                ...selectedAttributeSelections,
+                [sizeAttributeGroup.id]: [],
+            }, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
+            return
+        }
+
+        const matchedOption = resolveClosestSizeOptionFromCmInput(compactValue, sizeAttributeGroup.options, 6)
+
+        if (!matchedOption) {
+            setSizeHelpMessage(tx("No close Size option exists in Products > Attributes.", "Products > Attributes içinde yakın bir Boyut seçeneği bulunamadı."))
+            setValue("attributeSelections", {
+                ...selectedAttributeSelections,
+                [sizeAttributeGroup.id]: [],
+            }, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
+            return
+        }
+
+        setSizeHelpMessage(tx(`Matched to existing size option: ${matchedOption.value}`, `Mevcut boyut seçeneği ile eşleşti: ${matchedOption.value}`))
+        setValue("attributeSelections", {
+            ...selectedAttributeSelections,
+            [sizeAttributeGroup.id]: [matchedOption.id],
+        }, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
+    }
 
     useEffect(() => {
         if (!isSlugAutoSync) return
@@ -1025,6 +1081,14 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
 
         const missingRequiredAttributes = availableAttributeGroups.filter((group) => group.isRequired && (selectedAttributeSelections[group.id] || []).length === 0)
         if (missingRequiredAttributes.length > 0) {
+            if (sizeAttributeGroup && missingRequiredAttributes.some((group) => group.id === sizeAttributeGroup.id)) {
+                toast.error(
+                    sizeHelpMessage ||
+                    tx("Enter a Size in cm that matches an existing Size option before saving.", "Kaydetmeden önce mevcut bir Boyut seçeneğiyle eşleşen cm cinsinden bir Boyut girin.")
+                )
+                setIsLoading(false)
+                return
+            }
             toast.error(tx("Select all required product attributes before saving.", "Kaydetmeden önce tüm zorunlu ürün özelliklerini seçin"))
             setIsLoading(false)
             return
@@ -1442,6 +1506,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                                     ) : (
                                                         availableAttributeGroups.map((group) => {
                                                             const selectedIds = selectedAttributeSelections[group.id] || []
+                                                            const isSizeGroup = group.id === sizeAttributeGroup?.id
                                                             return (
                                                                 <div key={group.id} className="space-y-3 rounded-sm border border-[#dcdcde] bg-[#fbfcfd] p-3">
                                                                     <div className="flex flex-wrap items-center gap-2">
@@ -1465,21 +1530,51 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                                                             </Badge>
                                                                         ) : null}
                                                                     </div>
-                                                                    <DropdownMultiSelect
-                                                                        label={group.name}
-                                                                        options={group.options.map((option) => ({
-                                                                            id: option.id,
-                                                                            name: option.value,
-                                                                        }))}
-                                                                        value={selectedIds}
-                                                                        onChange={(val) => setValue("attributeSelections", {
-                                                                            ...selectedAttributeSelections,
-                                                                            [group.id]: val,
-                                                                        }, { shouldDirty: true, shouldTouch: true, shouldValidate: true })}
-                                                                        placeholder={tx("Select values", "Değer seç")}
-                                                                        error={errors.attributeSelections?.message as string | undefined}
-                                                                        selectionMode={group.selectionMode}
-                                                                    />
+                                                                    {isSizeGroup ? (
+                                                                        <div className="space-y-2">
+                                                                            <Label htmlFor="product-form-size-filter" className="text-xs font-medium text-slate-700">
+                                                                                {tx("Size", "Boyut")}
+                                                                            </Label>
+                                                                            <Input
+                                                                                id="product-form-size-filter"
+                                                                                type="text"
+                                                                                inputMode="numeric"
+                                                                                value={sizeInput}
+                                                                                onChange={(event) => applySizeSelectionFromInput(event.target.value)}
+                                                                                className="h-10 rounded-sm border-[#8c8f94]"
+                                                                                placeholder="Enter size (e.g. 120x180 cm)"
+                                                                            />
+                                                                            {sizePreview ? (
+                                                                                <p className="text-xs text-slate-600">{sizePreview}</p>
+                                                                            ) : null}
+                                                                            {sizeHelpMessage ? (
+                                                                                <p className="text-xs text-slate-500">{sizeHelpMessage}</p>
+                                                                            ) : selectedSizeOption && !sizeInput ? (
+                                                                                <p className="text-xs text-slate-500">
+                                                                                    {tx(`Current size option: ${selectedSizeOption.value}`, `Mevcut boyut seçeneği: ${selectedSizeOption.value}`)}
+                                                                                </p>
+                                                                            ) : null}
+                                                                            {errors.attributeSelections?.message ? (
+                                                                                <p className="text-xs text-red-600">{errors.attributeSelections.message as string}</p>
+                                                                            ) : null}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <DropdownMultiSelect
+                                                                            label={group.name}
+                                                                            options={group.options.map((option) => ({
+                                                                                id: option.id,
+                                                                                name: option.value,
+                                                                            }))}
+                                                                            value={selectedIds}
+                                                                            onChange={(val) => setValue("attributeSelections", {
+                                                                                ...selectedAttributeSelections,
+                                                                                [group.id]: val,
+                                                                            }, { shouldDirty: true, shouldTouch: true, shouldValidate: true })}
+                                                                            placeholder={tx("Select values", "Değer seç")}
+                                                                            error={errors.attributeSelections?.message as string | undefined}
+                                                                            selectionMode={group.selectionMode}
+                                                                        />
+                                                                    )}
                                                                 </div>
                                                             )
                                                         })
