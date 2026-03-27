@@ -257,6 +257,54 @@ export function ProductDetailView({
   )
 }
 
+const CM_PER_FOOT = 30.48
+const CM_PER_INCH = 2.54
+const INCHES_PER_FOOT = 12
+
+function formatFeetAndInchesFromFeetValue(feetValue: number) {
+  const totalInches = Math.round(feetValue * INCHES_PER_FOOT)
+  const feet = Math.floor(totalInches / INCHES_PER_FOOT)
+  const inches = totalInches % INCHES_PER_FOOT
+  return `${feet}'${inches}"`
+}
+
+function formatFeetAndInchesFromCmValue(cmValue: number) {
+  const totalInches = Math.round(cmValue / CM_PER_INCH)
+  const feet = Math.floor(totalInches / INCHES_PER_FOOT)
+  const inches = totalInches % INCHES_PER_FOOT
+  return `${feet}'${inches}"`
+}
+
+function normalizeRugSizeCm(cmValue: number) {
+  return Math.round(cmValue / 10) * 10
+}
+
+function formatProductSizeValue(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ").replace(/\s*x\s*/g, "x")
+
+  const cmMatch = normalized.match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)(?:\s*cm)?$/)
+  if (cmMatch) {
+    const widthCm = Math.round(Number(cmMatch[1]))
+    const heightCm = Math.round(Number(cmMatch[2]))
+    if (!Number.isFinite(widthCm) || !Number.isFinite(heightCm)) return value
+    const normalizedWidthCm = normalizeRugSizeCm(widthCm)
+    const normalizedHeightCm = normalizeRugSizeCm(heightCm)
+    return `${formatFeetAndInchesFromCmValue(widthCm)} x ${formatFeetAndInchesFromCmValue(heightCm)} ft (${normalizedWidthCm} x ${normalizedHeightCm} cm)`
+  }
+
+  const feetMatch = normalized.match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)(?:\s*ft)?$/)
+  if (feetMatch) {
+    const widthFeet = Number(feetMatch[1])
+    const heightFeet = Number(feetMatch[2])
+    if (!Number.isFinite(widthFeet) || !Number.isFinite(heightFeet)) return value
+    const widthCm = normalizeRugSizeCm(Math.round(widthFeet * CM_PER_FOOT))
+    const heightCm = normalizeRugSizeCm(Math.round(heightFeet * CM_PER_FOOT))
+    return `${formatFeetAndInchesFromFeetValue(widthFeet)} x ${formatFeetAndInchesFromFeetValue(heightFeet)} ft (${widthCm} x ${heightCm} cm)`
+  }
+
+  return value
+}
+
 function buildProductSpecificationRows(product: ProductDetailData) {
   const visibleAttributes = (product.customAttributes || []).filter((item) => item.visible !== false)
   const normalizedRows = visibleAttributes
@@ -284,7 +332,10 @@ function buildProductSpecificationRows(product: ProductDetailData) {
       const match = normalizedRows.find((row) => item.keys.includes(row.key))
       if (!match) return null
       matchedKeys.add(match.key)
-      return { label: item.label, value: match.value }
+      return {
+        label: item.label,
+        value: item.label === "Size" ? formatProductSizeValue(match.value) : match.value,
+      }
     })
     .filter((item): item is { label: string; value: string } => Boolean(item))
 
