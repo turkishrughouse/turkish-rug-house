@@ -22,6 +22,7 @@ import {
 import { toast } from "sonner"
 import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
 import { buildProductImageAlt, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
+import { formatCmSizeWithFeet, parseCmSizeInput } from "@/lib/size-filter"
 import {
     bulkDeleteProductsPermanently,
     bulkDeleteProducts,
@@ -75,12 +76,14 @@ interface ProductListProps {
         type: string
         stock: string
         brand: string
+        size?: string
         scheduleDate?: string
     }
     filterOptions: {
         categories: FilterOption[]
         types: FilterOption[]
         brands: FilterOption[]
+        sizes: FilterOption[]
     }
 }
 
@@ -139,6 +142,7 @@ export function ProductList({
     const [typeFilter, setTypeFilter] = useState(filters.type || "")
     const [stockFilter, setStockFilter] = useState(filters.stock || "")
     const [brandFilter, setBrandFilter] = useState(filters.brand || "")
+    const [sizeFilter, setSizeFilter] = useState(filters.size || "")
     const [scheduleDate, setScheduleDate] = useState(filters.scheduleDate || "")
     const [screenOptionsOpen, setScreenOptionsOpen] = useState(false)
     const [itemsPerPage, setItemsPerPage] = useState(String(metadata.limit))
@@ -156,6 +160,7 @@ export function ProductList({
     const allSelected = initialProducts.length > 0 && totalSelected === initialProducts.length
     const visibleDataColumnCount = Object.values(visibleColumns).filter(Boolean).length + 2
     const inTrashView = (filters.status || "all") === "trash"
+    const formattedSizeFilter = formatCmSizeWithFeet(sizeFilter)
 
     const stockLabel = (product: ProductWithRelations) => {
         if (!product.isStock || product.stockCount <= 0) return tx("Out of stock", "Stokta yok")
@@ -180,11 +185,13 @@ export function ProductList({
     }
 
     const handleApplyFilters = () => {
+        const normalizedSize = parseCmSizeInput(sizeFilter)?.normalized
         updateQueryParams({
             category: categoryFilter || undefined,
             type: typeFilter || undefined,
             stock: stockFilter || undefined,
             brand: brandFilter || undefined,
+            size: normalizedSize || undefined,
         })
     }
 
@@ -657,6 +664,22 @@ export function ProductList({
                             </option>
                         ))}
                     </select>
+
+                    <div className="flex min-w-[250px] flex-col justify-center gap-1">
+                        <input
+                            type="text"
+                            inputMode="numeric"
+                            value={sizeFilter}
+                            onChange={(event) => setSizeFilter(event.target.value.replace(/\s+/g, ""))}
+                            placeholder="Enter size (e.g. 120x180 cm)"
+                            className="h-10 w-[250px] rounded-sm border border-[#8c8f94] bg-white px-2.5 text-[13px] text-slate-700 placeholder:text-slate-400"
+                        />
+                        {formattedSizeFilter ? (
+                            <div className="truncate text-[12px] leading-4 text-slate-600">
+                                {formattedSizeFilter}
+                            </div>
+                        ) : null}
+                    </div>
 
                     <Button
                         variant="outline"
