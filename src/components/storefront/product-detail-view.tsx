@@ -284,27 +284,33 @@ function normalizeRugSizeCm(cmValue: number) {
 function formatProductSizeValue(value: string) {
   const normalized = value.trim().toLowerCase().replace(/\s+/g, " ").replace(/\s*x\s*/g, "x")
 
-  const cmMatch = normalized.match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)(?:\s*cm)?$/)
-  if (cmMatch) {
-    const widthCm = Math.round(Number(cmMatch[1]))
-    const heightCm = Math.round(Number(cmMatch[2]))
+  const sizeMatch = normalized.match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)(?:\s*(cm|ft))?$/)
+  if (!sizeMatch) return value
+
+  const widthValue = Number(sizeMatch[1])
+  const heightValue = Number(sizeMatch[2])
+  const explicitUnit = sizeMatch[3] || ""
+
+  if (!Number.isFinite(widthValue) || !Number.isFinite(heightValue)) return value
+
+  const treatAsCm =
+    explicitUnit === "cm" ||
+    (explicitUnit !== "ft" && (widthValue > 50 || heightValue > 50))
+
+  if (treatAsCm) {
+    const widthCm = Math.round(widthValue)
+    const heightCm = Math.round(heightValue)
     if (!Number.isFinite(widthCm) || !Number.isFinite(heightCm)) return value
     const normalizedWidthCm = normalizeRugSizeCm(widthCm)
     const normalizedHeightCm = normalizeRugSizeCm(heightCm)
     return `${formatFeetAndInchesFromCmValue(widthCm)} x ${formatFeetAndInchesFromCmValue(heightCm)} ft (${normalizedWidthCm} x ${normalizedHeightCm} cm)`
   }
 
-  const feetMatch = normalized.match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)(?:\s*ft)?$/)
-  if (feetMatch) {
-    const widthFeet = Number(feetMatch[1])
-    const heightFeet = Number(feetMatch[2])
-    if (!Number.isFinite(widthFeet) || !Number.isFinite(heightFeet)) return value
-    const widthCm = normalizeRugSizeCm(Math.round(widthFeet * CM_PER_FOOT))
-    const heightCm = normalizeRugSizeCm(Math.round(heightFeet * CM_PER_FOOT))
-    return `${formatFeetAndInchesFromFeetValue(widthFeet)} x ${formatFeetAndInchesFromFeetValue(heightFeet)} ft (${widthCm} x ${heightCm} cm)`
-  }
-
-  return value
+  const widthFeet = widthValue
+  const heightFeet = heightValue
+  const widthCm = normalizeRugSizeCm(Math.round(widthFeet * CM_PER_FOOT))
+  const heightCm = normalizeRugSizeCm(Math.round(heightFeet * CM_PER_FOOT))
+  return `${formatFeetAndInchesFromFeetValue(widthFeet)} x ${formatFeetAndInchesFromFeetValue(heightFeet)} ft (${widthCm} x ${heightCm} cm)`
 }
 
 function buildProductSpecificationRows(product: ProductDetailData) {
