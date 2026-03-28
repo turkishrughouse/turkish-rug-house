@@ -1540,10 +1540,10 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                     ) : null}
 
                                     {activeProductDataTab === "inventory" ? (
-                                        <div className="w-full max-w-[760px] min-w-0 space-y-4">
-                                            <div className="grid items-center gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                        <div className="w-full max-w-[760px] min-w-0 space-y-3">
+                                            <div className="grid items-start gap-x-3 gap-y-2 md:grid-cols-[220px_minmax(0,1fr)]">
                                                 <Label className="text-sm font-medium text-slate-700">SKU</Label>
-                                                <div className="space-y-2">
+                                                <div className="space-y-1.5">
                                                     <Input
                                                         {...register("sku")}
                                                         className="h-11 rounded-sm border-[#8c8f94]"
@@ -1564,7 +1564,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                                 </div>
                                             </div>
 
-                                            <div className="grid items-center gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                            <div className="grid items-start gap-x-3 gap-y-2 md:grid-cols-[220px_minmax(0,1fr)]">
                                                 <Label className="text-sm font-medium text-slate-700">{tx("Manage stock?", "Stok yönetilsin mi?")}</Label>
                                                 <label className="inline-flex items-center gap-2 text-sm text-slate-700">
                                                     <Checkbox
@@ -1575,7 +1575,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                                 </label>
                                             </div>
 
-                                            <div className="grid items-center gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                            <div className="grid items-start gap-x-3 gap-y-2 md:grid-cols-[220px_minmax(0,1fr)]">
                                                 <Label className="text-sm font-medium text-slate-700">{tx("Stock quantity", "Stok adedi")}</Label>
                                                 <div>
                                                     <Input type="number" {...register("stockCount")} className="h-11 rounded-sm border-[#8c8f94]" />
@@ -1583,7 +1583,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                                 </div>
                                             </div>
 
-                                            <div className="grid items-center gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                            <div className="grid items-start gap-x-3 gap-y-2 md:grid-cols-[220px_minmax(0,1fr)]">
                                                 <Label className="text-sm font-medium text-slate-700">{tx("Stock status", "Stok durumu")}</Label>
                                                 <select
                                                     value={stockManaged ? "instock" : "outofstock"}

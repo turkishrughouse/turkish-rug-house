@@ -3,6 +3,7 @@ import { Grid3X3, LayoutGrid, Menu } from "lucide-react"
 
 import { ResponsiveImage } from "@/components/ui/responsive-image"
 import { ShopProductCardServer } from "@/components/storefront/shop-product-card-server"
+import { ListingPagination } from "@/components/storefront/listing-pagination"
 import { getProducts, getProductOptions } from "@/lib/actions/product-actions"
 import { prisma } from "@/lib/db"
 import { getAttributeFacetGroupsForProductIds } from "@/lib/product-attributes"
@@ -17,6 +18,11 @@ type ShopPageProps = {
 }
 
 export const revalidate = 300
+
+function getPositiveIntParam(value: string | null | undefined, fallback: number) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
+}
 
 function resolveAttributeFilterSelection(
   groupSlug: string,
@@ -42,8 +48,9 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
   const sortInput = getSingleParam(resolved, "sort")
   const sort: "latest" | "oldest" | "price-asc" | "price-desc" =
     sortInput === "oldest" || sortInput === "price-asc" || sortInput === "price-desc" ? sortInput : "latest"
-  const showInput = Number(getSingleParam(resolved, "show") || 24)
-  const showValue = [8, 16, 24, 36].includes(showInput) ? showInput : 24
+  const page = getPositiveIntParam(getSingleParam(resolved, "page"), 1)
+  const limitInput = getPositiveIntParam(getSingleParam(resolved, "limit") || getSingleParam(resolved, "show"), 20)
+  const limitValue = [8, 16, 20, 24, 36].includes(limitInput) ? limitInput : 20
   const inStockOnly = resolved["inStock"] === "true"
   const selectedCategories = getMultiParam(resolved, "category")
   const priceMin = Number(getSingleParam(resolved, "priceMin") || 0)
@@ -81,8 +88,8 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
     price: hasPriceFilter ? { gte: priceMin, lte: priceMaxRaw } : undefined,
   } as const
 
-  const [{ products }, categoryCounters] = await Promise.all([
-    getProducts(1, showValue, query, "published", sort, undefined, filters),
+  const [{ products, metadata }, categoryCounters] = await Promise.all([
+    getProducts(page, limitValue, query, "published", sort, undefined, filters),
     prisma.category.findMany({
       select: {
         id: true,
@@ -123,7 +130,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
   const activePriceLabel = hasPriceFilter ? `$${priceMin} - $${priceMaxRaw}` : "Any"
   const sidebarProducts = visibleProducts.slice(0, 5)
 
-  const buildQuery = (mutator: (params: URLSearchParams) => void) => {
+  const buildQuery = (mutator: (params: URLSearchParams) => void, options?: { resetPage?: boolean }) => {
     const params = new URLSearchParams()
     Object.entries(resolved).forEach(([key, value]) => {
       if (Array.isArray(value)) {
@@ -133,6 +140,12 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
       }
     })
     mutator(params)
+    if (options?.resetPage) {
+      params.set("page", "1")
+    }
+    if (!params.get("limit")) {
+      params.set("limit", String(limitValue))
+    }
     const q = params.toString()
     return q ? `?${q}` : ""
   }
@@ -145,7 +158,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
         const next = p.getAll("category").filter((item) => item !== slug)
         p.delete("category")
         next.forEach((item) => p.append("category", item))
-      })}`,
+      }, { resetPage: true })}`,
     })),
     ...filterableAttributeGroups.flatMap((group: any) =>
       (selectedAttributeFilters[group.slug] || []).map((slug) => ({
@@ -155,7 +168,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
           const next = p.getAll(group.slug).filter((item) => item !== slug)
           p.delete(group.slug)
           next.forEach((item) => p.append(group.slug, item))
-        })}`,
+        }, { resetPage: true })}`,
       }))
     ),
     ...(hasPriceFilter
@@ -165,14 +178,14 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
           href: `/shop${buildQuery((p) => {
             p.delete("priceMin")
             p.delete("priceMax")
-          })}`,
+          }, { resetPage: true })}`,
         }]
       : []),
     ...(inStockOnly
       ? [{
           key: "stock",
           label: "In stock only",
-          href: `/shop${buildQuery((p) => p.delete("inStock"))}`,
+          href: `/shop${buildQuery((p) => p.delete("inStock"), { resetPage: true })}`,
         }]
       : []),
   ]
@@ -218,7 +231,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
               <span className="font-semibold text-slate-800">Show :</span>
               {[8, 16, 24, 36].map((n, idx) => (
                 <span key={n}>
-                  <Link href={`/shop${buildQuery((p) => p.set("show", String(n)))}`} className={showValue === n ? "font-semibold text-slate-900" : "hover:text-slate-900"}>{n}</Link>
+                  <Link href={`/shop${buildQuery((p) => p.set("limit", String(n)), { resetPage: true })}`} className={limitValue === n ? "font-semibold text-slate-900" : "hover:text-slate-900"}>{n}</Link>
                   {idx < 3 ? <span className="mx-1">/</span> : null}
                 </span>
               ))}
@@ -230,7 +243,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
             </div>
             <form method="get" action="/shop" className="flex items-center gap-2">
               {Object.entries(resolved).flatMap(([key, value]) => {
-                if (key === "sort" || value === undefined) return []
+                if (key === "sort" || key === "page" || value === undefined) return []
                 if (Array.isArray(value)) {
                   return value.map((item, idx) => (
                     <input key={`${key}-${item}-${idx}`} type="hidden" name={key} value={item} />
@@ -238,6 +251,8 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                 }
                 return <input key={key} type="hidden" name={key} value={value} />
               })}
+              <input type="hidden" name="page" value="1" />
+              <input type="hidden" name="limit" value={String(limitValue)} />
               <select name="sort" defaultValue={sort} className="h-8 rounded-md border border-[#dce3ed] bg-white px-3 text-xs text-slate-700">
                 <option value="latest">Default sorting</option>
                 <option value="price-asc">Price: low to high</option>
@@ -261,7 +276,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Product Status</h3>
                 <div className="mt-4 space-y-2">
                   <Link
-                    href={`/shop${buildQuery((p) => (inStockOnly ? p.delete("inStock") : p.set("inStock", "true")))}`}
+                    href={`/shop${buildQuery((p) => (inStockOnly ? p.delete("inStock") : p.set("inStock", "true")), { resetPage: true })}`}
                     className="flex items-center justify-between rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50"
                   >
                     <span>In stock only</span>
@@ -287,7 +302,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                             existing.forEach((item) => p.append("category", item))
                             p.append("category", category.slug)
                           }
-                        })}`}
+                        }, { resetPage: true })}`}
                         className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
                       >
                         <span>{category.title}</span>
@@ -317,7 +332,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                               nextValues.forEach((item) => p.append(group.slug, item))
                               p.append(group.slug, option.slug)
                             }
-                          })}`}
+                          }, { resetPage: true })}`}
                           className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
                         >
                           <span className="flex items-center gap-2">
@@ -345,17 +360,17 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                               return (
                                 <Link
                                   key={option.id}
-                                  href={`/shop${buildQuery((p) => {
-                                    const existing = p.getAll(group.slug)
+                                href={`/shop${buildQuery((p) => {
+                                  const existing = p.getAll(group.slug)
                                     p.delete(group.slug)
                                     if (existing.includes(option.slug)) {
                                       existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
                                     } else {
-                                      const nextValues = group.selectionMode === "single" ? [] : existing
-                                      nextValues.forEach((item) => p.append(group.slug, item))
-                                      p.append(group.slug, option.slug)
-                                    }
-                                  })}`}
+                                    const nextValues = group.selectionMode === "single" ? [] : existing
+                                    nextValues.forEach((item) => p.append(group.slug, item))
+                                    p.append(group.slug, option.slug)
+                                  }
+                                }, { resetPage: true })}`}
                                   className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
                                 >
                                   <span className="flex items-center gap-2">
@@ -386,7 +401,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                         href={`/shop${buildQuery((p) => {
                           p.set("priceMin", String(preset.min))
                           p.set("priceMax", String(preset.max))
-                        })}`}
+                        }, { resetPage: true })}`}
                         className={`block rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
                       >
                         {preset.label}
@@ -438,7 +453,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                     <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Status</summary>
                     <div className="mt-3">
                       <Link
-                        href={`/shop${buildQuery((p) => (inStockOnly ? p.delete("inStock") : p.set("inStock", "true")))}`}
+                        href={`/shop${buildQuery((p) => (inStockOnly ? p.delete("inStock") : p.set("inStock", "true")), { resetPage: true })}`}
                         className="flex items-center justify-between rounded-md bg-white px-3 py-2 text-sm text-slate-700"
                       >
                         <span>In stock only</span>
@@ -463,7 +478,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                                 existing.forEach((item) => p.append("category", item))
                                 p.append("category", category.slug)
                               }
-                            })}`}
+                            }, { resetPage: true })}`}
                             className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
                           >
                             <span className="block truncate">{category.title}</span>
@@ -492,7 +507,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                                   nextValues.forEach((item) => p.append(group.slug, item))
                                   p.append(group.slug, option.slug)
                                 }
-                              })}`}
+                              }, { resetPage: true })}`}
                               className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
                             >
                               <span className="flex items-center gap-2 truncate">
@@ -529,7 +544,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                                         nextValues.forEach((item) => p.append(group.slug, item))
                                         p.append(group.slug, option.slug)
                                       }
-                                    })}`}
+                                    }, { resetPage: true })}`}
                                     className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
                                   >
                                     <span className="flex items-center gap-2 truncate">
@@ -557,7 +572,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                             href={`/shop${buildQuery((p) => {
                               p.set("priceMin", String(preset.min))
                               p.set("priceMax", String(preset.max))
-                            })}`}
+                            }, { resetPage: true })}`}
                             className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
                           >
                             {preset.label}
@@ -587,7 +602,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
               </div>
             ) : null}
             <div className="mb-5 flex items-center justify-between">
-              <p className="text-sm text-slate-600">{visibleProducts.length} products found</p>
+              <p className="text-sm text-slate-600">{metadata.total} products found</p>
             </div>
             {visibleProducts.length === 0 ? (
               <div className="rounded-lg border border-slate-200 bg-white p-10 text-center">
@@ -608,6 +623,11 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
               />
                   ))}
                 </div>
+                <ListingPagination
+                  currentPage={metadata.page}
+                  totalPages={metadata.totalPages}
+                  buildHref={(nextPage) => `/shop${buildQuery((p) => p.set("page", String(nextPage)))}`}
+                />
                 <p className="mt-8 text-sm text-slate-500">{visibleProducts.length} products listed</p>
               </>
             )}

@@ -11,6 +11,7 @@ import { formatCurrency } from "@/lib/storefront/currency"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
 import { buildListingPricePresets, buildProductSearchWhere, getMultiParam, getSingleParam, resolveSelectedOptionSlugs, resolveSelectedSizeSlugs } from "@/lib/storefront/listing-filters"
 import { CategoryHoverProductCardServer } from "@/components/storefront/category-hover-product-card-server"
+import { ListingPagination } from "@/components/storefront/listing-pagination"
 import { fetchCategoryPathRows, getCategoryPathById, resolveCategoryByPath } from "@/lib/category-paths"
 
 type SearchParams = { [key: string]: string | string[] | undefined }
@@ -54,6 +55,11 @@ function buildCategoryMetaDescription(title: string, description: string | null 
   }
 
   return `Browse our collection of ${title}`.slice(0, 160)
+}
+
+function getPositiveIntParam(value: string | null | undefined, fallback: number) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
 export async function generateCategoryMetadataByPath(slugPath: string[]): Promise<Metadata> {
@@ -140,8 +146,9 @@ export async function renderCategoryPage({
   const sortInput = getSingleParam(searchParams, "sort")
   const sortValue: "latest" | "oldest" | "price-asc" | "price-desc" =
     sortInput === "oldest" || sortInput === "price-asc" || sortInput === "price-desc" ? sortInput : "latest"
-  const showInput = Number(getSingleParam(searchParams, "show") || 16)
-  const showValue = [8, 16, 32, 36].includes(showInput) ? showInput : 16
+  const page = getPositiveIntParam(getSingleParam(searchParams, "page"), 1)
+  const limitInput = getPositiveIntParam(getSingleParam(searchParams, "limit") || getSingleParam(searchParams, "show"), 20)
+  const limitValue = [8, 16, 20, 32, 36].includes(limitInput) ? limitInput : 20
   const inStockOnly = searchParams["inStock"] === "true"
   const topRatedOnly = searchParams["topRated"] === "true"
   const priceMin = Number(getSingleParam(searchParams, "priceMin") || 0)
@@ -292,7 +299,7 @@ export async function renderCategoryPage({
 
   const topRatedIds = topRatedProducts.map((p) => p.id)
 
-  const { products } = await getProducts(1, showValue, query, "published", sortValue, category.slug, {
+  const { products, metadata } = await getProducts(page, limitValue, query, "published", sortValue, category.slug, {
     ...baseFilters,
     categoryIds: categoryScopeIds,
     productIds: topRatedOnly ? topRatedIds : undefined,
@@ -337,13 +344,19 @@ export async function renderCategoryPage({
 
   const shortcutCategoryMap = new Map(shortcutCategories.map((item) => [item.id, item]))
 
-  const buildQuery = (mutator: (params: URLSearchParams) => void) => {
+  const buildQuery = (mutator: (params: URLSearchParams) => void, options?: { resetPage?: boolean }) => {
     const params = new URLSearchParams()
     Object.entries(searchParams).forEach(([key, value]) => {
       if (Array.isArray(value)) value.forEach((item) => params.append(key, item))
       else if (value !== undefined) params.set(key, value)
     })
     mutator(params)
+    if (options?.resetPage) {
+      params.set("page", "1")
+    }
+    if (!params.get("limit")) {
+      params.set("limit", String(limitValue))
+    }
     const q = params.toString()
     return q ? `?${q}` : ""
   }
@@ -361,28 +374,28 @@ export async function renderCategoryPage({
           const next = p.getAll(group.slug).filter((item) => item !== slug)
           p.delete(group.slug)
           next.forEach((item) => p.append(group.slug, item))
-        })}`,
+        }, { resetPage: true })}`,
       }))
     ),
     ...(inStockOnly
       ? [{
           key: "in-stock",
           label: "In stock only",
-          href: `${categoryPath}${buildQuery((p) => p.delete("inStock"))}`,
+          href: `${categoryPath}${buildQuery((p) => p.delete("inStock"), { resetPage: true })}`,
         }]
       : []),
     ...(topRatedOnly
       ? [{
           key: "top-rated",
           label: "Top rated only",
-          href: `${categoryPath}${buildQuery((p) => p.delete("topRated"))}`,
+          href: `${categoryPath}${buildQuery((p) => p.delete("topRated"), { resetPage: true })}`,
         }]
       : []),
     ...(query
       ? [{
           key: "search",
           label: `Search: ${query}`,
-          href: `${categoryPath}${buildQuery((p) => p.delete("q"))}`,
+          href: `${categoryPath}${buildQuery((p) => p.delete("q"), { resetPage: true })}`,
         }]
       : []),
     ...(hasPriceFilter
@@ -392,7 +405,7 @@ export async function renderCategoryPage({
           href: `${categoryPath}${buildQuery((p) => {
             p.delete("priceMin")
             p.delete("priceMax")
-          })}`,
+          }, { resetPage: true })}`,
         }]
       : []),
   ]
@@ -477,7 +490,7 @@ export async function renderCategoryPage({
                               nextValues.forEach((item) => p.append(group.slug, item))
                               p.append(group.slug, option.slug)
                             }
-                          })}`}
+                          }, { resetPage: true })}`}
                           className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
                         >
                           <span className="flex items-center gap-2">
@@ -515,7 +528,7 @@ export async function renderCategoryPage({
                                       nextValues.forEach((item) => p.append(group.slug, item))
                                       p.append(group.slug, option.slug)
                                     }
-                                  })}`}
+                                  }, { resetPage: true })}`}
                                   className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
                                 >
                                   <span className="flex items-center gap-2">
@@ -541,7 +554,7 @@ export async function renderCategoryPage({
                   {pricePresets.map((preset) => {
                     const active = priceMin === preset.min && priceMaxRaw === preset.max
                     return (
-                      <Link key={preset.label} href={`${categoryPath}${buildQuery((p) => { p.set("priceMin", String(preset.min)); p.set("priceMax", String(preset.max)) })}`} className={`block rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}>{preset.label}</Link>
+                      <Link key={preset.label} href={`${categoryPath}${buildQuery((p) => { p.set("priceMin", String(preset.min)); p.set("priceMax", String(preset.max)) }, { resetPage: true })}`} className={`block rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}>{preset.label}</Link>
                     )
                   })}
                 </div>
@@ -590,7 +603,7 @@ export async function renderCategoryPage({
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
                   <div className="mb-3 flex items-center justify-between">
                     <h2 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filters</h2>
-                    <p className="text-xs text-slate-500">{products.length} products</p>
+                    <p className="text-xs text-slate-500">{metadata.total} products</p>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     {primaryAttributeFacetGroups.map((group) => (
@@ -612,7 +625,7 @@ export async function renderCategoryPage({
                                     nextValues.forEach((item) => p.append(group.slug, item))
                                     p.append(group.slug, option.slug)
                                   }
-                                })}`}
+                                }, { resetPage: true })}`}
                                 className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
                               >
                                 <span className="flex items-center gap-2 truncate">
@@ -649,7 +662,7 @@ export async function renderCategoryPage({
                                           nextValues.forEach((item) => p.append(group.slug, item))
                                           p.append(group.slug, option.slug)
                                         }
-                                      })}`}
+                                      }, { resetPage: true })}`}
                                       className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
                                     >
                                       <span className="flex items-center gap-2 truncate">
@@ -672,7 +685,7 @@ export async function renderCategoryPage({
                         {pricePresets.map((preset) => {
                           const active = priceMin === preset.min && priceMaxRaw === preset.max
                           return (
-                            <Link key={preset.label} href={`${categoryPath}${buildQuery((p) => { p.set("priceMin", String(preset.min)); p.set("priceMax", String(preset.max)) })}`} className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}>
+                            <Link key={preset.label} href={`${categoryPath}${buildQuery((p) => { p.set("priceMin", String(preset.min)); p.set("priceMax", String(preset.max)) }, { resetPage: true })}`} className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}>
                               {preset.label}
                             </Link>
                           )
@@ -723,20 +736,22 @@ export async function renderCategoryPage({
                   ))}
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex items-center gap-2 text-sm text-slate-700"><span className="font-semibold">Show :</span>{[8, 16, 32, 36].map((n) => <Link key={n} href={`${categoryPath}${buildQuery((p) => p.set("show", String(n)))}`} className={showValue === n ? "font-semibold text-slate-900" : "text-slate-500 hover:text-slate-900"}>{n}</Link>)}</div>
+                  <div className="flex items-center gap-2 text-sm text-slate-700"><span className="font-semibold">Show :</span>{[8, 16, 20, 32, 36].map((n) => <Link key={n} href={`${categoryPath}${buildQuery((p) => p.set("limit", String(n)), { resetPage: true })}`} className={limitValue === n ? "font-semibold text-slate-900" : "text-slate-500 hover:text-slate-900"}>{n}</Link>)}</div>
                   <div className="h-5 w-px bg-slate-200" />
                   <div className="flex items-center gap-1">
-                    <Link href={`${categoryPath}${buildQuery((p) => p.set("view", "2"))}`} className={`rounded border p-1.5 ${viewMode === "2" ? "bg-slate-900 text-white border-slate-900" : "text-slate-500 border-slate-200"}`}><Grid2x2 className="h-4 w-4" /></Link>
+                      <Link href={`${categoryPath}${buildQuery((p) => p.set("view", "2"))}`} className={`rounded border p-1.5 ${viewMode === "2" ? "bg-slate-900 text-white border-slate-900" : "text-slate-500 border-slate-200"}`}><Grid2x2 className="h-4 w-4" /></Link>
                     <Link href={`${categoryPath}${buildQuery((p) => p.set("view", "3"))}`} className={`rounded border p-1.5 ${viewMode === "3" ? "bg-slate-900 text-white border-slate-900" : "text-slate-500 border-slate-200"}`}><Rows3 className="h-4 w-4" /></Link>
                     <Link href={`${categoryPath}${buildQuery((p) => p.set("view", "4"))}`} className={`rounded border p-1.5 ${viewMode === "4" ? "bg-slate-900 text-white border-slate-900" : "text-slate-500 border-slate-200"}`}><LayoutGrid className="h-4 w-4" /></Link>
                     <Link href={`${categoryPath}${buildQuery((p) => p.set("view", "list"))}`} className={`rounded border p-1.5 ${viewMode === "list" ? "bg-slate-900 text-white border-slate-900" : "text-slate-500 border-slate-200"}`}><List className="h-4 w-4" /></Link>
                   </div>
                   <form method="get" action={categoryPath} className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
                     {Object.entries(searchParams).flatMap(([key, value]) => {
-                      if (key === "sort" || value === undefined) return []
+                      if (key === "sort" || key === "page" || value === undefined) return []
                       if (Array.isArray(value)) return value.map((item, idx) => <input key={`${key}-${item}-${idx}`} type="hidden" name={key} value={item} />)
                       return <input key={key} type="hidden" name={key} value={value} />
                     })}
+                    <input type="hidden" name="page" value="1" />
+                    <input type="hidden" name="limit" value={String(limitValue)} />
                     <select name="sort" defaultValue={sortValue} className="h-9 w-full min-w-0 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 sm:min-w-[190px]">
                       <option value="latest">Default sorting</option>
                       <option value="price-asc">Price: low to high</option>
@@ -750,20 +765,23 @@ export async function renderCategoryPage({
 
               <form method="get" action={categoryPath} className="mt-4 rounded-md border border-slate-300 bg-white px-4 py-3">
                 {Object.entries(searchParams).flatMap(([key, value]) => {
-                  if (key === "q" || value === undefined) return []
+                  if (key === "q" || key === "page" || value === undefined) return []
                   if (Array.isArray(value)) return value.map((item, idx) => <input key={`${key}-${item}-${idx}`} type="hidden" name={key} value={item} />)
                   return <input key={key} type="hidden" name={key} value={value} />
                 })}
+                <input type="hidden" name="page" value="1" />
+                <input type="hidden" name="limit" value={String(limitValue)} />
                 <input name="q" defaultValue={query} placeholder="Search for products" className="w-full bg-transparent text-slate-900 placeholder:text-slate-400 outline-none" />
               </form>
 
               <div className="mt-3 flex items-center justify-between">
-                <h2 className="text-sm font-medium text-slate-600">{products.length} products found</h2>
+                <h2 className="text-sm font-medium text-slate-600">{metadata.total} products found</h2>
               </div>
 
               {products.length === 0 ? <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-8 py-16 text-center text-slate-500">No products were found matching your selection.</div> : (
-                <div className={viewMode === "list" ? "mt-5 space-y-4" : viewMode === "2" ? "mt-5 grid grid-cols-1 gap-5 md:grid-cols-2" : viewMode === "4" ? "mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4" : "mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3"}>
-                  {products.map((product) => {
+                <>
+                  <div className={viewMode === "list" ? "mt-5 space-y-4" : viewMode === "2" ? "mt-5 grid grid-cols-1 gap-5 md:grid-cols-2" : viewMode === "4" ? "mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4" : "mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3"}>
+                    {products.map((product) => {
                     const parsedImages = parseProductImageRecords(product.images)
                     if (viewMode === "list") {
                       const image = getProductImageUrl(parsedImages[0], "large") || "/placeholder.jpg"
@@ -781,7 +799,13 @@ export async function renderCategoryPage({
                     }
                     return <CategoryHoverProductCardServer key={product.id} product={product} currencySettings={currencySettings} />
                   })}
-                </div>
+                  </div>
+                  <ListingPagination
+                    currentPage={metadata.page}
+                    totalPages={metadata.totalPages}
+                    buildHref={(nextPage) => `${categoryPath}${buildQuery((p) => p.set("page", String(nextPage)))}`}
+                  />
+                </>
               )}
             </div>
           </section>
