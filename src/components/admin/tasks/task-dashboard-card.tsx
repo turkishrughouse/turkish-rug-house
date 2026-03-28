@@ -63,7 +63,7 @@ export function TasksDashboardCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
-        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
           {items.map((item) => {
             const Icon = item.icon
             return (
@@ -77,7 +77,7 @@ export function TasksDashboardCard({
             )
           })}
         </div>
-        <div className="grid gap-3 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-3">
           {tasks.map((task) => (
             <div key={task.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
               <p className="text-sm font-semibold text-slate-950">{task.title}</p>

@@ -135,7 +135,7 @@ export function RoleBasedDashboard({ data, lang }: AdminDashboardProps) {
             </div>
           </section>
 
-          <section className="grid gap-5 lg:grid-cols-3">
+          <section className="grid grid-cols-1 gap-5 min-[420px]:grid-cols-2 lg:grid-cols-3">
             <MetricCard
               title={isTr ? "Products" : "Products"}
               value={formatNumber(active.productCount)}

@@ -71,6 +71,7 @@ export async function POST(req: NextRequest) {
       createdById: user.id,
       progressNote: payload.progressNote || null,
     },
+    select: { id: true },
   })
 
   const metadata = getTaskStatusUpdateMetadata(nextStatus)

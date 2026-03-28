@@ -277,6 +277,7 @@ type ProductFormInitialData = {
 }
 
 type ProductDataTab = "general" | "inventory" | "shipping" | "linked" | "attributes" | "advanced" | "more"
+type MobileProductStepKey = "basic" | "media" | "details" | "pricing" | "review"
 type ProductMediaPickerTarget = "featured" | "gallery"
 
 const PRODUCT_DATA_TABS: Array<{
@@ -291,6 +292,14 @@ const PRODUCT_DATA_TABS: Array<{
     { key: "attributes", label: { en: "Attributes", tr: "Özellikler" }, icon: SlidersHorizontal },
     { key: "advanced", label: { en: "Advanced", tr: "Gelismis" }, icon: Settings },
     { key: "more", label: { en: "Get more options", tr: "Daha fazla seçenek" }, icon: Sparkles },
+]
+
+const MOBILE_PRODUCT_STEPS: Array<{ key: MobileProductStepKey; en: string; tr: string }> = [
+    { key: "basic", en: "Basic Info", tr: "Temel Bilgi" },
+    { key: "media", en: "Media", tr: "Medya" },
+    { key: "details", en: "Details", tr: "Detaylar" },
+    { key: "pricing", en: "Pricing", tr: "Fiyatlandırma" },
+    { key: "review", en: "Review", tr: "Gözden Geçir" },
 ]
 
 function parseImageList(value: unknown): string[] {
@@ -550,11 +559,11 @@ function RichTextEditor({
     }
 
     const toolbarWrapperClass = cn(
-        "border-b border-[#dcdcde] bg-[#f6f7f7] px-3 py-2",
+        "w-full max-w-full overflow-x-hidden border-b border-[#dcdcde] bg-[#f6f7f7] px-3 py-2",
         isFullscreen && "sticky top-0 z-20"
     )
     const editorWrapperClass = cn(
-        "h-auto min-h-0 border border-[#8c8f94] bg-white",
+        "h-auto min-h-0 w-full max-w-full overflow-x-hidden border border-[#8c8f94] bg-white",
         isFullscreen && "fixed inset-6 z-50 overflow-auto bg-[#f6f7f7] p-4 shadow-2xl"
     )
 
@@ -586,9 +595,9 @@ function RichTextEditor({
                     </div>
                 </div>
 
-                <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-1">
+                <div className="flex flex-wrap items-center gap-1 pb-1 sm:flex-nowrap sm:overflow-x-auto sm:whitespace-nowrap">
                     <select
-                        className="h-8 min-w-[145px] rounded-sm border border-[#c3c4c7] bg-white px-2 text-sm text-slate-700"
+                        className="h-8 min-w-0 flex-1 rounded-sm border border-[#c3c4c7] bg-white px-2 text-sm text-slate-700 sm:min-w-[145px] sm:flex-none"
                         onChange={(event) => {
                             applyBlockFormat(event.target.value)
                         }}
@@ -604,7 +613,7 @@ function RichTextEditor({
                         <option value="pre">Preformatted</option>
                     </select>
                     <select
-                        className="h-8 min-w-[118px] rounded-sm border border-[#c3c4c7] bg-white px-2 text-sm text-slate-700"
+                        className="h-8 min-w-0 flex-1 rounded-sm border border-[#c3c4c7] bg-white px-2 text-sm text-slate-700 sm:min-w-[118px] sm:flex-none"
                         defaultValue=""
                         onChange={(event) => {
                             applyTextSize(event.target.value)
@@ -648,7 +657,7 @@ function RichTextEditor({
                 </div>
 
                 {toolbarExpanded ? (
-                    <div className="mt-2 flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-1">
+                    <div className="mt-2 flex flex-wrap items-center gap-1 pb-1 sm:flex-nowrap sm:overflow-x-auto sm:whitespace-nowrap">
                         <RichToolbarButton label="Strikethrough" icon={<Strikethrough className="h-4 w-4" />} onClick={() => runCommand("strikeThrough")} />
                         <RichToolbarButton label="Horizontal line" icon={<Minus className="h-4 w-4" />} onClick={() => runCommand("insertHorizontalRule")} />
                         <label className="inline-flex h-7 w-9 cursor-pointer items-center justify-center gap-1 rounded-sm border border-transparent px-0 text-sm text-slate-700 hover:bg-white">
@@ -819,6 +828,9 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
     const [committedSizeInput, setCommittedSizeInput] = useState("")
     const [committedSizeMatchLabel, setCommittedSizeMatchLabel] = useState("")
     const [sizeHelpMessage, setSizeHelpMessage] = useState<string | null>(null)
+    const [isMobileViewport, setIsMobileViewport] = useState(false)
+    const [mobileStepIndex, setMobileStepIndex] = useState(0)
+    const mobileDraftHydratedRef = useRef(false)
 
     const defaultValues: Partial<ProductFormValues> = initialData ? {
         title: initialData.title,
@@ -931,6 +943,10 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         const selectedIds = selectedAttributeSelections[sizeAttributeGroup.id] || []
         return sizeAttributeGroup.options.find((option) => selectedIds.includes(option.id)) || null
     }, [sizeAttributeGroup, selectedAttributeSelections])
+    const mobileDraftStorageKey = useMemo(
+        () => `admin-product-mobile-draft:${initialData?.id || "new"}`,
+        [initialData?.id]
+    )
 
     useEffect(() => {
         if (!initialData) return
@@ -944,6 +960,65 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
             setCommittedSizeMatchLabel(selectedSizeOption.value)
         }
     }, [initialData, selectedSizeOption])
+
+    useEffect(() => {
+        if (typeof window === "undefined") return
+        const media = window.matchMedia("(max-width: 1023px)")
+        const syncViewport = () => setIsMobileViewport(media.matches)
+        syncViewport()
+        media.addEventListener?.("change", syncViewport)
+        return () => media.removeEventListener?.("change", syncViewport)
+    }, [])
+
+    useEffect(() => {
+        if (typeof window === "undefined" || !isMobileViewport || mobileDraftHydratedRef.current) return
+        mobileDraftHydratedRef.current = true
+
+        try {
+            const raw = window.localStorage.getItem(mobileDraftStorageKey)
+            if (!raw) return
+            const parsed = JSON.parse(raw) as {
+                values?: Partial<ProductFormValues>
+                featuredImage?: string | null
+                galleryImages?: string[]
+                mobileStepIndex?: number
+            }
+
+            if (parsed.values) {
+                form.reset({
+                    ...(defaultValues as ProductFormInput),
+                    ...parsed.values,
+                })
+            }
+            if (typeof parsed.featuredImage === "string" || parsed.featuredImage === null) {
+                setFeaturedImage(parsed.featuredImage || null)
+            }
+            if (Array.isArray(parsed.galleryImages)) {
+                setGalleryImagesState(parsed.galleryImages.filter((item): item is string => typeof item === "string"))
+            }
+            if (typeof parsed.mobileStepIndex === "number" && parsed.mobileStepIndex >= 0 && parsed.mobileStepIndex < MOBILE_PRODUCT_STEPS.length) {
+                setMobileStepIndex(parsed.mobileStepIndex)
+            }
+        } catch {
+            // Ignore invalid local mobile draft payloads.
+        }
+    }, [defaultValues, form, isMobileViewport, mobileDraftStorageKey])
+
+    useEffect(() => {
+        if (typeof window === "undefined" || !isMobileViewport) return
+        const subscription = form.watch((values) => {
+            window.localStorage.setItem(
+                mobileDraftStorageKey,
+                JSON.stringify({
+                    values,
+                    featuredImage,
+                    galleryImages: galleryImagesState,
+                    mobileStepIndex,
+                }),
+            )
+        })
+        return () => subscription.unsubscribe()
+    }, [featuredImage, form, galleryImagesState, isMobileViewport, mobileDraftStorageKey, mobileStepIndex])
 
     const applySizeSelectionFromInput = (rawValue: string) => {
         if (!sizeAttributeGroup) return
@@ -1008,6 +1083,16 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         if ((form.getValues("seoTitle") || "") === nextSeoTitle) return
         setValue("seoTitle", nextSeoTitle, { shouldValidate: true, shouldDirty: true })
     }, [title, isSeoTitleAutoSync, form, setValue])
+
+    useEffect(() => {
+        if (!isMobileViewport) return
+        if (mobileStepIndex === 2 && activeProductDataTab !== "attributes") {
+            setActiveProductDataTab("attributes")
+        }
+        if (mobileStepIndex === 3 && !["general", "inventory"].includes(activeProductDataTab)) {
+            setActiveProductDataTab("general")
+        }
+    }, [activeProductDataTab, isMobileViewport, mobileStepIndex])
 
     useEffect(() => {
         let cancelled = false
@@ -1157,6 +1242,9 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                 const res = await updateProduct(initialData.id, data)
                 if (res.success) {
                     if (typeof window !== "undefined") {
+                        window.localStorage.removeItem(mobileDraftStorageKey)
+                    }
+                    if (typeof window !== "undefined") {
                         window.dispatchEvent(new Event("admin-products-updated"))
                     }
                     toast.success(tx("Product updated", "Ürün güncellendi"))
@@ -1167,6 +1255,9 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
             } else {
                 const res = await createProduct(data)
                 if (res.success) {
+                    if (typeof window !== "undefined") {
+                        window.localStorage.removeItem(mobileDraftStorageKey)
+                    }
                     if (typeof window !== "undefined") {
                         window.dispatchEvent(new Event("admin-products-updated"))
                     }
@@ -1225,51 +1316,80 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         setValue("seoKeywords", nextTags.join(", "), { shouldValidate: true, shouldDirty: true, shouldTouch: true })
     }
 
+    const showMobileStep = (steps: number | number[]) => {
+        if (!isMobileViewport) return true
+        const allowed = Array.isArray(steps) ? steps : [steps]
+        return allowed.includes(mobileStepIndex)
+    }
+
     return (
         <>
         <Form {...form}>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-7 pb-1 text-slate-900">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            className="h-10 w-10 rounded-sm border-[#c3c4c7] bg-white text-slate-700 hover:bg-[#f6f7f7]"
-                            onClick={() => router.back()}
-                        >
-                            <ChevronLeft className="h-4 w-4" />
-                        </Button>
-                        <h1 className="text-2xl font-semibold leading-none">
-                            {initialData ? tx("Edit product", "Ürünü düzenle") : tx("Add new product", "Yeni ürün ekle")}
-                        </h1>
-                        <Badge variant={watch("isPublished") ? "success" : "secondary"} className="rounded-sm border-[#c3c4c7]">
-                            {productStatus}
-                        </Badge>
+            <form onSubmit={handleSubmit(onSubmit)} className={cn("w-full min-w-0 max-w-full space-y-7 overflow-x-hidden pb-1 text-slate-900", isMobileViewport && "px-3 pb-28 pt-3 sm:px-4")}>
+                {isMobileViewport ? (
+                    <div className="rounded-2xl border border-[#dcdcde] bg-white p-4">
+                        <div className="flex items-center justify-between gap-3">
+                            <div>
+                                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                    {tx(`Step ${mobileStepIndex + 1} of ${MOBILE_PRODUCT_STEPS.length}`, `${mobileStepIndex + 1} / ${MOBILE_PRODUCT_STEPS.length}. adım`)}
+                                </p>
+                                <h1 className="mt-1 text-xl font-semibold">
+                                    {isTr ? MOBILE_PRODUCT_STEPS[mobileStepIndex].tr : MOBILE_PRODUCT_STEPS[mobileStepIndex].en}
+                                </h1>
+                            </div>
+                            <Badge variant={watch("isPublished") ? "success" : "secondary"} className="rounded-full border-[#c3c4c7] px-3 py-1">
+                                {productStatus}
+                            </Badge>
+                        </div>
+                        <div className="mt-4 grid grid-cols-5 gap-2">
+                            {MOBILE_PRODUCT_STEPS.map((step, index) => (
+                                <div key={step.key} className={cn("h-2 rounded-full", index <= mobileStepIndex ? "bg-[#2271b1]" : "bg-slate-200")} />
+                            ))}
+                        </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            className="rounded-sm border-[#c3c4c7] bg-[#f6f7f7] text-slate-700"
-                            onClick={() => router.push("/dashboard/products")}
-                        >
-                            {tx("Cancel", "İptal")}
-                        </Button>
-                        <Button
-                            type="submit"
-                            className="rounded-sm bg-[#2271b1] px-5 text-white hover:bg-[#135e96]"
-                            disabled={isLoading}
-                        >
-                            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                            {initialData ? tx("Update", "Güncelle") : tx("Publish", "Yayınla")}
-                        </Button>
+                ) : null}
+                {!isMobileViewport ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                className="h-10 w-10 rounded-sm border-[#c3c4c7] bg-white text-slate-700 hover:bg-[#f6f7f7]"
+                                onClick={() => router.back()}
+                            >
+                                <ChevronLeft className="h-4 w-4" />
+                            </Button>
+                            <h1 className="text-2xl font-semibold leading-none">
+                                {initialData ? tx("Edit product", "Ürünü düzenle") : tx("Add new product", "Yeni ürün ekle")}
+                            </h1>
+                            <Badge variant={watch("isPublished") ? "success" : "secondary"} className="rounded-sm border-[#c3c4c7]">
+                                {productStatus}
+                            </Badge>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="rounded-sm border-[#c3c4c7] bg-[#f6f7f7] text-slate-700"
+                                onClick={() => router.push("/dashboard/products")}
+                            >
+                                {tx("Cancel", "İptal")}
+                            </Button>
+                            <Button
+                                type="submit"
+                                className="rounded-sm bg-[#2271b1] px-5 text-white hover:bg-[#135e96]"
+                                disabled={isLoading}
+                            >
+                                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                {initialData ? tx("Update", "Güncelle") : tx("Publish", "Yayınla")}
+                            </Button>
+                        </div>
                     </div>
-                </div>
-
-                <div className="grid gap-7 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)] xl:items-start">
-                    <section className="space-y-7">
-                        <div className="rounded-sm border border-[#c3c4c7] bg-white">
+                ) : null}
+                <div className={cn("grid min-w-0 max-w-full gap-7 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)] xl:items-start", isMobileViewport && "xl:grid-cols-1")}>
+                    <section className="min-w-0 max-w-full space-y-7">
+                        <div className={cn("rounded-sm border border-[#c3c4c7] bg-white", !showMobileStep(0) && "hidden")}>
                             <div className="border-b border-[#dcdcde] px-4 py-3">
                                 <h2 className="text-lg font-semibold">{tx("Product basic info", "Ürün temel bilgileri")}</h2>
                             </div>
@@ -1281,7 +1401,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                     className="h-11 rounded-sm border-[#8c8f94] text-lg font-medium placeholder:text-slate-400"
                                 />
                                 {errors.title ? <p className="text-xs text-red-600">{errors.title.message}</p> : null}
-                                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                                <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 text-xs text-slate-600">
                                     <span>{tx("Permalink:", "Kalıcı bağlantı:")}</span>
                                     <span className="font-mono text-slate-500">/product/</span>
                                     <Input
@@ -1300,7 +1420,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                             setValue("slug", generatedSlug, { shouldValidate: true })
                                             setIsSlugAutoSync(true)
                                         }}
-                                        className="h-8 max-w-[320px] rounded-sm border-[#8c8f94] font-mono text-xs"
+                                        className="h-8 w-full min-w-0 rounded-sm border-[#8c8f94] font-mono text-xs sm:max-w-[320px]"
                                     />
                                 </div>
                                 {errors.slug ? <p className="text-xs text-red-600">{errors.slug.message}</p> : null}
@@ -1328,15 +1448,15 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                             />
                         </div>
 
-                        <div className="rounded-sm border border-[#c3c4c7] bg-white">
+                        <div className={cn("rounded-sm border border-[#c3c4c7] bg-white", !showMobileStep([2, 3]) && "hidden")}>
                             <div className="flex flex-wrap items-center gap-4 border-b border-[#dcdcde] bg-[#f6f7f7] px-4 py-3">
-                                <div className="flex items-center gap-2">
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <h2 className="text-lg font-semibold leading-none">{tx("Product data", "Ürün verileri")}</h2>
                                     <span className="text-lg text-slate-400">-</span>
                                     <select
                                         value={productType}
                                         onChange={(event) => setProductType(event.target.value)}
-                                        className="h-10 min-w-[250px] rounded-sm border border-[#8c8f94] bg-white px-3 text-sm font-medium"
+                                        className="h-10 w-full min-w-0 rounded-sm border border-[#8c8f94] bg-white px-3 text-sm font-medium sm:min-w-[250px] sm:w-auto"
                                     >
                                         <option value="simple">{tx("Simple product", "Basit ürün")}</option>
                                         <option value="variable">{tx("Variable product", "Varyasyonlu ürün")}</option>
@@ -1389,9 +1509,9 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                     })}
                                 </div>
 
-                                <div className="min-h-[420px] p-6">
+                                <div className="min-h-[420px] min-w-0 max-w-full overflow-x-hidden p-4 sm:p-6">
                                     {activeProductDataTab === "general" ? (
-                                        <div className="max-w-[700px] space-y-4">
+                                        <div className="w-full max-w-[700px] min-w-0 space-y-4">
                                             <div className="grid items-center gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                                 <Label className="text-sm font-medium text-slate-700">{tx("Regular price (₺)", "Normal fiyat (₺)")}</Label>
                                                 <div>
@@ -1420,7 +1540,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                     ) : null}
 
                                     {activeProductDataTab === "inventory" ? (
-                                        <div className="max-w-[760px] space-y-4">
+                                        <div className="w-full max-w-[760px] min-w-0 space-y-4">
                                             <div className="grid items-center gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                                 <Label className="text-sm font-medium text-slate-700">SKU</Label>
                                                 <div className="space-y-2">
@@ -1478,7 +1598,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                     ) : null}
 
                                     {activeProductDataTab === "shipping" ? (
-                                        <div className="max-w-[760px] space-y-4">
+                                        <div className="w-full max-w-[760px] min-w-0 space-y-4">
                                             <div className="grid items-center gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                                 <Label className="text-sm font-medium text-slate-700">{tx("Weight (kg)", "Ağırlık (kg)")}</Label>
                                                 <Input
@@ -1490,7 +1610,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                             </div>
                                             <div className="grid items-start gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                                 <Label className="pt-3 text-sm font-medium text-slate-700">{tx("Dimensions (cm)", "Ölçüler (cm)")}</Label>
-                                                <div className="grid grid-cols-3 gap-3">
+                                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                                     <Input
                                                         value={shippingLength}
                                                         onChange={(event) => setShippingLength(event.target.value)}
@@ -1516,7 +1636,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                     ) : null}
 
                                     {activeProductDataTab === "linked" ? (
-                                        <div className="max-w-[760px] space-y-4">
+                                        <div className="w-full max-w-[760px] min-w-0 space-y-4">
                                             <div className="grid items-center gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                                 <Label className="text-sm font-medium text-slate-700">{tx("Grouped products", "Gruplanmış ürünler")}</Label>
                                                 <Input
@@ -1556,7 +1676,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                                         {tx("These values feed storefront category filtering without changing the current product form layout.", "Bu değerler mevcut ürün form düzenini değiştirmeden storefront kategori filtrelerini besler.")}
                                                     </p>
                                                 </div>
-                                                <div className="grid gap-4 p-4 md:grid-cols-2">
+                                                <div className="grid min-w-0 max-w-full gap-4 p-4 md:grid-cols-2">
                                                     {availableAttributeGroups.length === 0 ? (
                                                         <div className="rounded-sm border border-dashed border-[#c3c4c7] bg-[#f6f7f7] px-4 py-3 text-sm text-slate-500 md:col-span-2">
                                                             {tx("No active attribute groups found. Create them first in Products > Attributes.", "Aktif özellik grubu bulunamadı. Önce Products > Attributes altında oluşturun.")}
@@ -1674,7 +1794,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                     ) : null}
 
                                     {activeProductDataTab === "advanced" ? (
-                                        <div className="max-w-[760px] space-y-4">
+                                        <div className="w-full max-w-[760px] min-w-0 space-y-4">
                                             <div className="grid items-start gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                                 <Label className="pt-3 text-sm font-medium text-slate-700">{tx("Admin note", "Yönetici notu")}</Label>
                                                 <textarea
@@ -1697,7 +1817,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                             </div>
                         </div>
 
-                        <div className="rounded-sm border border-[#c3c4c7] bg-white">
+                        <div className={cn("rounded-sm border border-[#c3c4c7] bg-white", !showMobileStep(4) && "hidden")}>
                             <div className="border-b border-[#dcdcde] px-4 py-3">
                                 <h2 className="text-lg font-semibold">{tx("Google search preview", "Google arama önizlemesi")}</h2>
                                 <p className="mt-1 text-xs text-slate-500">{tx("This is how the product can appear in Google results.", "Ürün Google sonuçlarında bu şekilde görünebilir.")}</p>
@@ -1719,7 +1839,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                             </div>
                         </div>
 
-                        <div className="rounded-sm border border-[#c3c4c7] bg-white">
+                        <div className={cn("rounded-sm border border-[#c3c4c7] bg-white", !showMobileStep(0) && "hidden")}>
                             <div className="border-b border-[#dcdcde] px-4 py-3">
                                 <h2 className="text-lg font-semibold">{tx("Product short description", "Ürün kısa açıklaması")}</h2>
                                 <p className="mt-1 text-xs text-slate-500">{tx("This section maps to the frontend text block on the right side of the product image.", "Bu alan ön tarafta ürün görselinin sağındaki metin bloğuna karşılık gelir.")}</p>
@@ -1745,8 +1865,8 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                         </div>
                     </section>
 
-                    <aside className="space-y-7 xl:col-start-2">
-                        <div className="rounded-sm border border-[#c3c4c7] bg-white">
+                    <aside className="min-w-0 max-w-full space-y-7 xl:col-start-2">
+                        <div className={cn("rounded-sm border border-[#c3c4c7] bg-white", !showMobileStep(4) && "hidden")}>
                             <div className="border-b border-[#dcdcde] px-4 py-3">
                                 <h3 className="text-xl font-semibold leading-none">{tx("Publish", "Yayın")}</h3>
                             </div>
@@ -1800,7 +1920,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                             </div>
                         </div>
 
-                        <div className="rounded-sm border border-[#c3c4c7] bg-white">
+                        <div className={cn("rounded-sm border border-[#c3c4c7] bg-white", !showMobileStep(1) && "hidden")}>
                             <div className="flex items-center justify-between border-b border-[#dcdcde] px-4 py-3">
                                 <h3 className="text-lg font-semibold">{tx("Product image", "Ürün görseli")} ({primaryImage ? 1 : 0})</h3>
                                 <div className="flex items-center gap-2 text-slate-500">
@@ -1858,7 +1978,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                             </div>
                         </div>
 
-                        <div className="rounded-sm border border-[#c3c4c7] bg-white">
+                        <div className={cn("rounded-sm border border-[#c3c4c7] bg-white", !showMobileStep(1) && "hidden")}>
                             <div className="flex items-center justify-between border-b border-[#dcdcde] px-4 py-3">
                                 <h3 className="text-lg font-semibold">{tx("Product gallery", "Ürün galerisi")} ({galleryImages.length})</h3>
                                 <div className="flex items-center gap-2 text-slate-500">
@@ -1920,7 +2040,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                             </div>
                         </div>
 
-                        <div className="rounded-sm border border-[#c3c4c7] bg-white">
+                        <div className={cn("rounded-sm border border-[#c3c4c7] bg-white", !showMobileStep(2) && "hidden")}>
                             <div className="border-b border-[#dcdcde] px-4 py-3">
                                 <h3 className="text-lg font-semibold">{tx("Product categories", "Ürün kategorileri")}</h3>
                             </div>
@@ -1980,7 +2100,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                             </div>
                         </div>
 
-                        <div className="rounded-sm border border-[#c3c4c7] bg-white">
+                        <div className={cn("rounded-sm border border-[#c3c4c7] bg-white", !showMobileStep(4) && "hidden")}>
                             <div className="border-b border-[#dcdcde] px-4 py-3">
                                 <h3 className="text-lg font-semibold">{tx("Search appearance", "Arama görünümü")}</h3>
                             </div>
@@ -2015,7 +2135,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                             </div>
                         </div>
 
-                        <div className="rounded-sm border border-[#c3c4c7] bg-white">
+                        <div className={cn("rounded-sm border border-[#c3c4c7] bg-white", !showMobileStep(4) && "hidden")}>
                             <div className="border-b border-[#dcdcde] px-4 py-3">
                                 <h3 className="text-lg font-semibold">{tx("Product summary", "Ürün özeti")}</h3>
                             </div>
@@ -2041,7 +2161,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                         </div>
 
                         {initialData ? (
-                            <div className="rounded-sm border border-red-200 bg-red-50">
+                            <div className={cn("rounded-sm border border-red-200 bg-red-50", !showMobileStep(4) && "hidden")}>
                                 <div className="border-b border-red-200 px-4 py-3">
                                     <h3 className="text-sm font-semibold text-red-700">{tx("Danger zone", "Tehlikeli alan")}</h3>
                                 </div>
@@ -2054,6 +2174,39 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                         ) : null}
                     </aside>
                 </div>
+                {isMobileViewport ? (
+                    <div className="sticky bottom-0 z-20 -mx-3 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur sm:-mx-4 sm:px-4">
+                        <div className="flex items-center gap-3">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="h-12 flex-1 rounded-2xl"
+                                onClick={() => setMobileStepIndex((prev) => Math.max(prev - 1, 0))}
+                                disabled={mobileStepIndex === 0}
+                            >
+                                {tx("Back", "Geri")}
+                            </Button>
+                            {mobileStepIndex < MOBILE_PRODUCT_STEPS.length - 1 ? (
+                                <Button
+                                    type="button"
+                                    className="h-12 flex-[1.4] rounded-2xl bg-[#2271b1] text-white hover:bg-[#135e96]"
+                                    onClick={() => setMobileStepIndex((prev) => Math.min(prev + 1, MOBILE_PRODUCT_STEPS.length - 1))}
+                                >
+                                    {tx("Continue", "Devam Et")}
+                                </Button>
+                            ) : (
+                                <Button
+                                    type="submit"
+                                    className="h-12 flex-[1.4] rounded-2xl bg-[#2271b1] text-white hover:bg-[#135e96]"
+                                    disabled={isLoading}
+                                >
+                                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                    {initialData ? tx("Update product", "Ürünü güncelle") : tx("Publish product", "Ürünü yayınla")}
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+                ) : null}
             </form>
         </Form>
         {mediaPickerOpen ? (

@@ -226,7 +226,20 @@ export async function getTaskProductOptions(limit = 200): Promise<TaskProductOpt
 export async function getTasksForViewer(viewer: TaskViewer, filters: TaskFilterInput = {}) {
   const baseTasks = await prisma.task.findMany({
     where: buildBaseTaskWhere(viewer, filters),
-    include: {
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      priority: true,
+      status: true,
+      dueDate: true,
+      assignedToId: true,
+      createdById: true,
+      progressNote: true,
+      archivedAt: true,
+      createdAt: true,
+      updatedAt: true,
+      relatedProductId: true,
       assignedTo: { select: { id: true, name: true, email: true } },
       createdBy: { select: { id: true, name: true, email: true } },
       relatedProduct: { select: { id: true, title: true, slug: true, sku: true, images: true } },

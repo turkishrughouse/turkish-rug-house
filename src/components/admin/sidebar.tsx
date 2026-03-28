@@ -46,11 +46,12 @@ type SidebarUser = {
 
 interface AdminSidebarProps {
     user: SidebarUser
+    collapsed?: boolean
 }
 
 const SIDEBAR_NOTIFICATION_POLL_MS = 3000
 
-export function AdminSidebar({ user }: AdminSidebarProps) {
+export function AdminSidebar({ user, collapsed = false }: AdminSidebarProps) {
     const [activeItem, setActiveItem] = useState<{ id: string, items: NavSubItem[], rect: DOMRect } | null>(null)
     const [messageCount, setMessageCount] = useState(0)
     const [orderCount, setOrderCount] = useState(0)
@@ -273,14 +274,14 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
 
     return (
         <>
-            <div className="admin-sidebar-surface w-64 border-r border-[#dce3ed] h-full flex flex-col shadow-[1px_0_16px_rgba(15,23,42,0.03)] z-20 relative">
-                <div className="h-[80px] flex items-center px-6 border-b border-[#dce3ed] shrink-0">
-                    <span className="bg-gradient-to-r from-teal-600 to-emerald-600 bg-clip-text text-lg font-bold tracking-[0.02em] text-transparent">
-                        Turkish Rug House
+            <div className="admin-sidebar-surface h-full flex flex-col shadow-[1px_0_16px_rgba(15,23,42,0.03)] z-20 relative">
+                <div className={`h-[80px] flex items-center border-b border-[#dce3ed] shrink-0 transition-all duration-300 ${collapsed ? "justify-center px-3" : "px-6"}`}>
+                    <span className={`bg-gradient-to-r from-teal-600 to-emerald-600 bg-clip-text font-bold tracking-[0.02em] text-transparent transition-all duration-300 ${collapsed ? "text-sm" : "text-lg"}`}>
+                        {collapsed ? "TRH" : "Turkish Rug House"}
                     </span>
                 </div>
 
-                <div className="flex-1 overflow-y-auto py-6 px-4">
+                <div className={`flex-1 overflow-y-auto py-6 transition-all duration-300 ${collapsed ? "px-2" : "px-4"}`}>
                     <nav className="space-y-1">
                         {visibleNavItems.map((item, index) => (
                             <div key={`${item.section}-${item.name}-${index}`}>
@@ -295,30 +296,32 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
                                         <button
                                             type="button"
                                             onClick={() => setActiveItem(null)}
-                                            className={`w-full text-left ${navItemBaseClass} ${activeItem?.id === item.name ? "" : inactiveNavClass}`}
+                                            title={collapsed ? item.name : undefined}
+                                            className={`w-full text-left ${navItemBaseClass} ${collapsed ? "justify-center px-2" : ""} ${activeItem?.id === item.name ? "" : inactiveNavClass}`}
                                             style={activeItem?.id === item.name ? { backgroundColor: "var(--admin-nav-active-bg)", color: "var(--admin-nav-active-text)" } : undefined}
                                         >
                                             <item.icon className="h-4 w-4 shrink-0 transition-transform duration-200 group-hover:scale-110" />
-                                            <span>{item.name}</span>
+                                            {!collapsed ? <span>{item.name}</span> : null}
                                             {item.section === "orders" && orderCount > 0 ? (
                                                 <span className="ml-auto inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[11px] font-semibold text-white">
                                                     {orderCount > 99 ? "99+" : orderCount}
                                                 </span>
                                             ) : null}
-                                            {item.items && (
+                                            {item.items && !collapsed ? (
                                                 <div className={`ml-auto w-1 h-1 rounded-full group-hover:bg-slate-600 ${activeItem?.id === item.name ? 'bg-slate-700' : 'bg-slate-300'
                                                     }`} />
-                                            )}
+                                            ) : null}
                                         </button>
                                     ) : (
                                         <Link
                                             href={item.href}
                                             onClick={() => setActiveItem(null)}
-                                            className={`${navItemBaseClass} ${activeItem?.id === item.name ? "" : inactiveNavClass}`}
+                                            title={collapsed ? item.name : undefined}
+                                            className={`${navItemBaseClass} ${collapsed ? "justify-center px-2" : ""} ${activeItem?.id === item.name ? "" : inactiveNavClass}`}
                                             style={activeItem?.id === item.name ? { backgroundColor: "var(--admin-nav-active-bg)", color: "var(--admin-nav-active-text)" } : undefined}
                                         >
                                             <item.icon className="h-4 w-4 shrink-0 transition-transform duration-200 group-hover:scale-110" />
-                                            <span>{item.name}</span>
+                                            {!collapsed ? <span>{item.name}</span> : null}
                                             {item.section === "orders" && orderCount > 0 ? (
                                                 <span className="ml-auto inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[11px] font-semibold text-white">
                                                     {orderCount > 99 ? "99+" : orderCount}
@@ -330,10 +333,10 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
                                                 </span>
                                             ) : null}
 
-                                            {item.items && (
+                                            {item.items && !collapsed ? (
                                                 <div className={`ml-auto w-1 h-1 rounded-full group-hover:bg-slate-600 ${activeItem?.id === item.name ? 'bg-slate-700' : 'bg-slate-300'
                                                     }`} />
-                                            )}
+                                            ) : null}
                                         </Link>
                                     )}
                                 </div>
@@ -342,7 +345,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
                     </nav>
                 </div>
 
-                <div className="p-4 border-t border-[#e8eef5] bg-slate-50/55">
+                <div className={`border-t border-[#e8eef5] bg-slate-50/55 transition-all duration-300 ${collapsed ? "p-2" : "p-4"}`}>
                     <AdminProfileMenu
                         name={user.name}
                         email={user.email}
@@ -350,16 +353,18 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
                         showName={false}
                         hoverOpenDelayMs={400}
                         side="top"
-                        triggerClassName="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-slate-100"
+                        triggerClassName={`flex w-full items-center rounded-md px-2 py-2 text-left transition-colors hover:bg-slate-100 ${collapsed ? "justify-center gap-0" : "gap-3"}`}
                     >
                         <>
                             <div className="h-8 w-8 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-bold text-xs ring-2 ring-white">
                                 {initials || "AD"}
                             </div>
-                            <div className="flex flex-col">
-                                <span className="text-sm font-medium text-slate-700">{user.name || t.sidebar.adminUser}</span>
-                                <span className="text-[10px] text-muted-foreground">{user.email}</span>
-                            </div>
+                            {!collapsed ? (
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium text-slate-700">{user.name || t.sidebar.adminUser}</span>
+                                    <span className="text-[10px] text-muted-foreground">{user.email}</span>
+                                </div>
+                            ) : null}
                         </>
                     </AdminProfileMenu>
                 </div>

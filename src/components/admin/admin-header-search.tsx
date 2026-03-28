@@ -56,7 +56,7 @@ export function AdminHeaderSearch({ placeholder }: AdminHeaderSearchProps) {
   const showEmpty = useMemo(() => query.trim().length > 0 && open && results.length === 0, [open, query, results.length])
 
   return (
-    <div ref={rootRef} className="relative w-96">
+    <div ref={rootRef} className="relative w-full min-w-0 lg:w-96 lg:max-w-[24rem]">
       <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 admin-header-action" />
       <Input
         id="admin-global-search"

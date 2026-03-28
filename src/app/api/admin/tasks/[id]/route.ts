@@ -46,6 +46,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
         archivedAt: payload.archived === undefined ? undefined : payload.archived ? new Date() : null,
         updatedAt: new Date(),
       },
+      select: { id: true },
     })
 
     if (
@@ -95,6 +96,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       progressNote: parsed.data.progressNote === undefined ? undefined : parsed.data.progressNote || null,
       updatedAt: new Date(),
     },
+    select: { id: true },
   })
 
   if (nextStatus) {

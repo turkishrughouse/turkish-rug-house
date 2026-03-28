@@ -980,7 +980,7 @@ export default function DashboardPage() {
     <div className="p-8 space-y-8 max-w-7xl mx-auto">
 
       {/* 1) KPI Row - Soft & Friendly */}
-      <div className="relative z-[1] grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="relative z-[1] grid grid-cols-1 gap-6 min-[420px]:grid-cols-2 lg:grid-cols-4">
         {[
           {
             label: tx("Total Orders", "Toplam Sipariş"),
