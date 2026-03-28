@@ -8,6 +8,7 @@ import { getCartSummary, getCartUpdateEventName, readCart } from "@/lib/storefro
 import { toast } from "sonner"
 import { buildProductImageAlt, getPrimaryProductImageCandidates } from "@/lib/product-images"
 import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
+import { StorefrontSearchResults, useStorefrontSearch } from "./search-bar"
 
 import { DiscoveryCapsule } from "./discovery-capsule"
 import { formatCurrency, type CurrencySettings } from "@/lib/storefront/currency"
@@ -71,6 +72,13 @@ export function MainHeader({
     const [informationMenu] = useState<MobileMenuItem[]>(initialInformationMenu)
     const [isCompact, setIsCompact] = useState(false)
     const cartPreviewTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const {
+        results: mobileSearchResults,
+        open: mobileSearchOpen,
+        loading: mobileSearchLoading,
+        emptyMessage: mobileSearchEmptyMessage,
+        setOpen: setMobileSearchOpen,
+    } = useStorefrontSearch(mobileSearch)
 
     const resolveCartImageCandidates = (
         item: ReturnType<typeof readCart>[number] & { images?: unknown }
@@ -243,8 +251,10 @@ export function MainHeader({
     const onMobileSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault()
         const query = mobileSearch.trim()
-        const target = query ? `/shop?q=${encodeURIComponent(query)}` : "/shop"
+        const firstResult = mobileSearchResults[0]
+        const target = firstResult?.href || (query ? `/shop?q=${encodeURIComponent(query)}` : "/shop")
         setMobileMenuOpen(false)
+        setMobileSearchOpen(false)
         router.push(target)
     }
 
@@ -341,17 +351,33 @@ export function MainHeader({
                             </span>
                         </Link>
                     </div>
-                    <form onSubmit={onMobileSearchSubmit} className="flex h-12 overflow-hidden border border-slate-300 bg-white">
-                        <input
-                            value={mobileSearch}
-                            onChange={(event) => setMobileSearch(event.target.value)}
-                            placeholder="Search for products"
-                            className="h-full flex-1 px-4 text-lg text-slate-700 placeholder:text-slate-400 outline-none"
+                    <div className="relative">
+                        <form onSubmit={onMobileSearchSubmit} className="flex h-12 overflow-hidden border border-slate-300 bg-white">
+                            <input
+                                value={mobileSearch}
+                                onChange={(event) => setMobileSearch(event.target.value)}
+                                onFocus={() => {
+                                    if (mobileSearch.trim().length >= 1) setMobileSearchOpen(true)
+                                }}
+                                placeholder="Search for products"
+                                className="h-full flex-1 px-4 text-lg text-slate-700 placeholder:text-slate-400 outline-none"
+                            />
+                            <button type="submit" className="inline-flex h-full w-14 items-center justify-center bg-emerald-700 text-white">
+                                <Search className="h-5 w-5" />
+                            </button>
+                        </form>
+                        <StorefrontSearchResults
+                            query={mobileSearch}
+                            results={mobileSearchResults}
+                            open={mobileSearchOpen}
+                            loading={mobileSearchLoading}
+                            emptyMessage={mobileSearchEmptyMessage}
+                            className="absolute left-0 right-0 top-[calc(100%+8px)] z-[240] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_20px_40px_rgba(15,23,42,0.12)]"
+                            onSelect={() => {
+                                setMobileSearchOpen(false)
+                            }}
                         />
-                        <button type="submit" className="inline-flex h-full w-14 items-center justify-center bg-emerald-700 text-white">
-                            <Search className="h-5 w-5" />
-                        </button>
-                    </form>
+                    </div>
                 </div>
 
                 <div className={`hidden md:flex items-center justify-between transition-all duration-200 ${isCompact ? "h-14" : "h-20"}`}>
@@ -477,19 +503,36 @@ export function MainHeader({
                             </button>
                         </div>
 
-                        <form onSubmit={onMobileSearchSubmit} className="border-b border-slate-300 bg-white px-4 py-4">
-                            <div className="flex h-12 items-center border border-slate-300 bg-white">
-                                <input
-                                    value={mobileSearch}
-                                    onChange={(event) => setMobileSearch(event.target.value)}
-                                    placeholder="Search for products"
-                                    className="h-full flex-1 px-3 text-[17px] text-slate-700 outline-none placeholder:text-slate-400"
+                        <div className="border-b border-slate-300 bg-white px-4 py-4">
+                            <div className="relative">
+                                <form onSubmit={onMobileSearchSubmit} className="flex h-12 items-center border border-slate-300 bg-white">
+                                    <input
+                                        value={mobileSearch}
+                                        onChange={(event) => setMobileSearch(event.target.value)}
+                                        onFocus={() => {
+                                            if (mobileSearch.trim().length >= 1) setMobileSearchOpen(true)
+                                        }}
+                                        placeholder="Search for products"
+                                        className="h-full flex-1 px-3 text-[17px] text-slate-700 outline-none placeholder:text-slate-400"
+                                    />
+                                    <button type="submit" className="inline-flex h-full w-12 items-center justify-center text-slate-500">
+                                        <Search className="h-6 w-6" />
+                                    </button>
+                                </form>
+                                <StorefrontSearchResults
+                                    query={mobileSearch}
+                                    results={mobileSearchResults}
+                                    open={mobileSearchOpen}
+                                    loading={mobileSearchLoading}
+                                    emptyMessage={mobileSearchEmptyMessage}
+                                    className="absolute left-0 right-0 top-[calc(100%+8px)] z-[260] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_20px_40px_rgba(15,23,42,0.12)]"
+                                    onSelect={() => {
+                                        setMobileSearchOpen(false)
+                                        setMobileMenuOpen(false)
+                                    }}
                                 />
-                                <button type="submit" className="inline-flex h-full w-12 items-center justify-center text-slate-500">
-                                    <Search className="h-6 w-6" />
-                                </button>
                             </div>
-                        </form>
+                        </div>
 
                         <div className="grid grid-cols-2 border-b border-slate-300 bg-[#ececec]">
                             <button

@@ -23,7 +23,7 @@ type ProductItem = {
     types?: Array<{ slug: string; name?: string | null }>
 }
 
-type SearchResult = {
+export type SearchResult = {
     id: string
     title: string
     subtitle?: string
@@ -71,33 +71,18 @@ function SearchResultImage({ title, image, imageCandidates = [] }: { title: stri
     )
 }
 
-export function SearchBar() {
-    const router = useRouter()
-    const rootRef = useRef<HTMLDivElement | null>(null)
-    const [query, setQuery] = useState("")
+export function useStorefrontSearch(query: string) {
     const [results, setResults] = useState<SearchResult[]>([])
-    const [activeIndex, setActiveIndex] = useState(-1)
     const [open, setOpen] = useState(false)
     const [loading, setLoading] = useState(false)
     const latestRequestRef = useRef(0)
 
-    useEffect(() => {
-        const closeOnOutside = (event: MouseEvent) => {
-            if (!rootRef.current) return
-            if (!rootRef.current.contains(event.target as Node)) {
-                setOpen(false)
-            }
-        }
-        document.addEventListener("mousedown", closeOnOutside)
-        return () => document.removeEventListener("mousedown", closeOnOutside)
-    }, [])
+    const normalizedQuery = normalizeSearchQuery(query)
 
     useEffect(() => {
-        const term = normalizeSearchQuery(query)
-        if (term.length < 1) {
+        if (normalizedQuery.length < 1) {
             setResults([])
             setOpen(false)
-            setActiveIndex(-1)
             setLoading(false)
             return
         }
@@ -109,7 +94,7 @@ export function SearchBar() {
         const timer = setTimeout(async () => {
             setLoading(true)
             try {
-                const productRes = await fetch(`/api/v1/public/products?limit=8&q=${encodeURIComponent(term)}&sort=latest`, {
+                const productRes = await fetch(`/api/v1/public/products?limit=8&q=${encodeURIComponent(normalizedQuery)}&sort=latest`, {
                     cache: "no-store",
                     signal: controller.signal,
                 })
@@ -141,13 +126,11 @@ export function SearchBar() {
 
                 if (latestRequestRef.current !== requestId) return
                 setResults(productResults.slice(0, 8))
-                setActiveIndex(-1)
                 setOpen(true)
             } catch (error) {
                 if (controller.signal.aborted) return
                 console.error("SearchBar search request failed:", error)
                 setResults([])
-                setActiveIndex(-1)
                 setOpen(false)
             } finally {
                 if (latestRequestRef.current === requestId) {
@@ -160,13 +143,110 @@ export function SearchBar() {
             controller.abort()
             clearTimeout(timer)
         }
-    }, [query])
+    }, [normalizedQuery])
 
     const emptyMessage = useMemo(() => {
         if (loading) return "Searching..."
         if (query.trim().length < 1) return "Start typing to search products"
         return "No results found"
     }, [loading, query])
+
+    return {
+        results,
+        open,
+        loading,
+        emptyMessage,
+        setOpen,
+    }
+}
+
+export function StorefrontSearchResults({
+    query,
+    results,
+    open,
+    loading,
+    emptyMessage,
+    activeIndex = -1,
+    className = "absolute top-full left-0 right-0 mt-2 rounded-xl border border-slate-200 bg-white shadow-[0_20px_40px_rgba(15,23,42,0.12)] overflow-hidden z-[60]",
+    onSelect,
+}: {
+    query: string
+    results: SearchResult[]
+    open: boolean
+    loading: boolean
+    emptyMessage: string
+    activeIndex?: number
+    className?: string
+    onSelect: (item: SearchResult) => void
+}) {
+    if (!open) return null
+
+    return (
+        <div className={className}>
+            {results.length > 0 ? (
+                <ul className="max-h-96 overflow-y-auto py-2">
+                    <li className="px-4 pb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                        Products
+                    </li>
+                    {results.map((item, index) => (
+                        <li key={item.id}>
+                            <Link
+                                href={item.href}
+                                onClick={() => {
+                                    saveSearch({ query: query.trim(), href: item.href, type: item.type })
+                                    onSelect(item)
+                                }}
+                                className={`flex items-center justify-between gap-3 px-4 py-2.5 transition-colors ${activeIndex === index ? "bg-slate-100" : "hover:bg-slate-50"}`}
+                            >
+                                <div className="flex min-w-0 items-center gap-3">
+                                    <div className="h-11 w-11 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+                                        {item.image ? (
+                                            <SearchResultImage title={item.title} image={item.image} imageCandidates={item.imageCandidates} />
+                                        ) : null}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="truncate text-sm font-semibold text-slate-900">{item.title}</p>
+                                        {item.subtitle ? (
+                                            <p className="truncate text-xs text-slate-500">{item.subtitle}</p>
+                                        ) : null}
+                                    </div>
+                                </div>
+                                <div className="shrink-0 text-right">
+                                    {typeof item.price === "number" ? (
+                                        <span className="text-sm font-semibold text-slate-900">${item.price.toFixed(2)}</span>
+                                    ) : null}
+                                </div>
+                            </Link>
+                        </li>
+                    ))}
+                </ul>
+            ) : (
+                <div className="flex items-center gap-2 px-4 py-4 text-sm text-slate-500">
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    <span>{emptyMessage}</span>
+                </div>
+            )}
+        </div>
+    )
+}
+
+export function SearchBar() {
+    const router = useRouter()
+    const rootRef = useRef<HTMLDivElement | null>(null)
+    const [query, setQuery] = useState("")
+    const [activeIndex, setActiveIndex] = useState(-1)
+    const { results, open, loading, emptyMessage, setOpen } = useStorefrontSearch(query)
+
+    useEffect(() => {
+        const closeOnOutside = (event: MouseEvent) => {
+            if (!rootRef.current) return
+            if (!rootRef.current.contains(event.target as Node)) {
+                setOpen(false)
+            }
+        }
+        document.addEventListener("mousedown", closeOnOutside)
+        return () => document.removeEventListener("mousedown", closeOnOutside)
+    }, [])
 
     const handleEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "ArrowDown") {
@@ -227,54 +307,18 @@ export function SearchBar() {
                 <span className="hidden md:inline">Search</span>
             </button>
 
-            {open && (
-                <div className="absolute top-full left-0 right-0 mt-2 rounded-xl border border-slate-200 bg-white shadow-[0_20px_40px_rgba(15,23,42,0.12)] overflow-hidden z-[60]">
-                    {results.length > 0 ? (
-                        <ul className="max-h-96 overflow-y-auto py-2">
-                            <li className="px-4 pb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                                Products
-                            </li>
-                            {results.map((item, index) => (
-                                <li key={item.id}>
-                                    <Link
-                                        href={item.href}
-                                        onClick={() => {
-                                            saveSearch({ query: query.trim(), href: item.href, type: item.type })
-                                            setOpen(false)
-                                            setActiveIndex(-1)
-                                        }}
-                                        className={`flex items-center justify-between gap-3 px-4 py-2.5 transition-colors ${activeIndex === index ? "bg-slate-100" : "hover:bg-slate-50"}`}
-                                    >
-                                        <div className="flex min-w-0 items-center gap-3">
-                                            <div className="h-11 w-11 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
-                                                {item.image ? (
-                                                    <SearchResultImage title={item.title} image={item.image} imageCandidates={item.imageCandidates} />
-                                                ) : null}
-                                            </div>
-                                            <div className="min-w-0">
-                                                <p className="truncate text-sm font-semibold text-slate-900">{item.title}</p>
-                                                {item.subtitle ? (
-                                                    <p className="truncate text-xs text-slate-500">{item.subtitle}</p>
-                                                ) : null}
-                                            </div>
-                                        </div>
-                                        <div className="shrink-0 text-right">
-                                            {typeof item.price === "number" ? (
-                                                <span className="text-sm font-semibold text-slate-900">${item.price.toFixed(2)}</span>
-                                            ) : null}
-                                        </div>
-                                    </Link>
-                                </li>
-                            ))}
-                        </ul>
-                    ) : (
-                        <div className="flex items-center gap-2 px-4 py-4 text-sm text-slate-500">
-                            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                            <span>{emptyMessage}</span>
-                        </div>
-                    )}
-                </div>
-            )}
+            <StorefrontSearchResults
+                query={query}
+                results={results}
+                open={open}
+                loading={loading}
+                emptyMessage={emptyMessage}
+                activeIndex={activeIndex}
+                onSelect={() => {
+                    setOpen(false)
+                    setActiveIndex(-1)
+                }}
+            />
         </div>
     )
 }
