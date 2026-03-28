@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle } from "@/components/ui/dialog"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
@@ -164,6 +164,7 @@ const PRODUCT_PERIOD_OPTIONS = [
   { value: "month", labelEn: "This Month", labelTr: "Bu Ay" },
   { value: "year", labelEn: "This Year", labelTr: "Bu Yıl" },
 ] as const
+const PRODUCT_CREATOR_PAGE_SIZE = 20
 
 const COUNTRY_COORDS: Record<string, { lat: number; lng: number }> = {
   US: { lat: 39, lng: -98 },
@@ -309,6 +310,285 @@ function DeviceBadge({ label }: { label: string }) {
     </span>
   )
 }
+
+type ProductCreatorPaginationProps = {
+  page: number
+  totalPages: number
+  onPageChange: (page: number) => void
+  previousLabel: string
+  nextLabel: string
+}
+
+const ProductCreatorPagination = memo(function ProductCreatorPagination({
+  page,
+  totalPages,
+  onPageChange,
+  previousLabel,
+  nextLabel,
+}: ProductCreatorPaginationProps) {
+  if (totalPages <= 1) return null
+
+  const pages = Array.from({ length: totalPages }, (_, index) => index + 1)
+
+  return (
+    <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#e6ecf4] pt-3">
+      <button
+        type="button"
+        onClick={() => onPageChange(page - 1)}
+        disabled={page === 1}
+        className="rounded-md border border-[#dce3ed] bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {previousLabel}
+      </button>
+      <div className="flex items-center gap-1.5">
+        {pages.map((pageNumber) => (
+          <button
+            key={pageNumber}
+            type="button"
+            onClick={() => onPageChange(pageNumber)}
+            className={cn(
+              "h-8 min-w-8 rounded-md border px-2 text-xs font-semibold transition-colors",
+              pageNumber === page
+                ? "border-slate-900 bg-slate-900 text-white"
+                : "border-[#dce3ed] bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+            )}
+            aria-current={pageNumber === page ? "page" : undefined}
+          >
+            {pageNumber}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => onPageChange(page + 1)}
+        disabled={page === totalPages}
+        className="rounded-md border border-[#dce3ed] bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {nextLabel}
+      </button>
+    </div>
+  )
+})
+
+type ProductCreatorListPanelProps = {
+  title: string
+  description: string
+  total: number
+  productsLabel: string
+  selectedUserId: string
+  onSelectedUserIdChange: (value: string) => void
+  selectUserLabel: string
+  users: ProductCreatorUserOption[]
+  selectedPeriod: "week" | "month" | "year"
+  onSelectedPeriodChange: (value: "week" | "month" | "year") => void
+  periodOptions: typeof PRODUCT_PERIOD_OPTIONS
+  isTr: boolean
+  selectedUserLabel: string
+  selectedUserEmail: string
+  loading: boolean
+  loadingLabel: string
+  emptyLabel: string
+  products: ProductCreatorProduct[]
+  previousLabel: string
+  nextLabel: string
+}
+
+type ProductActivityCard = {
+  key: string
+  label: string
+  value: number
+  breakdown: Array<{ creator: string; count: number }>
+}
+
+const ProductCreatorListPanel = memo(function ProductCreatorListPanel({
+  title,
+  description,
+  total,
+  productsLabel,
+  selectedUserId,
+  onSelectedUserIdChange,
+  selectUserLabel,
+  users,
+  selectedPeriod,
+  onSelectedPeriodChange,
+  periodOptions,
+  isTr,
+  selectedUserLabel,
+  selectedUserEmail,
+  loading,
+  loadingLabel,
+  emptyLabel,
+  products,
+  previousLabel,
+  nextLabel,
+}: ProductCreatorListPanelProps) {
+  const [page, setPage] = useState(1)
+  const handleUserChange = useCallback((value: string) => {
+    setPage(1)
+    onSelectedUserIdChange(value)
+  }, [onSelectedUserIdChange])
+  const handlePeriodChange = useCallback((value: "week" | "month" | "year") => {
+    setPage(1)
+    onSelectedPeriodChange(value)
+  }, [onSelectedPeriodChange])
+
+  const { paginatedProducts, totalPages } = useMemo(() => {
+    const nextTotalPages = Math.max(1, Math.ceil(products.length / PRODUCT_CREATOR_PAGE_SIZE))
+    const currentPage = Math.min(page, nextTotalPages)
+    const startIndex = (currentPage - 1) * PRODUCT_CREATOR_PAGE_SIZE
+    return {
+      paginatedProducts: products.slice(startIndex, startIndex + PRODUCT_CREATOR_PAGE_SIZE),
+      totalPages: nextTotalPages,
+    }
+  }, [page, products])
+
+  return (
+    <div className="rounded-xl border border-[#e6ecf4] bg-slate-50 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{title}</p>
+          <p className="mt-1 text-xs text-slate-500">{description}</p>
+        </div>
+        <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+          {total} {productsLabel}
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3">
+        <select
+          value={selectedUserId}
+          onChange={(event) => handleUserChange(event.target.value)}
+          className="h-11 rounded-md border border-[#dce3ed] bg-white px-3 text-sm text-slate-700"
+        >
+          <option value="">{selectUserLabel}</option>
+          {users.map((user) => (
+            <option key={user.id} value={user.id}>{user.label}</option>
+          ))}
+        </select>
+        <select
+          value={selectedPeriod}
+          onChange={(event) => handlePeriodChange(event.target.value as "week" | "month" | "year")}
+          className="h-11 rounded-md border border-[#dce3ed] bg-white px-3 text-sm text-slate-700"
+        >
+          {periodOptions.map((option) => (
+            <option key={`${title}-${option.value}`} value={option.value}>{isTr ? option.labelTr : option.labelEn}</option>
+          ))}
+        </select>
+      </div>
+      <div className="mt-4 rounded-lg border border-[#e6ecf4] bg-white p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-slate-900">{selectedUserLabel}</p>
+            <p className="truncate text-xs text-slate-500">{selectedUserEmail}</p>
+          </div>
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{total}</span>
+        </div>
+      </div>
+      <div className="mt-3 space-y-2">
+        {loading ? (
+          <div className="rounded-lg border border-[#e6ecf4] bg-white p-3 text-xs text-slate-500">{loadingLabel}</div>
+        ) : products.length === 0 ? (
+          <div className="rounded-lg border border-[#e6ecf4] bg-white p-3 text-xs text-slate-500">{emptyLabel}</div>
+        ) : (
+          paginatedProducts.map((product) => (
+            <div key={`${title}-${product.id}`} className="rounded-lg border border-[#e6ecf4] bg-white p-3">
+              <p className="truncate text-sm font-semibold text-slate-900">{product.title}</p>
+              <div className="mt-1 flex items-center justify-between gap-3 text-xs text-slate-500">
+                <span className="truncate">{product.sku || product.slug}</span>
+                <span className="shrink-0">{new Date(product.createdAt).toLocaleDateString()}</span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+      {!loading && products.length > 0 ? (
+        <ProductCreatorPagination
+          page={Math.min(page, totalPages)}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          previousLabel={previousLabel}
+          nextLabel={nextLabel}
+        />
+      ) : null}
+    </div>
+  )
+})
+
+type ProductActivityPanelProps = {
+  title: string
+  description: string
+  totalProducts: number
+  activeLabel: string
+  creatorBreakdownLabel: string
+  liveLabel: string
+  noCreatorDataLabel: string
+  noCreatorRecordsLabel: string
+  cards: ProductActivityCard[]
+}
+
+const ProductActivityPanel = memo(function ProductActivityPanel({
+  title,
+  description,
+  totalProducts,
+  activeLabel,
+  creatorBreakdownLabel,
+  liveLabel,
+  noCreatorDataLabel,
+  noCreatorRecordsLabel,
+  cards,
+}: ProductActivityPanelProps) {
+  return (
+    <div className="rounded-xl border border-[#e6ecf4] bg-slate-50 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{title}</p>
+          <p className="mt-1 text-xs text-slate-500">{description}</p>
+        </div>
+        <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+          {totalProducts} {activeLabel}
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {cards.map((card) => (
+          <div key={card.key} className="rounded-lg border border-[#e6ecf4] bg-white p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{card.label}</p>
+            <p className="mt-2 text-2xl font-bold text-slate-900">{card.value}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {card.breakdown[0] ? `${card.breakdown[0].creator} • ${card.breakdown[0].count}` : noCreatorDataLabel}
+            </p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 rounded-lg border border-[#e6ecf4] bg-white p-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-slate-900">{creatorBreakdownLabel}</p>
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{liveLabel}</span>
+        </div>
+        <div className="mt-3 space-y-2">
+          {cards.map((card) => (
+            <div key={`breakdown-${card.key}`} className="rounded-lg border border-[#e6ecf4] bg-slate-50 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{card.label}</p>
+                <span className="text-xs font-semibold text-slate-700">{card.value}</span>
+              </div>
+              {card.breakdown.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-500">{noCreatorRecordsLabel}</p>
+              ) : (
+                <div className="mt-2 space-y-1.5">
+                  {card.breakdown.slice(0, 3).map((row) => (
+                    <div key={`${card.key}-${row.creator}`} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="truncate text-slate-700">{row.creator}</span>
+                      <span className="shrink-0 font-semibold text-slate-900">{row.count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+})
 
 export default function DashboardPage() {
   const [isTr, setIsTr] = useState(false)
@@ -712,7 +992,7 @@ export default function DashboardPage() {
   }, [])
 
   const isLimitedRole = role === "ADMIN" || role === "EDITOR"
-  const tx = (en: string, tr: string) => (isTr ? tr : en)
+  const tx = useCallback((en: string, tr: string) => (isTr ? tr : en), [isTr])
   const formatDuration = (valueMs: number | null | undefined) => {
     const totalSeconds = Math.max(0, Math.round(Number(valueMs || 0) / 1000))
     const minutes = Math.floor(totalSeconds / 60)
@@ -947,12 +1227,25 @@ export default function DashboardPage() {
     () => productCreatorData?.adminUsers.find((entry) => entry.id === selectedAdminUserId) || null,
     [productCreatorData?.adminUsers, selectedAdminUserId]
   )
-  const productActivityCards = [
-    { key: "today", label: tx("Today", "Bugün"), value: summary.productsAdded.today, breakdown: summary.productsAddedBy.today },
-    { key: "week", label: tx("Week", "Hafta"), value: summary.productsAdded.week, breakdown: summary.productsAddedBy.week },
-    { key: "month", label: tx("Month", "Ay"), value: summary.productsAdded.month, breakdown: summary.productsAddedBy.month },
-    { key: "year", label: tx("Year", "Yıl"), value: summary.productsAdded.year, breakdown: summary.productsAddedBy.year },
-  ] as const
+  const stableProductActivityCards = useMemo(
+    () => [
+      { key: "today", label: tx("Today", "Bugün"), value: summary.productsAdded.today, breakdown: [...summary.productsAddedBy.today] },
+      { key: "week", label: tx("Week", "Hafta"), value: summary.productsAdded.week, breakdown: [...summary.productsAddedBy.week] },
+      { key: "month", label: tx("Month", "Ay"), value: summary.productsAdded.month, breakdown: [...summary.productsAddedBy.month] },
+      { key: "year", label: tx("Year", "Yıl"), value: summary.productsAdded.year, breakdown: [...summary.productsAddedBy.year] },
+    ] satisfies ProductActivityCard[],
+    [
+      tx,
+      summary.productsAdded.today,
+      summary.productsAdded.week,
+      summary.productsAdded.month,
+      summary.productsAdded.year,
+      summary.productsAddedBy.today,
+      summary.productsAddedBy.week,
+      summary.productsAddedBy.month,
+      summary.productsAddedBy.year,
+    ]
+  )
 
   const openOrdersOverlay = (country: string | null = null) => {
     closeAllOverlays()
@@ -1458,174 +1751,63 @@ export default function DashboardPage() {
               <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto px-5 py-4">
                 <div className="min-w-[1100px]">
                   <div className="grid gap-4 xl:grid-cols-3">
-                    <div className="rounded-xl border border-[#e6ecf4] bg-slate-50 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{tx("Super Users", "Super Userlar")}</p>
-                          <p className="mt-1 text-xs text-slate-500">{tx("Real product creation data by selected super user.", "Seçilen super user için gerçek ürün oluşturma verisi.")}</p>
-                        </div>
-                        <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                          {productCreatorData?.superUserSection.total || 0} {tx("products", "ürün")}
-                        </div>
-                      </div>
-                      <div className="mt-4 grid gap-3">
-                        <select
-                          value={selectedSuperUserId}
-                          onChange={(event) => setSelectedSuperUserId(event.target.value)}
-                          className="h-11 rounded-md border border-[#dce3ed] bg-white px-3 text-sm text-slate-700"
-                        >
-                          <option value="">{tx("Select super user", "Super user seç")}</option>
-                          {(productCreatorData?.superUsers || []).map((user) => (
-                            <option key={user.id} value={user.id}>{user.label}</option>
-                          ))}
-                        </select>
-                        <select
-                          value={selectedSuperUserPeriod}
-                          onChange={(event) => setSelectedSuperUserPeriod(event.target.value as "week" | "month" | "year")}
-                          className="h-11 rounded-md border border-[#dce3ed] bg-white px-3 text-sm text-slate-700"
-                        >
-                          {PRODUCT_PERIOD_OPTIONS.map((option) => (
-                            <option key={`super-${option.value}`} value={option.value}>{isTr ? option.labelTr : option.labelEn}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="mt-4 rounded-lg border border-[#e6ecf4] bg-white p-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-900">{selectedSuperUserOption?.label || tx("No super user selected", "Super user seçilmedi")}</p>
-                            <p className="truncate text-xs text-slate-500">{selectedSuperUserOption?.email || tx("Choose a super user to inspect their product activity.", "Ürün aktivitesini görmek için bir super user seçin.")}</p>
-                          </div>
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{productCreatorData?.superUserSection.total || 0}</span>
-                        </div>
-                      </div>
-                      <div className="mt-3 space-y-2">
-                        {productCreatorLoading ? (
-                          <div className="rounded-lg border border-[#e6ecf4] bg-white p-3 text-xs text-slate-500">{tx("Loading products...", "Ürünler yükleniyor...")}</div>
-                        ) : !productCreatorData?.superUserSection.products.length ? (
-                          <div className="rounded-lg border border-[#e6ecf4] bg-white p-3 text-xs text-slate-500">{tx("No products found for this super user in the selected period.", "Seçilen dönemde bu super user için ürün bulunamadı.")}</div>
-                        ) : (
-                          productCreatorData.superUserSection.products.map((product) => (
-                            <div key={`super-product-${product.id}`} className="rounded-lg border border-[#e6ecf4] bg-white p-3">
-                              <p className="truncate text-sm font-semibold text-slate-900">{product.title}</p>
-                              <div className="mt-1 flex items-center justify-between gap-3 text-xs text-slate-500">
-                                <span className="truncate">{product.sku || product.slug}</span>
-                                <span className="shrink-0">{new Date(product.createdAt).toLocaleDateString()}</span>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
+                    <ProductCreatorListPanel
+                      title={tx("Super Users", "Super Userlar")}
+                      description={tx("Real product creation data by selected super user.", "Seçilen super user için gerçek ürün oluşturma verisi.")}
+                      total={productCreatorData?.superUserSection.total || 0}
+                      productsLabel={tx("products", "ürün")}
+                      selectedUserId={selectedSuperUserId}
+                      onSelectedUserIdChange={setSelectedSuperUserId}
+                      selectUserLabel={tx("Select super user", "Super user seç")}
+                      users={productCreatorData?.superUsers || []}
+                      selectedPeriod={selectedSuperUserPeriod}
+                      onSelectedPeriodChange={setSelectedSuperUserPeriod}
+                      periodOptions={PRODUCT_PERIOD_OPTIONS}
+                      isTr={isTr}
+                      selectedUserLabel={selectedSuperUserOption?.label || tx("No super user selected", "Super user seçilmedi")}
+                      selectedUserEmail={selectedSuperUserOption?.email || tx("Choose a super user to inspect their product activity.", "Ürün aktivitesini görmek için bir super user seçin.")}
+                      loading={productCreatorLoading}
+                      loadingLabel={tx("Loading products...", "Ürünler yükleniyor...")}
+                      emptyLabel={tx("No products found for this super user in the selected period.", "Seçilen dönemde bu super user için ürün bulunamadı.")}
+                      products={productCreatorData?.superUserSection.products || []}
+                      previousLabel={tx("Previous", "Önceki")}
+                      nextLabel={tx("Next", "Sonraki")}
+                    />
 
-                    <div className="rounded-xl border border-[#e6ecf4] bg-slate-50 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{tx("Admin Users", "Admin Kullanıcılar")}</p>
-                          <p className="mt-1 text-xs text-slate-500">{tx("Real product creation data by selected admin user.", "Seçilen admin kullanıcı için gerçek ürün oluşturma verisi.")}</p>
-                        </div>
-                        <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                          {productCreatorData?.adminSection.total || 0} {tx("products", "ürün")}
-                        </div>
-                      </div>
-                      <div className="mt-4 grid gap-3">
-                        <select
-                          value={selectedAdminUserId}
-                          onChange={(event) => setSelectedAdminUserId(event.target.value)}
-                          className="h-11 rounded-md border border-[#dce3ed] bg-white px-3 text-sm text-slate-700"
-                        >
-                          <option value="">{tx("Select admin user", "Admin kullanıcı seç")}</option>
-                          {(productCreatorData?.adminUsers || []).map((user) => (
-                            <option key={user.id} value={user.id}>{user.label}</option>
-                          ))}
-                        </select>
-                        <select
-                          value={selectedAdminUserPeriod}
-                          onChange={(event) => setSelectedAdminUserPeriod(event.target.value as "week" | "month" | "year")}
-                          className="h-11 rounded-md border border-[#dce3ed] bg-white px-3 text-sm text-slate-700"
-                        >
-                          {PRODUCT_PERIOD_OPTIONS.map((option) => (
-                            <option key={`admin-${option.value}`} value={option.value}>{isTr ? option.labelTr : option.labelEn}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="mt-4 rounded-lg border border-[#e6ecf4] bg-white p-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-900">{selectedAdminUserOption?.label || tx("No admin user selected", "Admin kullanıcı seçilmedi")}</p>
-                            <p className="truncate text-xs text-slate-500">{selectedAdminUserOption?.email || tx("Choose an admin user to inspect their product activity.", "Ürün aktivitesini görmek için bir admin kullanıcı seçin.")}</p>
-                          </div>
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{productCreatorData?.adminSection.total || 0}</span>
-                        </div>
-                      </div>
-                      <div className="mt-3 space-y-2">
-                        {productCreatorLoading ? (
-                          <div className="rounded-lg border border-[#e6ecf4] bg-white p-3 text-xs text-slate-500">{tx("Loading products...", "Ürünler yükleniyor...")}</div>
-                        ) : !productCreatorData?.adminSection.products.length ? (
-                          <div className="rounded-lg border border-[#e6ecf4] bg-white p-3 text-xs text-slate-500">{tx("No products found for this admin user in the selected period.", "Seçilen dönemde bu admin kullanıcı için ürün bulunamadı.")}</div>
-                        ) : (
-                          productCreatorData.adminSection.products.map((product) => (
-                            <div key={`admin-product-${product.id}`} className="rounded-lg border border-[#e6ecf4] bg-white p-3">
-                              <p className="truncate text-sm font-semibold text-slate-900">{product.title}</p>
-                              <div className="mt-1 flex items-center justify-between gap-3 text-xs text-slate-500">
-                                <span className="truncate">{product.sku || product.slug}</span>
-                                <span className="shrink-0">{new Date(product.createdAt).toLocaleDateString()}</span>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
+                    <ProductCreatorListPanel
+                      title={tx("Admin Users", "Admin Kullanıcılar")}
+                      description={tx("Real product creation data by selected admin user.", "Seçilen admin kullanıcı için gerçek ürün oluşturma verisi.")}
+                      total={productCreatorData?.adminSection.total || 0}
+                      productsLabel={tx("products", "ürün")}
+                      selectedUserId={selectedAdminUserId}
+                      onSelectedUserIdChange={setSelectedAdminUserId}
+                      selectUserLabel={tx("Select admin user", "Admin kullanıcı seç")}
+                      users={productCreatorData?.adminUsers || []}
+                      selectedPeriod={selectedAdminUserPeriod}
+                      onSelectedPeriodChange={setSelectedAdminUserPeriod}
+                      periodOptions={PRODUCT_PERIOD_OPTIONS}
+                      isTr={isTr}
+                      selectedUserLabel={selectedAdminUserOption?.label || tx("No admin user selected", "Admin kullanıcı seçilmedi")}
+                      selectedUserEmail={selectedAdminUserOption?.email || tx("Choose an admin user to inspect their product activity.", "Ürün aktivitesini görmek için bir admin kullanıcı seçin.")}
+                      loading={productCreatorLoading}
+                      loadingLabel={tx("Loading products...", "Ürünler yükleniyor...")}
+                      emptyLabel={tx("No products found for this admin user in the selected period.", "Seçilen dönemde bu admin kullanıcı için ürün bulunamadı.")}
+                      products={productCreatorData?.adminSection.products || []}
+                      previousLabel={tx("Previous", "Önceki")}
+                      nextLabel={tx("Next", "Sonraki")}
+                    />
 
-                    <div className="rounded-xl border border-[#e6ecf4] bg-slate-50 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{tx("Live Product Activity", "Canlı Ürün Aktivitesi")}</p>
-                          <p className="mt-1 text-xs text-slate-500">{tx("Real-time product totals and creator breakdown from the dashboard summary source.", "Dashboard summary kaynağından gerçek zamanlı ürün toplamları ve creator dağılımı.")}</p>
-                        </div>
-                        <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                          {summary.totalProducts} {tx("active", "aktif")}
-                        </div>
-                      </div>
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        {productActivityCards.map((card) => (
-                          <div key={card.key} className="rounded-lg border border-[#e6ecf4] bg-white p-3">
-                            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{card.label}</p>
-                            <p className="mt-2 text-2xl font-bold text-slate-900">{card.value}</p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              {card.breakdown[0] ? `${card.breakdown[0].creator} • ${card.breakdown[0].count}` : tx("No creator data", "Creator verisi yok")}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-4 rounded-lg border border-[#e6ecf4] bg-white p-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-semibold text-slate-900">{tx("Creator breakdown", "Creator dağılımı")}</p>
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{tx("Live", "Canlı")}</span>
-                        </div>
-                        <div className="mt-3 space-y-2">
-                          {productActivityCards.map((card) => (
-                            <div key={`breakdown-${card.key}`} className="rounded-lg border border-[#e6ecf4] bg-slate-50 p-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{card.label}</p>
-                                <span className="text-xs font-semibold text-slate-700">{card.value}</span>
-                              </div>
-                              {card.breakdown.length === 0 ? (
-                                <p className="mt-2 text-xs text-slate-500">{tx("No creator records in this period.", "Bu dönemde creator kaydı yok.")}</p>
-                              ) : (
-                                <div className="mt-2 space-y-1.5">
-                                  {card.breakdown.slice(0, 3).map((row) => (
-                                    <div key={`${card.key}-${row.creator}`} className="flex items-center justify-between gap-3 text-xs">
-                                      <span className="truncate text-slate-700">{row.creator}</span>
-                                      <span className="shrink-0 font-semibold text-slate-900">{row.count}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
+                    <ProductActivityPanel
+                      title={tx("Live Product Activity", "Canlı Ürün Aktivitesi")}
+                      description={tx("Real-time product totals and creator breakdown from the dashboard summary source.", "Dashboard summary kaynağından gerçek zamanlı ürün toplamları ve creator dağılımı.")}
+                      totalProducts={summary.totalProducts}
+                      activeLabel={tx("active", "aktif")}
+                      creatorBreakdownLabel={tx("Creator breakdown", "Creator dağılımı")}
+                      liveLabel={tx("Live", "Canlı")}
+                      noCreatorDataLabel={tx("No creator data", "Creator verisi yok")}
+                      noCreatorRecordsLabel={tx("No creator records in this period.", "Bu dönemde creator kaydı yok.")}
+                      cards={stableProductActivityCards}
+                    />
                   </div>
                 </div>
               </div>
