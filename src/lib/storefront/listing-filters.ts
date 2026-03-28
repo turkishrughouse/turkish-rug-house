@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client"
+import { isSizeSearchTerm } from "@/lib/size-filter"
 
 export type ListingSearchParams = { [key: string]: string | string[] | undefined }
 
@@ -106,7 +107,7 @@ export function buildProductSearchWhere(query: string): Prisma.ProductWhereInput
         .filter(Boolean),
     ),
   )
-  const textTerms = terms.filter((term) => !isPureNumericToken(term))
+  const textTerms = terms.filter((term) => !isPureNumericToken(term) && !isSizeSearchTerm(term))
   const slugLike = textTerms.join("-")
 
   const clauses: Prisma.ProductWhereInput[] = textTerms.map((term) => ({

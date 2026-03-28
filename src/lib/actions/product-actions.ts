@@ -14,6 +14,7 @@ import { normalizeSuppliers, type SupplierRecord } from "@/lib/supplier-prefix"
 import { syncProductSupplierBySku } from "@/lib/supplier-registry"
 import { buildProductSearchWhere, extractPriceIntent, normalizeListingColor, normalizeListingSize, normalizeListingText } from "@/lib/storefront/listing-filters"
 import { getPrimaryProductImage, getPrimaryProductImageCandidates } from "@/lib/product-images"
+import { buildSizeSearchAliases } from "@/lib/size-filter"
 import {
     buildVisibleAttributesFromSelections,
     getAttributeGroups,
@@ -167,19 +168,7 @@ function normalizeSizeValue(value: string | null | undefined) {
 }
 
 function extractSizeQueries(query: string) {
-    const normalized = normalizeSearchText(query)
-    const matches = normalized.matchAll(/(\d+(?:\.\d+)?)\s*(?:x|by)\s*(\d+(?:\.\d+)?)/g)
-    const values = new Set<string>()
-
-    for (const match of matches) {
-        const width = match[1]
-        const length = match[2]
-        if (!width || !length) continue
-        values.add(`${width}x${length}`)
-        values.add(`${width} x ${length}`)
-    }
-
-    return values
+    return new Set(buildSizeSearchAliases(query))
 }
 
 type ProductSearchCandidate = {
@@ -253,8 +242,8 @@ function scoreProductSearchCandidate(product: ProductSearchCandidate, query: str
     if (colorValues.some((value) => value === normalizeListingColor(normalizedQuery))) score += 220
     else if (colorValues.some((value) => value.includes(normalizeListingColor(normalizedQuery)))) score += 120
 
-    const sizeQueries = extractSizeQueries(normalizedQuery)
-    if (sizeQueries.size > 0 && sizeValues.some((value) => Array.from(sizeQueries).some((sizeQuery) => value.includes(normalizeSizeValue(sizeQuery))))) {
+    const sizeQueries = Array.from(extractSizeQueries(normalizedQuery)).map((sizeQuery) => normalizeSizeValue(sizeQuery))
+    if (sizeQueries.length > 0 && sizeValues.some((value) => sizeQueries.some((sizeQuery) => value.includes(sizeQuery)))) {
         score += 420
     }
 
@@ -276,7 +265,7 @@ function scoreProductSearchCandidate(product: ProductSearchCandidate, query: str
         } else if (sku && sku.includes(token)) {
             score += 70
             tokenMatched = true
-        } else if (sizeValues.some((value) => value.includes(normalizeSizeValue(token)))) {
+        } else if (sizeValues.some((value) => buildSizeSearchAliases(token).map((alias) => normalizeSizeValue(alias)).some((alias) => value.includes(alias)))) {
             score += 80
             tokenMatched = true
         } else if (colorValues.some((value) => value.includes(normalizeListingColor(token)))) {

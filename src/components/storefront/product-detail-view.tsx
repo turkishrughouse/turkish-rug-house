@@ -260,8 +260,20 @@ export function ProductDetailView({
   )
 }
 
-function formatExactProductDimensions(value: string) {
-  return formatExactCmSizeDisplay(value) || value
+function formatExactProductDimensions(value: string, approximateBucket?: string | null) {
+  const formatted = formatExactCmSizeDisplay(value)
+  if (!formatted) return value
+
+  const match = formatted.match(/^(.+?) cm - (.+?)x(.+?) Feet$/)
+  if (!match) return formatted
+
+  const metric = match[1].replace(/\s*x\s*/g, " × ")
+  const imperial = `${match[2]} × ${match[3]}`
+  const approx = approximateBucket?.trim()
+    ? ` — Approx. ${approximateBucket.trim().replace(/\s*x\s*/gi, " × ")} ft`
+    : ""
+
+  return `${metric} cm (${imperial})${approx}`
 }
 
 function buildProductSpecificationRows(product: ProductDetailData) {
@@ -279,6 +291,7 @@ function buildProductSpecificationRows(product: ProductDetailData) {
   const exactDimensionRow = normalizedRows.find((row) =>
     ["dimensions", "dimension", "measurements", "measurements (cm)", "dimensions (cm)", "size cm", "exact size", "size (cm)"].includes(row.key)
   )
+  const storefrontSizeBucketRow = normalizedRows.find((row) => row.key === "size")
   const storefrontSizeBucketKeys = new Set(["size"])
 
   const preferredOrder = [
@@ -298,7 +311,7 @@ function buildProductSpecificationRows(product: ProductDetailData) {
       matchedKeys.add(match.key)
       return {
         label: item.label,
-        value: item.label === "Size" ? formatExactProductDimensions(match.value) : match.value,
+        value: item.label === "Size" ? formatExactProductDimensions(match.value, exactDimensionRow ? storefrontSizeBucketRow?.value : null) : match.value,
       }
     })
     .filter((item): item is { label: string; value: string } => Boolean(item))
