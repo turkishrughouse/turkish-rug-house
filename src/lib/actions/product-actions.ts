@@ -702,16 +702,14 @@ export async function getProducts(
         ? await getSearchSupplementalData(products.map((product) => product.id))
         : new Map<string, { shortDescription: string | null; customAttributeValues: string[] }>()
 
-    const enrichedProducts = hasQuery
-        ? products.map((product) => {
-            const supplemental = searchSupplementalData.get(product.id)
-            return {
-                ...product,
-                shortDescription: supplemental?.shortDescription ?? null,
-                customAttributeValues: supplemental?.customAttributeValues ?? [],
-            }
-        })
-        : products
+    const enrichedProducts = products.map((product) => {
+        const supplemental = searchSupplementalData.get(product.id)
+        return {
+            ...product,
+            shortDescription: supplemental?.shortDescription ?? null,
+            customAttributeValues: supplemental?.customAttributeValues ?? [],
+        }
+    })
 
     const rankedEntries = hasQuery
         ? enrichedProducts
