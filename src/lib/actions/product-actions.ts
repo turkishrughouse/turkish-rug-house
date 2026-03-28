@@ -175,6 +175,9 @@ type ProductSearchCandidate = {
     title: string
     slug: string
     sku: string | null
+    description: string | null
+    shortDescription: string | null
+    customAttributeValues: string[]
     price: Prisma.Decimal | number
     createdAt: Date
     categories: Array<{ title: string; slug: string }>
@@ -182,6 +185,8 @@ type ProductSearchCandidate = {
     types: Array<{ name: string; slug: string }>
     colors: Array<{ name: string; slug: string }>
     sizes: Array<{ name: string; slug: string }>
+    ages: Array<{ name: string; slug: string }>
+    materials: Array<{ name: string; slug: string }>
 }
 
 function scorePriceProximity(price: number, intent: ReturnType<typeof extractPriceIntent>) {
@@ -213,11 +218,18 @@ function scoreProductSearchCandidate(product: ProductSearchCandidate, query: str
     const slug = normalizeSearchText(product.slug)
     const sku = normalizeSearchText(product.sku)
     const price = Number(product.price || 0)
+    const description = normalizeSearchText(product.description)
+    const shortDescription = normalizeSearchText(product.shortDescription)
     const categoryValues = product.categories.flatMap((item) => [normalizeSearchText(item.title), normalizeSearchText(item.slug)])
     const styleValues = product.styles.flatMap((item) => [normalizeSearchText(item.name), normalizeSearchText(item.slug)])
     const typeValues = product.types.flatMap((item) => [normalizeSearchText(item.name), normalizeSearchText(item.slug)])
     const colorValues = product.colors.flatMap((item) => [normalizeListingColor(item.name), normalizeListingColor(item.slug)])
     const sizeValues = product.sizes.flatMap((item) => [normalizeSizeValue(item.name), normalizeSizeValue(item.slug)])
+    const ageValues = product.ages.flatMap((item) => [normalizeSearchText(item.name), normalizeSearchText(item.slug)])
+    const materialValues = product.materials.flatMap((item) => [normalizeSearchText(item.name), normalizeSearchText(item.slug)])
+    const customAttributeValues = product.customAttributeValues.map((value) => normalizeSearchText(value))
+    const keyAttributeValues = [...styleValues, ...typeValues, ...colorValues, ...sizeValues, ...ageValues, ...materialValues, ...customAttributeValues]
+    const secondaryValues = [shortDescription, description].filter(Boolean)
 
     let score = 0
 
@@ -233,19 +245,16 @@ function scoreProductSearchCandidate(product: ProductSearchCandidate, query: str
     if (categoryValues.some((value) => value === normalizedQuery)) score += 220
     else if (categoryValues.some((value) => value.includes(normalizedQuery))) score += 120
 
-    if (styleValues.some((value) => value === normalizedQuery)) score += 220
-    else if (styleValues.some((value) => value.includes(normalizedQuery))) score += 120
-
-    if (typeValues.some((value) => value === normalizedQuery)) score += 220
-    else if (typeValues.some((value) => value.includes(normalizedQuery))) score += 120
-
-    if (colorValues.some((value) => value === normalizeListingColor(normalizedQuery))) score += 220
-    else if (colorValues.some((value) => value.includes(normalizeListingColor(normalizedQuery)))) score += 120
+    if (keyAttributeValues.some((value) => value === normalizeSearchText(normalizedQuery))) score += 260
+    else if (keyAttributeValues.some((value) => value.includes(normalizeSearchText(normalizedQuery)))) score += 150
 
     const sizeQueries = Array.from(extractSizeQueries(normalizedQuery)).map((sizeQuery) => normalizeSizeValue(sizeQuery))
     if (sizeQueries.length > 0 && sizeValues.some((value) => sizeQueries.some((sizeQuery) => value.includes(sizeQuery)))) {
         score += 420
     }
+
+    if (secondaryValues.some((value) => value === normalizedQuery)) score += 140
+    else if (secondaryValues.some((value) => value.includes(normalizedQuery))) score += 70
 
     const priceIntent = extractPriceIntent(normalizedQuery)
     score += scorePriceProximity(price, priceIntent)
@@ -271,13 +280,21 @@ function scoreProductSearchCandidate(product: ProductSearchCandidate, query: str
         } else if (colorValues.some((value) => value.includes(normalizeListingColor(token)))) {
             score += 70
             tokenMatched = true
+        } else if (keyAttributeValues.some((value) => value.includes(token))) {
+            score += 65
+            tokenMatched = true
+        } else if (secondaryValues.some((value) => value.includes(token))) {
+            score += 35
+            tokenMatched = true
         } else if (priceIntent && /^\d/.test(token) && scorePriceProximity(price, priceIntent) > 0) {
             score += 75
             tokenMatched = true
         } else if (
             categoryValues.some((value) => value.includes(token)) ||
             styleValues.some((value) => value.includes(token)) ||
-            typeValues.some((value) => value.includes(token))
+            typeValues.some((value) => value.includes(token)) ||
+            materialValues.some((value) => value.includes(token)) ||
+            ageValues.some((value) => value.includes(token))
         ) {
             score += 45
             tokenMatched = true
@@ -412,6 +429,43 @@ function mergeCustomAttributes(primary: CustomAttribute[], secondary: CustomAttr
     }
 
     return Array.from(merged.values())
+}
+
+function flattenCustomAttributeSearchValues(attributes: CustomAttribute[]) {
+    return attributes.flatMap((attribute) => [attribute.name, ...attribute.values]).filter(Boolean)
+}
+
+async function getSearchSupplementalData(productIds: string[]) {
+    if (productIds.length === 0) return new Map<string, { shortDescription: string | null; customAttributeValues: string[] }>()
+
+    await Promise.all([ensureShortDescriptionColumn(), ensureCustomAttributesColumn()])
+
+    const rows = await db.$queryRaw<Array<{ id: string; shortDescription: string | null; customAttributes: string | null }>>`
+        SELECT "id", "shortDescription", "customAttributes"
+        FROM "Product"
+        WHERE "id" IN (${Prisma.join(productIds)})
+    `
+
+    return new Map(
+        rows.map((row) => {
+            let customAttributeValues: string[] = []
+            if (row.customAttributes) {
+                try {
+                    customAttributeValues = flattenCustomAttributeSearchValues(normalizeCustomAttributes(JSON.parse(row.customAttributes)))
+                } catch {
+                    customAttributeValues = []
+                }
+            }
+
+            return [
+                row.id,
+                {
+                    shortDescription: row.shortDescription ?? null,
+                    customAttributeValues,
+                },
+            ] as const
+        }),
+    )
 }
 
 async function findConflictingProductSku(sku: string, currentProductId?: string) {
@@ -588,8 +642,7 @@ export async function getProducts(
             }
             : null
 
-    const where: Prisma.ProductWhereInput = {
-        AND: buildProductSearchWhere(query),
+    const baseWhere: Prisma.ProductWhereInput = {
         isPublished: status === 'published' ? true : status === 'draft' ? false : undefined,
         categories: filters?.categoryIds?.length ? {
             some: {
@@ -621,44 +674,64 @@ export async function getProducts(
             : undefined,
     }
 
-    const candidateTake = hasQuery ? Math.min(Math.max(limit * page * 5, 40), 200) : limit
+    const baseTotal = await db.product.count({ where: baseWhere })
+    const candidateTake = hasQuery ? Math.min(Math.max(baseTotal, limit * page * 8, 120), 1000) : limit
     const candidateSkip = hasQuery ? 0 : skip
 
-    const [products, total] = await Promise.all([
-        db.product.findMany({
-            where,
-            skip: candidateSkip,
-            take: candidateTake,
-            orderBy,
-            include: {
-                categories: {
-                    include: {
-                        parent: true
-                    }
-                },
-                types: true,
-                styles: true,
-                colors: true,
-                sizes: true,
-            }
-        }),
-        db.product.count({ where })
-    ])
+    const products = await db.product.findMany({
+        where: hasQuery ? baseWhere : { ...baseWhere, AND: buildProductSearchWhere(query) },
+        skip: candidateSkip,
+        take: candidateTake,
+        orderBy,
+        include: {
+            categories: {
+                include: {
+                    parent: true
+                }
+            },
+            types: true,
+            styles: true,
+            colors: true,
+            sizes: true,
+            ages: true,
+            materials: true,
+        }
+    })
 
-    const rankedProducts = hasQuery
-        ? products
+    const searchSupplementalData = hasQuery
+        ? await getSearchSupplementalData(products.map((product) => product.id))
+        : new Map<string, { shortDescription: string | null; customAttributeValues: string[] }>()
+
+    const enrichedProducts = hasQuery
+        ? products.map((product) => {
+            const supplemental = searchSupplementalData.get(product.id)
+            return {
+                ...product,
+                shortDescription: supplemental?.shortDescription ?? null,
+                customAttributeValues: supplemental?.customAttributeValues ?? [],
+            }
+        })
+        : products
+
+    const rankedEntries = hasQuery
+        ? enrichedProducts
             .map((product) => ({
                 product,
                 ...scoreProductSearchCandidate(product, query),
             }))
+            .filter((entry) => entry.score > 0)
             .sort((left, right) => {
                 if (right.score !== left.score) return right.score - left.score
                 if (right.matchedTokens !== left.matchedTokens) return right.matchedTokens - left.matchedTokens
                 return right.product.createdAt.getTime() - left.product.createdAt.getTime()
             })
-            .slice(skip, skip + limit)
-            .map((entry) => entry.product)
+        : []
+
+    const rankedProducts = hasQuery
+        ? rankedEntries.slice(skip, skip + limit).map((entry) => entry.product)
         : products
+
+    const total = hasQuery ? rankedEntries.length : baseTotal
 
     const serializedProducts = rankedProducts.map(product => ({
         ...product,

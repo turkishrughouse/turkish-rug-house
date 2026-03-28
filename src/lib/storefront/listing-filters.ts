@@ -115,11 +115,14 @@ export function buildProductSearchWhere(query: string): Prisma.ProductWhereInput
       { title: { contains: term } },
       { slug: { contains: term } },
       { sku: { contains: term } },
+      { description: { contains: term } },
       { categories: { some: { OR: [{ title: { contains: term } }, { slug: { contains: term } }] } } },
       { styles: { some: { OR: [{ name: { contains: term } }, { slug: { contains: term } }] } } },
       { types: { some: { OR: [{ name: { contains: term } }, { slug: { contains: term } }] } } },
       { colors: { some: { OR: [{ name: { contains: normalizeListingColor(term) } }, { slug: { contains: normalizeListingColor(term) } }] } } },
       { sizes: { some: { OR: [{ name: { contains: term } }, { slug: { contains: normalizeListingSize(term) } }] } } },
+      { ages: { some: { OR: [{ name: { contains: term } }, { slug: { contains: term } }] } } },
+      { materials: { some: { OR: [{ name: { contains: term } }, { slug: { contains: term } }] } } },
     ],
   }))
 
