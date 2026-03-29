@@ -569,13 +569,13 @@ export async function renderCategoryPage({
                     const largeCandidates = getProductImageUrlCandidates(parsedImages[0], "large")
                     return (
                       <Link key={product.id} href={`/product/${product.slug}`} className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-slate-50">
-                        <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+                        <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-slate-50 p-1">
                           <StorefrontProductImage
                             candidates={[...thumbCandidates, ...largeCandidates]}
                             alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt, categories: product.categories })}
                             fill
                             sizes="48px"
-                            className="object-cover object-center"
+                            className=""
                           />
                         </div>
                         <div className="min-w-0">
@@ -787,7 +787,7 @@ export async function renderCategoryPage({
                       const image = getProductImageUrl(parsedImages[0], "large") || "/placeholder.jpg"
                       return (
                         <Link key={product.id} href={`/product/${product.slug}`} className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 hover:bg-slate-50 sm:flex-row">
-                          <div className="h-40 w-full overflow-hidden rounded-md border border-slate-200 sm:h-36 sm:w-36 sm:shrink-0"><img src={image} alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt, categories: product.categories })} loading="lazy" decoding="async" className="h-full w-full object-cover transition-transform duration-300 hover:scale-105" /></div>
+                          <div className="flex h-40 w-full items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-slate-50 p-3 sm:h-36 sm:w-36 sm:shrink-0"><img src={image} alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt, categories: product.categories })} loading="lazy" decoding="async" className="h-full w-full object-contain transition-transform duration-300 hover:scale-105" /></div>
                           <div className="min-w-0 flex-1">
                             <p className="line-clamp-2 text-lg font-serif font-bold text-slate-900">{product.title}</p>
                             <p className="mt-1 text-sm text-slate-500">{product.categories?.map((c) => c.title).slice(0, 2).join(", ") || "Rug House Collection"}</p>

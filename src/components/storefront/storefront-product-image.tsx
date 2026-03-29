@@ -53,6 +53,7 @@ export function StorefrontProductImage({
         className={className}
         priority={priority}
         quality={75}
+        style={{ objectFit: "contain", objectPosition: "center" }}
         unoptimized={src.startsWith("/uploads/") || src === PLACEHOLDER_IMAGE_URL || /^https?:\/\//i.test(src)}
         onError={handleError}
       />
@@ -69,6 +70,7 @@ export function StorefrontProductImage({
       className={className}
       priority={priority}
       quality={75}
+      style={{ width: "100%", height: "auto", objectFit: "contain", objectPosition: "center" }}
       unoptimized={src.startsWith("/uploads/") || src === PLACEHOLDER_IMAGE_URL || /^https?:\/\//i.test(src)}
       onError={handleError}
     />

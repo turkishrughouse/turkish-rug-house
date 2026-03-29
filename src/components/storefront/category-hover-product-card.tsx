@@ -72,7 +72,7 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
     <div className="group/card relative z-10 self-start origin-top rounded-xl border border-slate-200 bg-white p-3 transition-all duration-300 hover:z-30 hover:scale-[1.035] hover:shadow-2xl">
       <div className="relative">
         <Link href={`/product/${product.slug}`} className="block">
-          <div className="relative aspect-square overflow-hidden rounded-md bg-slate-100">
+          <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-md bg-slate-50 p-3">
             {isMarkedOutOfStock ? (
               <span className="pointer-events-none absolute left-2 top-2 z-20 rounded-sm bg-red-600 px-2 py-1 text-[10px] font-semibold tracking-[0.08em] text-white">
                 OUT OF STOCK
@@ -270,7 +270,7 @@ export function CategoryHoverProductCardClient({ product }: { product: ClientOve
                   loading="lazy"
                   decoding="async"
                   style={{ width: "100%", height: "auto" }}
-                  className="aspect-[4/5] w-full object-cover"
+                  className="aspect-[4/5] w-full object-contain"
                 />
 
                 {gallery.length > 1 ? (

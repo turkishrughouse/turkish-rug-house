@@ -44,7 +44,7 @@ export function ShopProductCard({
 
   return (
     <a href={`/product/${product.slug}`} className="group block">
-      <div className="relative aspect-[4/5] w-full overflow-hidden rounded-lg bg-slate-100">
+      <div className="relative flex aspect-[4/5] w-full items-center justify-center overflow-hidden rounded-lg bg-slate-50 p-3">
         <ProductRatingBadge productId={product.id} />
         {isMarkedOutOfStock ? (
           <span className="pointer-events-none absolute left-2 top-2 z-20 rounded-sm bg-red-600 px-2 py-1 text-[10px] font-semibold tracking-[0.08em] text-white">
@@ -64,7 +64,7 @@ export function ShopProductCard({
           alt={mainImageAlt}
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-          className="object-cover object-center transition-transform duration-300 group-hover:scale-105"
+          className="transition-transform duration-300 group-hover:scale-105"
         />
         <ShopProductCardActions
           catalogMode={catalogMode}

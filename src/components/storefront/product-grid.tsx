@@ -41,7 +41,7 @@ export function ProductGrid({ products }: ProductGridProps) {
                 return (
                     <Link key={product.id} href={`/product/${product.slug}`} className="group block">
                         {/* Image */}
-                        <div className="aspect-[4/5] w-full overflow-hidden rounded-lg bg-slate-100 relative">
+                        <div className="relative flex aspect-[4/5] w-full items-center justify-center overflow-hidden rounded-lg bg-slate-50 p-3">
                             {isMarkedOutOfStock ? (
                                 <span className="pointer-events-none absolute left-2 top-2 z-20 rounded-sm bg-red-600 px-2 py-1 text-[10px] font-semibold tracking-[0.08em] text-white">
                                     OUT OF STOCK
@@ -61,7 +61,7 @@ export function ProductGrid({ products }: ProductGridProps) {
                                 loading="lazy"
                                 decoding="async"
                                 style={{ width: "100%", height: "auto" }}
-                                className="h-full w-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                                className="h-full w-full object-contain object-center group-hover:scale-105 transition-transform duration-300"
                             />
                             {/* Hover Action Bar */}
                             <div className="pointer-events-none absolute left-1/2 bottom-4 -translate-x-1/2 translate-y-3 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">

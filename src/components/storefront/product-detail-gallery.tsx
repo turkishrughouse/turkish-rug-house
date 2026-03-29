@@ -149,7 +149,7 @@ function GalleryState({
         <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-2">
           <button
             type="button"
-            className="group relative block aspect-square w-full overflow-hidden rounded-lg bg-white"
+            className="group relative flex w-full items-center justify-center rounded-lg bg-slate-50 p-3"
             onMouseMove={(event) => {
               if (!hoverZoomEnabled) return
               const bounds = event.currentTarget.getBoundingClientRect()
@@ -191,7 +191,7 @@ function GalleryState({
               priority
               sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 40vw"
               quality={85}
-              className={`h-full w-full object-contain object-center transition-transform duration-300 ${hoverZoomEnabled ? "cursor-zoom-in" : "group-hover:scale-105"}`}
+              className={`w-full transition-transform duration-300 ${hoverZoomEnabled ? "cursor-zoom-in" : "group-hover:scale-105"}`}
             />
             {hoverZoomEnabled ? (
               <div
