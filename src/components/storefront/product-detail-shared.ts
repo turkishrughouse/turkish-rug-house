@@ -111,11 +111,16 @@ export function buildProductGallery(product: ProductDetailData): ProductGalleryI
     const zoomSrcCandidates = getProductImageUrlCandidates(image, "master")
     const srcCandidates = getProductImageUrlCandidates(image, "large")
     const thumbSrcCandidates = getProductImageUrlCandidates(image, "thumb")
+    const zoomSrc =
+      zoomSrcCandidates.find((src) => src.toLowerCase().includes("master")) ||
+      zoomSrcCandidates.find((src) => src.toLowerCase().includes("original")) ||
+      zoomSrcCandidates[0] ||
+      srcCandidates[0]
 
     return {
       src: srcCandidates[0] || "/placeholder.jpg",
       srcCandidates,
-      zoomSrc: zoomSrcCandidates[0] || srcCandidates[0] || "/placeholder.jpg",
+      zoomSrc: zoomSrc || "/placeholder.jpg",
       zoomSrcCandidates,
       thumbSrc: thumbSrcCandidates[0] || srcCandidates[0] || "/placeholder.jpg",
       thumbSrcCandidates,

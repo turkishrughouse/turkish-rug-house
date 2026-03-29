@@ -71,6 +71,7 @@ function GalleryState({
 
   const activeImageIndex = selectedImage >= 0 && selectedImage < gallery.length ? selectedImage : 0
   const selectedGalleryImage = gallery[activeImageIndex] || gallery[0]
+  const zoomSrc = selectedGalleryImage.zoomSrc
 
   const resetZoomState = useCallback(() => {
     setMainImageZoomActive(false)
@@ -195,7 +196,7 @@ function GalleryState({
               <div
                 className={`pointer-events-none absolute inset-0 rounded-lg bg-white/5 transition-opacity duration-150 ${mainImageZoomActive ? "opacity-100" : "opacity-0"}`}
                 style={{
-                  backgroundImage: `url(${selectedGalleryImage.zoomSrcCandidates[0] || selectedGalleryImage.zoomSrc})`,
+                  backgroundImage: `url(${zoomSrc})`,
                   backgroundPosition: zoomBackgroundPosition,
                   backgroundRepeat: "no-repeat",
                   backgroundSize: "240%",
