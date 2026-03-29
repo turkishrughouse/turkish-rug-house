@@ -150,6 +150,7 @@ function GalleryState({
           <button
             type="button"
             className="group relative flex w-full items-center justify-center rounded-lg bg-slate-50 p-3"
+            style={{ height: "auto", maxHeight: "none", aspectRatio: "auto" }}
             onMouseMove={(event) => {
               if (!hoverZoomEnabled) return
               const bounds = event.currentTarget.getBoundingClientRect()
