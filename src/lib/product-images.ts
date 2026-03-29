@@ -83,12 +83,27 @@ function buildVariantCandidates(
   image: ProductImageRecord,
   preferredVariant: "thumb" | "large" | "master"
 ) {
-  const sources = [
-    image.variants?.thumb,
-    image.variants?.large,
-    image.variants?.master,
-    image.image_url,
-  ]
+  const sources =
+    preferredVariant === "thumb"
+      ? [
+          image.variants?.thumb,
+          image.variants?.large,
+          image.variants?.master,
+          image.image_url,
+        ]
+      : preferredVariant === "large"
+        ? [
+            image.variants?.large,
+            image.variants?.master,
+            image.image_url,
+            image.variants?.thumb,
+          ]
+        : [
+            image.variants?.master,
+            image.image_url,
+            image.variants?.large,
+            image.variants?.thumb,
+          ]
 
   const variantOrder =
     preferredVariant === "thumb"

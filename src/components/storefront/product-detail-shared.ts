@@ -107,23 +107,29 @@ export function buildProductGallery(product: ProductDetailData): ProductGalleryI
     ]
   }
 
-  return records.map((image, index) => ({
-    src: getProductImageUrl(image, "large") || "/placeholder.jpg",
-    srcCandidates: getProductImageUrlCandidates(image, "large"),
-    zoomSrc: getProductImageUrl(image, "master") || getProductImageUrl(image, "large") || "/placeholder.jpg",
-    zoomSrcCandidates: getProductImageUrlCandidates(image, "master"),
-    thumbSrc: getProductImageUrl(image, "thumb") || getProductImageUrl(image, "large") || "/placeholder.jpg",
-    thumbSrcCandidates: getProductImageUrlCandidates(image, "thumb"),
-    alt: buildProductImageAlt({
-      title: product.title,
-      fallbackAlt: image.alt,
-      categories: product.categories,
-      customAttributes: product.customAttributes,
-      index,
-    }),
-    width: image.width ?? 1200,
-    height: image.height ?? 1200,
-  }))
+  return records.map((image, index) => {
+    const zoomSrcCandidates = getProductImageUrlCandidates(image, "master")
+    const srcCandidates = getProductImageUrlCandidates(image, "large")
+    const thumbSrcCandidates = getProductImageUrlCandidates(image, "thumb")
+
+    return {
+      src: srcCandidates[0] || "/placeholder.jpg",
+      srcCandidates,
+      zoomSrc: zoomSrcCandidates[0] || srcCandidates[0] || "/placeholder.jpg",
+      zoomSrcCandidates,
+      thumbSrc: thumbSrcCandidates[0] || srcCandidates[0] || "/placeholder.jpg",
+      thumbSrcCandidates,
+      alt: buildProductImageAlt({
+        title: product.title,
+        fallbackAlt: image.alt,
+        categories: product.categories,
+        customAttributes: product.customAttributes,
+        index,
+      }),
+      width: image.width ?? 1200,
+      height: image.height ?? 1200,
+    }
+  })
 }
 
 export function getProductDescriptionState(product: ProductDetailData, shippingContent?: string | null) {

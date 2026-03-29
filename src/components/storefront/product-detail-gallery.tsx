@@ -15,6 +15,7 @@ function GalleryImageWithFallback({
   sizes,
   className,
   priority = false,
+  quality = 88,
 }: {
   src: string
   candidates: string[]
@@ -24,6 +25,7 @@ function GalleryImageWithFallback({
   sizes: string
   className?: string
   priority?: boolean
+  quality?: number
 }) {
   const normalizedCandidates = Array.from(new Set([src, ...candidates].filter(Boolean)))
   const [candidateIndex, setCandidateIndex] = useState(0)
@@ -39,7 +41,7 @@ function GalleryImageWithFallback({
       sizes={sizes}
       className={className}
       priority={priority}
-      quality={80}
+      quality={quality}
       unoptimized={currentSrc.startsWith("/uploads/") || /^https?:\/\//i.test(currentSrc)}
       onError={() => {
         setCandidateIndex((prev) => (prev + 1 < normalizedCandidates.length ? prev + 1 : prev))
@@ -186,13 +188,14 @@ function GalleryState({
               height={selectedGalleryImage.height}
               priority
               sizes="(max-width: 1280px) 100vw, 50vw"
+              quality={90}
               className={`h-full w-full object-contain object-center transition-transform duration-300 ${hoverZoomEnabled ? "cursor-zoom-in" : "group-hover:scale-105"}`}
             />
             {hoverZoomEnabled ? (
               <div
                 className={`pointer-events-none absolute inset-0 rounded-lg bg-white/5 transition-opacity duration-150 ${mainImageZoomActive ? "opacity-100" : "opacity-0"}`}
                 style={{
-                  backgroundImage: `url(${selectedGalleryImage.zoomSrc})`,
+                  backgroundImage: `url(${selectedGalleryImage.zoomSrcCandidates[0] || selectedGalleryImage.zoomSrc})`,
                   backgroundPosition: zoomBackgroundPosition,
                   backgroundRepeat: "no-repeat",
                   backgroundSize: "240%",
@@ -267,6 +270,7 @@ function GalleryState({
                   width={selectedGalleryImage.width}
                   height={selectedGalleryImage.height}
                   sizes="92vw"
+                  quality={96}
                   className="max-h-[88vh] w-auto object-contain"
                 />
               </button>

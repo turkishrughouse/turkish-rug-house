@@ -20,7 +20,6 @@ import { usePathname } from "next/navigation"
 import { getUnreadOpenOrderCount } from "@/lib/admin/notification-state"
 import { canAccessAdminSection } from "@/lib/rbac"
 import { adminText, resolveAdminLanguage } from "@/lib/admin/i18n"
-import { AdminProfileMenu } from "@/components/admin/profile-menu"
 
 type NavSubItem = {
     name: string
@@ -127,13 +126,6 @@ export function AdminSidebar({ user, collapsed = false }: AdminSidebarProps) {
         { name: t.sidebar.settings, href: "/dashboard/settings", section: "settings", icon: Settings },
     ]
 
-    const initials = (user.name || user.email)
-        .split(" ")
-        .filter(Boolean)
-        .map((p) => p[0])
-        .join("")
-        .slice(0, 2)
-        .toUpperCase()
     const visibleNavItems = navItems.filter((item) => canAccessAdminSection(user.role, item.section))
     const canSeeOrders = canAccessAdminSection(user.role, "orders")
     const canSeeMessages = canAccessAdminSection(user.role, "messages")
@@ -343,30 +335,6 @@ export function AdminSidebar({ user, collapsed = false }: AdminSidebarProps) {
                             </div>
                         ))}
                     </nav>
-                </div>
-
-                <div className={`border-t border-[#e8eef5] bg-slate-50/55 transition-all duration-300 ${collapsed ? "p-2" : "p-4"}`}>
-                    <AdminProfileMenu
-                        name={user.name}
-                        email={user.email}
-                        avatarUrl={user.avatarUrl}
-                        showName={false}
-                        hoverOpenDelayMs={400}
-                        side="top"
-                        triggerClassName={`flex w-full items-center rounded-md px-2 py-2 text-left transition-colors hover:bg-slate-100 ${collapsed ? "justify-center gap-0" : "gap-3"}`}
-                    >
-                        <>
-                            <div className="h-8 w-8 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-bold text-xs ring-2 ring-white">
-                                {initials || "AD"}
-                            </div>
-                            {!collapsed ? (
-                                <div className="flex flex-col">
-                                    <span className="text-sm font-medium text-slate-700">{user.name || t.sidebar.adminUser}</span>
-                                    <span className="text-[10px] text-muted-foreground">{user.email}</span>
-                                </div>
-                            ) : null}
-                        </>
-                    </AdminProfileMenu>
                 </div>
             </div>
 
