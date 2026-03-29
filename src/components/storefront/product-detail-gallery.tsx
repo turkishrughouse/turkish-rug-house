@@ -15,7 +15,7 @@ function GalleryImageWithFallback({
   sizes,
   className,
   priority = false,
-  quality = 88,
+  quality = 85,
 }: {
   src: string
   candidates: string[]
@@ -42,6 +42,7 @@ function GalleryImageWithFallback({
       className={className}
       priority={priority}
       quality={quality}
+      style={{ width: "100%", height: "auto" }}
       unoptimized={currentSrc.startsWith("/uploads/") || /^https?:\/\//i.test(currentSrc)}
       onError={() => {
         setCandidateIndex((prev) => (prev + 1 < normalizedCandidates.length ? prev + 1 : prev))
@@ -135,10 +136,10 @@ function GalleryState({
                 key={`${img.src}-${img.thumbSrc}-${img.thumbSrcCandidates.join("|")}`}
                 src={img.thumbSrc}
                 candidates={img.thumbSrcCandidates}
-                alt={img.alt}
-                width={80}
-                height={80}
-                sizes="80px"
+              alt={img.alt}
+              width={80}
+              height={80}
+              sizes="80px"
                 className="h-full w-full object-cover"
               />
             </button>
@@ -188,8 +189,8 @@ function GalleryState({
               width={selectedGalleryImage.width}
               height={selectedGalleryImage.height}
               priority
-              sizes="(max-width: 1280px) 100vw, 50vw"
-              quality={90}
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 40vw"
+              quality={85}
               className={`h-full w-full object-contain object-center transition-transform duration-300 ${hoverZoomEnabled ? "cursor-zoom-in" : "group-hover:scale-105"}`}
             />
             {hoverZoomEnabled ? (
@@ -270,7 +271,7 @@ function GalleryState({
                   alt={selectedGalleryImage.alt}
                   width={selectedGalleryImage.width}
                   height={selectedGalleryImage.height}
-                  sizes="92vw"
+                  sizes="(max-width: 768px) 100vw, 92vw"
                   quality={96}
                   className="max-h-[88vh] w-auto object-contain"
                 />

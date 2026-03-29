@@ -14,6 +14,7 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/avif"])
+const MIN_MASTER_WIDTH = 1800
 
 function normalizeFolderFromObjectKey(value: string | null | undefined) {
     const clean = sanitizeFolderPath(value || "")
@@ -95,6 +96,16 @@ export async function POST(req: NextRequest) {
         const bytes = await file.arrayBuffer()
         const buffer = Buffer.from(bytes)
         const processed = await processUploadImage(buffer, env.UPLOAD_ENABLE_AVIF)
+        if ((processed.width || 0) < MIN_MASTER_WIDTH) {
+            return NextResponse.json(
+                {
+                    error: `Image resolution too small for product detail. Minimum width is ${MIN_MASTER_WIDTH}px.`,
+                    width: processed.width ?? null,
+                    height: processed.height ?? null,
+                },
+                { status: 400 }
+            )
+        }
         if ((processed.width || 0) < env.UPLOAD_MIN_WIDTH || (processed.height || 0) < env.UPLOAD_MIN_HEIGHT) {
             return NextResponse.json(
                 {

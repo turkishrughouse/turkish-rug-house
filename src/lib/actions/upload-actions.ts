@@ -8,6 +8,7 @@ import { processUploadImage } from "@/lib/storage/image-pipeline"
 import { ensureMediaRegistryTable, findMediaByChecksum, upsertMediaAsset } from "@/lib/media-registry"
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/avif"])
+const MIN_MASTER_WIDTH = 1800
 
 export async function uploadImage(formData: FormData) {
   const file = formData.get("file") as File | null
@@ -27,6 +28,12 @@ export async function uploadImage(formData: FormData) {
 
     const bytes = await file.arrayBuffer()
     const processed = await processUploadImage(Buffer.from(bytes), env.UPLOAD_ENABLE_AVIF)
+    if ((processed.width || 0) < MIN_MASTER_WIDTH) {
+      return {
+        success: false,
+        error: `Image resolution too small for product detail. Minimum width is ${MIN_MASTER_WIDTH}px.`,
+      }
+    }
     const storage = getStorageProvider()
     const base = uuidv4()
     const folder = "general"

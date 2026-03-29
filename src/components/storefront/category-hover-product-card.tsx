@@ -49,7 +49,7 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
       ? arr
       : [{ image_url: "/placeholder.jpg", variants: { thumb: "/placeholder.jpg", large: "/placeholder.jpg", master: "/placeholder.jpg" } }]
   }, [product.images])
-  const mainImage = getProductImageUrl(gallery[0], "thumb") || getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
+  const mainImage = getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
   const primaryLargeImage = getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
   const mainImageAlt = buildProductImageAlt({
     title: product.title,
@@ -91,6 +91,7 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
               alt={mainImageAlt}
               loading="lazy"
               decoding="async"
+              style={{ width: "100%", height: "auto" }}
               className="h-full w-full object-contain object-center transition-transform duration-300 group-hover/card:scale-105"
             />
             <div className="pointer-events-none absolute inset-0 bg-black/20 opacity-0 transition-opacity duration-300 group-hover/card:opacity-100" />
@@ -139,7 +140,7 @@ export function CategoryHoverProductCardClient({ product }: { product: ClientOve
 
   const stockCount = Math.max(0, product.stockCount ?? 999)
   const canBuy = (product.isStock ?? true) && stockCount > 0
-  const mainImage = product.mainImage || getProductImageUrl(gallery[0], "thumb") || getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
+  const mainImage = product.mainImage || getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
   const primaryLargeImage = product.primaryLargeImage || getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
   const fullDescription = stripHtml(product.description) || "Premium handcrafted product with quality materials and authentic details."
   const hasDiscount = Boolean(product.compareAtPrice && product.compareAtPrice > product.price)
@@ -268,6 +269,7 @@ export function CategoryHoverProductCardClient({ product }: { product: ClientOve
                   })}
                   loading="lazy"
                   decoding="async"
+                  style={{ width: "100%", height: "auto" }}
                   className="aspect-[4/5] w-full object-cover"
                 />
 

@@ -111,12 +111,21 @@ export function buildProductGallery(product: ProductDetailData): ProductGalleryI
     const zoomSrcCandidates = getProductImageUrlCandidates(image, "master")
     const srcCandidates = getProductImageUrlCandidates(image, "large")
     const thumbSrcCandidates = getProductImageUrlCandidates(image, "thumb")
-    const zoomSrc =
-      zoomSrcCandidates.find((src) => src.toLowerCase().includes("master")) ||
-      zoomSrcCandidates.find((src) => src.toLowerCase().includes("original")) ||
-      zoomSrcCandidates[0] ||
-      srcCandidates[0]
-    const selectedImageSrc = srcCandidates[0] || "/placeholder.jpg"
+    const masterImage =
+      zoomSrcCandidates.find((src) => src.toLowerCase().includes("master")) || null
+    const selectedImageSrc = masterImage || "/placeholder.jpg"
+
+    if (masterImage && typeof image.width === "number" && image.width < 1800) {
+      console.warn(
+        "[PRODUCT_IMAGE_WARN]",
+        JSON.stringify({
+          productSlug: product.slug,
+          imageSrc: masterImage,
+          width: image.width,
+          height: image.height ?? null,
+        })
+      )
+    }
 
     console.info(
       "[ZOOM_DEBUG]",
@@ -124,14 +133,14 @@ export function buildProductGallery(product: ProductDetailData): ProductGalleryI
         productSlug: product.slug,
         selectedImageSrc,
         candidateList: zoomSrcCandidates,
-        finalZoomSrc: zoomSrc || "/placeholder.jpg",
+        finalZoomSrc: masterImage || "/placeholder.jpg",
       })
     )
 
     return {
       src: selectedImageSrc,
-      srcCandidates,
-      zoomSrc: zoomSrc || "/placeholder.jpg",
+      srcCandidates: masterImage ? [masterImage] : ["/placeholder.jpg"],
+      zoomSrc: masterImage || "/placeholder.jpg",
       zoomSrcCandidates,
       thumbSrc: thumbSrcCandidates[0] || srcCandidates[0] || "/placeholder.jpg",
       thumbSrcCandidates,

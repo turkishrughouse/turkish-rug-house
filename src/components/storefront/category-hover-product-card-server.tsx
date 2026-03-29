@@ -31,10 +31,9 @@ export function CategoryHoverProductCardServer({
   currencySettings?: CurrencySettings
 }) {
   const gallery = parseProductImageRecords(product.images)
-  const imageCandidates = getProductImageUrlCandidates(gallery[0], "thumb")
   const largeCandidates = getProductImageUrlCandidates(gallery[0], "large")
-  const mainImage = imageCandidates[0] || largeCandidates[0] || "/placeholder.jpg"
-  const primaryLargeImage = largeCandidates[0] || mainImage
+  const mainImage = largeCandidates[0] || "/placeholder.jpg"
+  const primaryLargeImage = largeCandidates[0] || "/placeholder.jpg"
   const mainImageAlt = buildProductImageAlt({
     title: product.title,
     fallbackAlt: gallery[0]?.alt,
@@ -71,7 +70,7 @@ export function CategoryHoverProductCardServer({
               </span>
             ) : null}
             <StorefrontProductImage
-              candidates={[...imageCandidates, ...largeCandidates]}
+              candidates={largeCandidates}
               alt={mainImageAlt}
               width={640}
               height={640}

@@ -94,9 +94,9 @@ export async function processUploadImage(
   }
 
   const variants: ImageVariantResult[] = [
-    await makeWebpVariant("thumb", 480, 80),
-    await makeWebpVariant("large", 1400, 84),
-    await makeWebpVariant("master", 2400, 88),
+    await makeWebpVariant("thumb", 480, 82),
+    await makeWebpVariant("large", 1400, 86),
+    await makeWebpVariant("master", 2400, 90),
   ]
 
   if (enableAvif) {
@@ -126,4 +126,3 @@ export async function processUploadImage(
     variants,
   }
 }
-

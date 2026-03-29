@@ -83,44 +83,24 @@ function buildVariantCandidates(
   image: ProductImageRecord,
   preferredVariant: "thumb" | "large" | "master"
 ) {
-  const sources =
+  const exactSource =
     preferredVariant === "thumb"
-      ? [
-          image.variants?.thumb,
-          image.variants?.large,
-          image.variants?.master,
-          image.image_url,
-        ]
+      ? image.variants?.thumb
       : preferredVariant === "large"
-        ? [
-            image.variants?.large,
-            image.variants?.master,
-            image.image_url,
-            image.variants?.thumb,
-          ]
-        : [
-            image.variants?.master,
-            image.image_url,
-            image.variants?.large,
-            image.variants?.thumb,
-          ]
+        ? image.variants?.large
+        : image.variants?.master
 
-  const variantOrder =
-    preferredVariant === "thumb"
-      ? (["thumb", "large", "master"] as const)
-      : preferredVariant === "large"
-        ? (["large", "master", "thumb"] as const)
-        : (["master", "large", "thumb"] as const)
+  const inferredFromPrimary = inferVariantUrl(image.image_url, preferredVariant)
+  const inferredFromExact = inferVariantUrl(exactSource, preferredVariant)
+  const candidates = safeImages([exactSource || "", inferredFromExact, inferredFromPrimary])
 
-  const candidates: string[] = []
-  for (const variant of variantOrder) {
-    for (const source of sources) {
-      const candidate = inferVariantUrl(source, variant)
-      if (candidate) candidates.push(candidate)
-    }
+  if (preferredVariant === "master") {
+    const masterCandidates = candidates.filter((candidate) => candidate.toLowerCase().includes("master"))
+    return masterCandidates.length > 0 ? masterCandidates : [PLACEHOLDER_IMAGE_URL]
   }
 
-  return withPlaceholder(candidates)
+  const strictCandidates = candidates.filter((candidate) => candidate.toLowerCase().includes(`-${preferredVariant}.`))
+  return strictCandidates.length > 0 ? strictCandidates : [PLACEHOLDER_IMAGE_URL]
 }
 
 function parseRawProductImages(value: unknown): Array<string | ProductImageRecord> {
