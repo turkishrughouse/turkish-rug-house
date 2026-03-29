@@ -116,9 +116,20 @@ export function buildProductGallery(product: ProductDetailData): ProductGalleryI
       zoomSrcCandidates.find((src) => src.toLowerCase().includes("original")) ||
       zoomSrcCandidates[0] ||
       srcCandidates[0]
+    const selectedImageSrc = srcCandidates[0] || "/placeholder.jpg"
+
+    console.info(
+      "[ZOOM_DEBUG]",
+      JSON.stringify({
+        productSlug: product.slug,
+        selectedImageSrc,
+        candidateList: zoomSrcCandidates,
+        finalZoomSrc: zoomSrc || "/placeholder.jpg",
+      })
+    )
 
     return {
-      src: srcCandidates[0] || "/placeholder.jpg",
+      src: selectedImageSrc,
       srcCandidates,
       zoomSrc: zoomSrc || "/placeholder.jpg",
       zoomSrcCandidates,
