@@ -39,9 +39,11 @@ async function findMaterials(args?: Parameters<MaterialDelegate["findMany"]>[0])
 
 let productMediaMigrationPromise: Promise<void> | null = null
 let skuColumnReadyPromise: Promise<void> | null = null
+let publishedAtColumnReadyPromise: Promise<void> | null = null
 let featuredColumnReadyPromise: Promise<void> | null = null
 let deletedAtColumnReadyPromise: Promise<void> | null = null
 let productCreatorColumnsReadyPromise: Promise<void> | null = null
+let productSkuIntegrityPromise: Promise<void> | null = null
 let lastTrashPurgeAt = 0
 
 async function ensureCanonicalProductMediaMigration() {
@@ -76,6 +78,128 @@ async function setSkuByProductId(productId: string, sku: string | null | undefin
     await ensureSkuColumn()
     const normalizedSku = sku && sku.trim().length > 0 ? sku.trim() : null
     await db.$executeRaw`UPDATE "Product" SET "sku" = ${normalizedSku} WHERE "id" = ${productId}`
+}
+
+async function ensurePublishedAtColumn() {
+    if (!publishedAtColumnReadyPromise) {
+        publishedAtColumnReadyPromise = (async () => {
+            await addColumnIfMissing(db, "Product", "publishedAt", "TIMESTAMP(3)")
+        })().catch((error) => {
+            publishedAtColumnReadyPromise = null
+            throw error
+        })
+    }
+    await publishedAtColumnReadyPromise
+}
+
+async function getPublishedAtByProductId(productId: string) {
+    await ensurePublishedAtColumn()
+    const rows = await db.$queryRaw<Array<{ publishedAt: string | null }>>`SELECT "publishedAt" FROM "Product" WHERE "id" = ${productId} LIMIT 1`
+    return rows[0]?.publishedAt ?? null
+}
+
+function normalizeSkuValue(input: string | null | undefined) {
+    const normalized = (input || "")
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .replace(/-+/g, "-")
+    return normalized || null
+}
+
+async function generateUniqueProductSku(seed: string | null | undefined, fallbackText?: string, currentProductId?: string) {
+    const fallbackBase = normalizeSkuValue(fallbackText?.replace(/\s+/g, "-")) || `SKU-${Date.now().toString(36).toUpperCase()}`
+    const base = normalizeSkuValue(seed) || fallbackBase
+    let candidate = base
+    let index = 2
+
+    while (true) {
+        const conflict = await findConflictingProductSku(candidate, currentProductId)
+        if (!conflict) {
+            return candidate
+        }
+        candidate = `${base}-${index}`
+        index += 1
+    }
+}
+
+async function resolveUniqueSkuForSave(requestedSku: string | null | undefined, currentProductId?: string, fallbackText?: string) {
+    const normalized = normalizeSkuValue(requestedSku)
+    if (!normalized) return null
+    const conflict = await findConflictingProductSku(normalized, currentProductId)
+    if (!conflict) return normalized
+    return generateUniqueProductSku(`${normalized}-COPY`, fallbackText || normalized, currentProductId)
+}
+
+async function setPublishedStateByProductId(productId: string, isPublished: boolean, options?: { preserveExistingPublishedAt?: boolean }) {
+    await ensurePublishedAtColumn()
+    const existingPublishedAt = options?.preserveExistingPublishedAt ? await getPublishedAtByProductId(productId) : null
+    const publishedAt = isPublished ? (existingPublishedAt ? new Date(existingPublishedAt) : new Date()) : null
+    await db.$executeRaw`UPDATE "Product" SET "isPublished" = ${isPublished}, "publishedAt" = ${publishedAt} WHERE "id" = ${productId}`
+}
+
+async function setPublishedStateByProductIds(productIds: string[], isPublished: boolean) {
+    if (productIds.length === 0) return
+    await ensurePublishedAtColumn()
+    const publishedAt = isPublished ? new Date() : null
+    await db.$executeRaw`UPDATE "Product" SET "isPublished" = ${isPublished}, "publishedAt" = ${publishedAt} WHERE "id" IN (${Prisma.join(productIds)})`
+}
+
+async function repairDuplicateProductSkus() {
+    await ensureSkuColumn()
+    await ensurePublishedAtColumn()
+
+    const duplicateRows = await db.$queryRaw<Array<{ sku: string; duplicateCount: number }>>`
+        SELECT "sku", COUNT(*) as "duplicateCount"
+        FROM "Product"
+        WHERE "sku" IS NOT NULL
+          AND TRIM("sku") <> ''
+        GROUP BY "sku"
+        HAVING COUNT(*) > 1
+    `
+
+    for (const duplicateRow of duplicateRows) {
+        const products = await db.$queryRaw<Array<{
+            id: string
+            title: string
+            isPublished: boolean | number
+            createdAt: string
+            updatedAt: string
+        }>>`
+            SELECT "id", "title", "isPublished", "createdAt", "updatedAt"
+            FROM "Product"
+            WHERE "sku" = ${duplicateRow.sku}
+            ORDER BY CASE WHEN "isPublished" IS TRUE THEN 1 ELSE 0 END DESC, "updatedAt" DESC, "createdAt" DESC
+        `
+
+        const keeper = products[0]
+        if (!keeper) continue
+
+        for (const product of products.slice(1)) {
+            const regeneratedSku = await generateUniqueProductSku(`${duplicateRow.sku}-COPY`, product.title, product.id)
+            await setSkuByProductId(product.id, regeneratedSku)
+            await setPublishedStateByProductId(product.id, false)
+        }
+    }
+}
+
+async function ensureProductSkuIntegrity() {
+    if (!productSkuIntegrityPromise) {
+        productSkuIntegrityPromise = (async () => {
+            await repairDuplicateProductSkus()
+            await db.$executeRaw(
+                Prisma.raw(
+                    `CREATE UNIQUE INDEX IF NOT EXISTS "Product_sku_unique_not_null" ON "Product"("sku") WHERE "sku" IS NOT NULL AND TRIM("sku") <> ''`
+                )
+            )
+        })().catch((error) => {
+            productSkuIntegrityPromise = null
+            throw error
+        })
+    }
+
+    await productSkuIntegrityPromise
 }
 
 async function ensureFeaturedColumn() {
@@ -571,6 +695,7 @@ export async function getProducts(
         scheduledDate?: string
     }
 ) {
+    await ensureProductSkuIntegrity()
     await purgeExpiredTrashedProducts()
     const skip = (page - 1) * limit
     const hasQuery = query.trim().length > 0
@@ -753,6 +878,7 @@ export async function getProducts(
 }
 
 export async function getProductAdminStats(query = "") {
+    await ensureProductSkuIntegrity()
     await ensureFeaturedColumn()
     await ensureDeletedAtColumn()
     await purgeExpiredTrashedProducts()
@@ -880,24 +1006,22 @@ export async function getProduct(id: string) {
 export async function createProduct(data: ProductFormValues) {
     const validated = productFormSchema.parse(data)
     await ensureCanonicalProductMediaMigration()
+    await ensureProductSkuIntegrity()
 
     // Helper to connect relationships
     const connect = (ids: string[]) => ids.map(id => ({ id }))
 
     try {
         const actor = await getSessionUser("admin")
-        const skuConflict = await findConflictingProductSku(validated.sku)
-        if (skuConflict) {
-            return { success: false, error: "SKU already exists. Change SKU and save again." }
-        }
+        const resolvedSku = await resolveUniqueSkuForSave(validated.sku, undefined, validated.title)
         const uniqueSlug = await ensureUniqueProductSlug(
-            buildSlugBaseWithSku(validated.slug || validated.title, validated.sku)
+            buildSlugBaseWithSku(validated.slug || validated.title, resolvedSku)
         )
-        await ensureProductSkuFolders(validated.categoryIds, validated.sku || null)
+        await ensureProductSkuFolders(validated.categoryIds, resolvedSku)
         const normalizedImageRecords = await normalizeProductImageRecordsToSkuFolder(
             validated.images,
             validated.categoryIds,
-            validated.sku || null
+            resolvedSku
         )
         const normalizedImages = normalizedImageRecords.map((image) => image.image_url)
         const categoryRows = validated.categoryIds.length > 0
@@ -936,12 +1060,13 @@ export async function createProduct(data: ProductFormValues) {
                 categories: { connect: connect(validated.categoryIds) },
             }
         })
-        await setSkuByProductId(created.id, validated.sku || null)
+        await setSkuByProductId(created.id, resolvedSku)
+        await setPublishedStateByProductId(created.id, validated.isPublished)
         await setFeaturedByProductId(created.id, validated.isFeatured)
         await setShortDescriptionByProductId(created.id, validated.shortDescription)
         await saveProductAttributeSelections(created.id, validated.attributeSelections || {})
         await setCustomAttributesByProductId(created.id, persistedCustomAttributes)
-        const resolvedSuppliers = await syncProductSupplierBySku(created.id, validated.sku || null)
+        const resolvedSuppliers = await syncProductSupplierBySku(created.id, resolvedSku)
         await setProductCreatorByProductId(created.id, {
             id: actor?.id || null,
             name: actor?.name || actor?.email || "Unknown",
@@ -974,7 +1099,7 @@ export async function createProduct(data: ProductFormValues) {
                     slug: uniqueSlug,
                     title: validated.title,
                     description: validated.description,
-                    sku: validated.sku || null,
+                    sku: resolvedSku,
                     price: validated.price,
                     compareAtPrice: validated.compareAtPrice ?? null,
                     stockCount: validated.stockCount,
@@ -1011,6 +1136,7 @@ export async function createProduct(data: ProductFormValues) {
 export async function updateProduct(id: string, data: ProductFormValues) {
     const validated = productFormSchema.parse(data)
     await ensureCanonicalProductMediaMigration()
+    await ensureProductSkuIntegrity()
     const connect = (ids: string[]) => ids.map(id => ({ id }))
 
     try {
@@ -1018,23 +1144,20 @@ export async function updateProduct(id: string, data: ProductFormValues) {
             where: { id },
             select: { slug: true },
         })
-        const skuConflict = await findConflictingProductSku(validated.sku, id)
-        if (skuConflict) {
-            return { success: false, error: "SKU already exists. Duplicate product cannot be saved without changing SKU." }
-        }
+        const resolvedSku = await resolveUniqueSkuForSave(validated.sku, id, validated.title)
         const before = await db.product.findUnique({
             where: { id },
             select: { compareAtPrice: true, price: true, isPublished: true },
         })
         const uniqueSlug = await ensureUniqueProductSlug(
-            buildSlugBaseWithSku(validated.slug || validated.title, validated.sku),
+            buildSlugBaseWithSku(validated.slug || validated.title, resolvedSku),
             id
         )
-        await ensureProductSkuFolders(validated.categoryIds, validated.sku || null)
+        await ensureProductSkuFolders(validated.categoryIds, resolvedSku)
         const normalizedImageRecords = await normalizeProductImageRecordsToSkuFolder(
             validated.images,
             validated.categoryIds,
-            validated.sku || null
+            resolvedSku
         )
         const normalizedImages = normalizedImageRecords.map((image) => image.image_url)
         const categoryRows = validated.categoryIds.length > 0
@@ -1077,12 +1200,13 @@ export async function updateProduct(id: string, data: ProductFormValues) {
                 categories: { set: connect(validated.categoryIds) },
             }
         })
-        await setSkuByProductId(id, validated.sku || null)
+        await setSkuByProductId(id, resolvedSku)
+        await setPublishedStateByProductId(id, validated.isPublished, { preserveExistingPublishedAt: before?.isPublished === true && validated.isPublished })
         await setFeaturedByProductId(id, validated.isFeatured)
         await setShortDescriptionByProductId(id, validated.shortDescription)
         await saveProductAttributeSelections(id, validated.attributeSelections || {})
         await setCustomAttributesByProductId(id, persistedCustomAttributes)
-        const resolvedSuppliers = await syncProductSupplierBySku(id, validated.sku || null)
+        const resolvedSuppliers = await syncProductSupplierBySku(id, resolvedSku)
         const hadDiscount = Boolean(
             before?.isPublished &&
             before.compareAtPrice &&
@@ -1113,7 +1237,7 @@ export async function updateProduct(id: string, data: ProductFormValues) {
                     slug: uniqueSlug,
                     title: validated.title,
                     description: validated.description,
-                    sku: validated.sku || null,
+                    sku: resolvedSku,
                     price: validated.price,
                     compareAtPrice: validated.compareAtPrice ?? null,
                     stockCount: validated.stockCount,
@@ -1168,11 +1292,16 @@ export async function duplicateProduct(id: string) {
     if (!original) return { success: false, error: "Product not found" }
 
     try {
+        await ensureProductSkuIntegrity()
         const actor = await getSessionUser("admin")
         const attributeGroups = await getAttributeGroups({ activeOnly: true })
         const originalAttributeSelections = await getProductAttributeSelections(id)
+        const duplicatedSku = await generateUniqueProductSku(
+            original.sku ? `${original.sku}-COPY` : `COPY-${original.title}`,
+            original.title
+        )
         const newSlug = await ensureUniqueProductSlug(
-            buildSlugBaseWithSku(`copy-${original.title}`, original.sku)
+            buildSlugBaseWithSku(`copy-${original.title}`, duplicatedSku)
         )
         const newProduct = await db.product.create({
             data: {
@@ -1196,7 +1325,8 @@ export async function duplicateProduct(id: string) {
                 ages: { connect: original.ages.map((a: { id: string }) => ({ id: a.id })) },
             }
         })
-        await setSkuByProductId(newProduct.id, original.sku || null)
+        await setSkuByProductId(newProduct.id, duplicatedSku)
+        await setPublishedStateByProductId(newProduct.id, false)
         await setFeaturedByProductId(newProduct.id, Boolean(original.isFeatured))
         await setShortDescriptionByProductId(newProduct.id, original.shortDescription || null)
         await saveProductAttributeSelections(newProduct.id, originalAttributeSelections)
@@ -1204,7 +1334,7 @@ export async function duplicateProduct(id: string) {
             newProduct.id,
             buildVisibleAttributesFromSelections(attributeGroups, originalAttributeSelections),
         )
-        await syncProductSupplierBySku(newProduct.id, original.sku || null)
+        await syncProductSupplierBySku(newProduct.id, duplicatedSku)
         await setProductCreatorByProductId(newProduct.id, {
             id: actor?.id || null,
             name: actor?.name || actor?.email || "Unknown",
@@ -1278,10 +1408,8 @@ export async function emptyProductTrash() {
 
 export async function bulkPublishProducts(ids: string[], isPublished: boolean) {
     try {
-        await db.product.updateMany({
-            where: { id: { in: ids } },
-            data: { isPublished }
-        })
+        await ensureProductSkuIntegrity()
+        await setPublishedStateByProductIds(ids, isPublished)
         revalidatePath("/dashboard/products")
         return { success: true }
     } catch {
