@@ -946,7 +946,6 @@ export async function getProductIdsForFacetCounts(
             slug: true,
             sku: true,
             description: true,
-            shortDescription: true,
             price: true,
             createdAt: true,
             categories: {
