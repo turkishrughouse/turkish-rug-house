@@ -10,6 +10,7 @@ import { getAttributeFacetGroupsForProductIds } from "@/lib/product-attributes"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { formatCurrency } from "@/lib/storefront/currency"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
+import { resolveColorSwatch } from "@/lib/storefront/color-swatches"
 import { buildListingPricePresets, getMultiParam, getSingleParam, resolveSelectedOptionSlugs, resolveSelectedSizeSlugs } from "@/lib/storefront/listing-filters"
 import { ListingPagination } from "@/components/storefront/listing-pagination"
 import { getCategoryPathById, resolveCategoryByPath } from "@/lib/category-paths"
@@ -598,6 +599,11 @@ export async function renderCategoryPage({
                       <div className="mt-4 grid grid-cols-3 gap-x-3 gap-y-4">
                         {group.options.map((option) => {
                           const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
+                          const swatch = resolveColorSwatch({
+                            label: option.value,
+                            slug: option.slug,
+                            hex: option.hex,
+                          })
                           return (
                             <Link
                               key={option.id}
@@ -615,7 +621,7 @@ export async function renderCategoryPage({
                               className="text-center"
                             >
                               <span className={`mx-auto flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-[24px] border transition-all duration-200 ${active ? "border-[#caa56a] bg-[#fcf7ef] shadow-[0_0_0_2px_rgba(255,255,255,0.95),0_0_0_5px_rgba(202,165,106,0.42),0_12px_24px_rgba(202,165,106,0.16)]" : "border-[#e3dbcf] bg-[#fffdfa] shadow-[0_8px_18px_rgba(48,38,26,0.06)] hover:border-[#d0c4b3] hover:shadow-[0_10px_20px_rgba(48,38,26,0.08)]"}`}>
-                                <span className="h-[3.35rem] w-[3.35rem] rounded-[18px] border border-[rgba(58,45,32,0.12)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" style={{ backgroundColor: option.hex || "#6b665f" }} />
+                                <span className="h-[3.35rem] w-[3.35rem] rounded-[18px] border shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" style={{ background: swatch.background, borderColor: swatch.borderColor || "rgba(58,45,32,0.12)" }} />
                               </span>
                               <span className="mt-2.5 block truncate text-[13px] font-semibold leading-5 text-[#4a4138]">{option.value}</span>
                               <span className="mt-0.5 block text-[11px] font-medium text-[#8e8578]">{option.count}</span>

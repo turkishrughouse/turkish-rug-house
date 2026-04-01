@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useMemo, useState } from "react"
 import { SlidersHorizontal, X } from "lucide-react"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+import { resolveColorSwatch } from "@/lib/storefront/color-swatches"
 
 type FilterItem = {
   label: string
@@ -157,7 +158,15 @@ export function MobileFilterDrawer({
                             >
                               {section.variant === "swatch" ? (
                                 <span className="block">
-                                  <span className="mx-auto block h-[3.35rem] w-[3.35rem] rounded-[18px] border border-[rgba(58,45,32,0.12)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" style={{ backgroundColor: item.colorHex || "#6b665f" }} />
+                                  {(() => {
+                                    const swatch = resolveColorSwatch({
+                                      label: item.label,
+                                      hex: item.colorHex,
+                                    })
+                                    return (
+                                      <span className="mx-auto block h-[3.35rem] w-[3.35rem] rounded-[18px] border shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" style={{ background: swatch.background, borderColor: swatch.borderColor || "rgba(58,45,32,0.12)" }} />
+                                    )
+                                  })()}
                                   <span className="mt-2.5 block truncate text-[13px] font-semibold leading-5 text-[#4a4138]">{item.label}</span>
                                   {typeof item.count === "number" ? (
                                     <span className="mt-0.5 block text-[11px] font-medium text-[#8e8578]">{item.count}</span>
@@ -171,7 +180,10 @@ export function MobileFilterDrawer({
                                         {item.active ? <span className="h-2 w-2 rounded-sm bg-white" /> : null}
                                       </span>
                                     ) : null}
-                                    {item.colorHex ? <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-[#d7cec2]" style={{ backgroundColor: item.colorHex }} /> : null}
+                                    {item.colorHex ? (() => {
+                                      const swatch = resolveColorSwatch({ label: item.label, hex: item.colorHex })
+                                      return <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-[#d7cec2]" style={{ background: swatch.background, borderColor: swatch.borderColor || "#d7cec2" }} />
+                                    })() : null}
                                     <span className="truncate">{item.label}</span>
                                   </span>
                                   {typeof item.count === "number" ? (
