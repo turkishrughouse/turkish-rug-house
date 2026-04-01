@@ -1,7 +1,8 @@
-import { mkdir, readdir, rename, rm, rmdir, stat } from "fs/promises"
+import { copyFile, mkdir, readdir, rename, rm, rmdir, stat } from "fs/promises"
 import path from "path"
+import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
-import { ensureMediaRegistryTable } from "@/lib/media-registry"
+import { ensureMediaRegistryTable, upsertMediaAsset, type MediaRegistryRow } from "@/lib/media-registry"
 import { getProductImageUrl, normalizeProductImageRecords } from "@/lib/product-images"
 import { getStorageProvider } from "@/lib/storage/provider"
 
@@ -370,6 +371,17 @@ async function replaceMediaUrlReferences(oldUrl: string, nextUrl: string | null)
   }
 }
 
+async function getMediaRegistryRowsByUrls(urls: string[]) {
+  if (urls.length === 0) return new Map<string, MediaRegistryRow>()
+  await ensureMediaRegistryTable()
+  const rows = await prisma.$queryRaw<MediaRegistryRow[]>`
+    SELECT *
+    FROM "MediaAsset"
+    WHERE "image_url" IN (${Prisma.join(urls)})
+  `
+  return new Map(rows.map((row) => [row.image_url, row]))
+}
+
 export async function moveManagedAssetGroupToFolder(url: string, targetFolder: string) {
   const siblings = await getSiblingUploadAssets(url)
   if (siblings.length === 0) return url
@@ -403,7 +415,112 @@ export async function moveManagedAssetGroupToFolder(url: string, targetFolder: s
   return nextPrimaryUrl
 }
 
-export async function relocateProductImagesToSkuFolders(imageUrls: string[], categoryIds: string[], sku: string | null | undefined) {
+async function hasExternalMediaReferences(url: string, currentProductId?: string) {
+  const siblings = await getSiblingUploadAssets(url)
+  const relevantUrls = new Set([url, ...siblings.map((sibling) => sibling.url)])
+
+  const [products, categories, pages, profiles] = await Promise.all([
+    prisma.product.findMany({
+      select: {
+        id: true,
+        images: true,
+      },
+    }),
+    prisma.category.findMany({
+      select: {
+        image: true,
+      },
+    }),
+    prisma.page.findMany({
+      select: {
+        featuredImage: true,
+        content: true,
+      },
+    }),
+    prisma.customerProfile.findMany({
+      select: {
+        avatarUrl: true,
+      },
+    }),
+  ])
+
+  for (const product of products) {
+    if (currentProductId && product.id === currentProductId) continue
+    const images = normalizeProductImageRecords(product.images)
+    const isReferenced = images.some((image) =>
+      relevantUrls.has(image.image_url) ||
+      (image.variants ? Object.values(image.variants).some((variant) => relevantUrls.has(variant || "")) : false)
+    )
+    if (isReferenced) return true
+  }
+
+  if (categories.some((category) => category.image && relevantUrls.has(category.image))) return true
+  if (profiles.some((profile) => profile.avatarUrl && relevantUrls.has(profile.avatarUrl))) return true
+  if (pages.some((page) =>
+    (page.featuredImage && relevantUrls.has(page.featuredImage)) ||
+    Array.from(relevantUrls).some((candidate) => page.content?.includes(candidate))
+  )) {
+    return true
+  }
+
+  return false
+}
+
+async function copyManagedAssetGroupToFolder(url: string, targetFolder: string) {
+  const siblings = await getSiblingUploadAssets(url)
+  if (siblings.length === 0) return url
+
+  const sourceFolder = extractFolderFromManagedUrl(url)
+  const safeTargetFolder = sanitizeFolderPath(targetFolder)
+  if (!safeTargetFolder || sourceFolder === safeTargetFolder) return url
+
+  const targetDir = path.join(process.cwd(), "public", "uploads", safeTargetFolder)
+  await mkdir(targetDir, { recursive: true })
+
+  const storage = getStorageProvider()
+  const masterSibling = siblings.find((sibling) => sibling.fileName.includes("-master.")) || siblings[0]
+  const targetFileNames = await resolveTargetSiblingFileNames(siblings, targetDir)
+  const registryRows = await getMediaRegistryRowsByUrls(siblings.map((sibling) => sibling.url))
+
+  const urlMap = new Map<string, string>()
+  for (const [index, sibling] of siblings.entries()) {
+    const targetFileName = targetFileNames[index] || sibling.fileName
+    const targetPath = path.join(targetDir, targetFileName)
+    await copyFile(sibling.absolutePath, targetPath)
+    urlMap.set(sibling.url, storage.getPublicUrl(`${safeTargetFolder}/${targetFileName}`))
+  }
+
+  for (const [index, sibling] of siblings.entries()) {
+    const targetFileName = targetFileNames[index] || sibling.fileName
+    const nextUrl = urlMap.get(sibling.url) || storage.getPublicUrl(`${safeTargetFolder}/${targetFileName}`)
+    const sourceRow = registryRows.get(sibling.url)
+    await upsertMediaAsset({
+      id: `${safeTargetFolder}/${targetFileName}`,
+      image_url: nextUrl,
+      width: sourceRow?.width ?? null,
+      height: sourceRow?.height ?? null,
+      alt: sourceRow?.alt ?? null,
+      sort_order: sourceRow?.sort_order ?? 0,
+      is_primary: Boolean(sourceRow?.is_primary),
+      variant: sourceRow?.variant ?? null,
+      master_url: sourceRow?.master_url ? (urlMap.get(sourceRow.master_url) || sourceRow.master_url) : null,
+      checksum: sourceRow?.checksum ?? null,
+      mime_type: sourceRow?.mime_type ?? null,
+      size_bytes: sourceRow?.size_bytes ?? null,
+      storage_provider: sourceRow?.storage_provider ?? null,
+      object_key: `${safeTargetFolder}/${targetFileName}`,
+    })
+  }
+
+  return urlMap.get(masterSibling.url) || url
+}
+
+export async function relocateProductImagesToSkuFolders(
+  imageUrls: string[],
+  categoryIds: string[],
+  sku: string | null | undefined,
+  currentProductId?: string
+) {
   const targetFolder = await resolveCanonicalProductFolder(categoryIds, sku, imageUrls)
   if (!targetFolder || imageUrls.length === 0) {
     return imageUrls
@@ -421,8 +538,11 @@ export async function relocateProductImagesToSkuFolders(imageUrls: string[], cat
       continue
     }
     await mkdir(path.join(process.cwd(), "public", "uploads", targetFolder), { recursive: true })
-    const movedUrl = await moveManagedAssetGroupToFolder(url, targetFolder)
-    nextUrls.push(movedUrl)
+    const isShared = await hasExternalMediaReferences(url, currentProductId)
+    const nextUrl = isShared
+      ? await copyManagedAssetGroupToFolder(url, targetFolder)
+      : await moveManagedAssetGroupToFolder(url, targetFolder)
+    nextUrls.push(nextUrl)
   }
 
   return nextUrls
@@ -431,7 +551,8 @@ export async function relocateProductImagesToSkuFolders(imageUrls: string[], cat
 export async function normalizeProductImageRecordsToSkuFolder(
   imagesValue: unknown,
   categoryIds: string[],
-  sku: string | null | undefined
+  sku: string | null | undefined,
+  currentProductId?: string
 ) {
   const currentImages = normalizeProductImageRecords(imagesValue)
   if (currentImages.length === 0) return currentImages
@@ -439,7 +560,8 @@ export async function normalizeProductImageRecordsToSkuFolder(
   const nextUrls = await relocateProductImagesToSkuFolders(
     currentImages.map((image) => image.image_url),
     categoryIds,
-    sku
+    sku,
+    currentProductId
   )
 
   return currentImages.map((image, index) => {

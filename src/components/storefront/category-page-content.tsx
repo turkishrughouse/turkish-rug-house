@@ -780,7 +780,7 @@ export async function renderCategoryPage({
 
               {products.length === 0 ? <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-8 py-16 text-center text-slate-500">No products were found matching your selection.</div> : (
                 <>
-                  <div className={viewMode === "list" ? "mt-5 space-y-4" : viewMode === "2" ? "mt-5 grid grid-cols-1 gap-5 md:grid-cols-2" : viewMode === "4" ? "mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4" : "mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3"}>
+                  <div className={viewMode === "list" ? "mt-5 space-y-4" : viewMode === "2" ? "mt-5 grid grid-cols-2 gap-4 sm:gap-5 md:grid-cols-2" : viewMode === "4" ? "mt-5 grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4" : "mt-5 grid grid-cols-2 gap-4 sm:gap-5 xl:grid-cols-3"}>
                     {products.map((product) => {
                     const parsedImages = parseProductImageRecords(product.images)
                     if (viewMode === "list") {

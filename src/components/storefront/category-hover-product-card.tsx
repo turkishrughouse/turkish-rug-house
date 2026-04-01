@@ -69,10 +69,10 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
   const categoryText = product.categories?.slice(0, 2).map((c) => c.title).join(", ") || "Rug House"
 
   return (
-    <div className="group/card relative z-10 self-start origin-top rounded-xl border border-slate-200 bg-white p-3 transition-all duration-300 hover:z-30 hover:scale-[1.035] hover:shadow-2xl">
+    <div className="group/card relative z-10 flex h-full origin-top flex-col rounded-xl border border-slate-200 bg-white p-3 transition-all duration-300 hover:z-30 hover:scale-[1.02] hover:shadow-2xl">
       <div className="relative">
         <Link href={`/product/${product.slug}`} className="block">
-          <div className="relative flex w-full items-center justify-center rounded-md bg-slate-50 p-3">
+          <div className="relative aspect-[4/5] w-full overflow-hidden rounded-md bg-slate-50 p-4 sm:p-5">
             {isMarkedOutOfStock ? (
               <span className="pointer-events-none absolute left-2 top-2 z-20 rounded-sm bg-red-600 px-2 py-1 text-[10px] font-semibold tracking-[0.08em] text-white">
                 OUT OF STOCK
@@ -91,8 +91,7 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
               alt={mainImageAlt}
               loading="lazy"
               decoding="async"
-              style={{ width: "100%", height: "auto" }}
-              className="w-full object-contain object-center transition-transform duration-300 group-hover/card:scale-105"
+              className="h-full w-full object-contain object-center transition-transform duration-300 group-hover/card:scale-105"
             />
             <div className="pointer-events-none absolute inset-0 bg-black/20 opacity-0 transition-opacity duration-300 group-hover/card:opacity-100" />
           </div>
@@ -108,16 +107,20 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
         />
       </div>
 
-      <div className="pt-3 text-center">
-        <p className="truncate text-lg font-serif font-bold text-slate-900">{product.title}</p>
-        <p className="mt-1 text-sm text-slate-500">{categoryText}</p>
-        <div className="mt-2 flex items-center justify-center gap-2">
-          <span className="text-xl font-bold text-emerald-700">{formatUsd(product.price)}</span>
+      <div className="flex flex-1 flex-col pt-3 text-center">
+        <Link href={`/product/${product.slug}`} className="block">
+          <p className="min-h-[3.5rem] line-clamp-2 text-base font-serif font-bold leading-7 text-slate-900 transition-colors group-hover/card:text-slate-700 sm:text-lg">
+            {product.title}
+          </p>
+        </Link>
+        <p className="mt-1 min-h-[2.5rem] line-clamp-2 text-xs leading-5 text-slate-500 sm:text-sm">{categoryText}</p>
+        <div className="mt-2 flex min-h-[2rem] items-start justify-center gap-2">
+          <span className="text-lg font-bold text-emerald-700 sm:text-xl">{formatUsd(product.price)}</span>
           {product.compareAtPrice && product.compareAtPrice > product.price ? (
             <span className="text-sm text-slate-400 line-through">{formatUsd(product.compareAtPrice)}</span>
           ) : null}
         </div>
-        <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-600">{shortDescription}</p>
+        <p className="mt-2 min-h-[3.75rem] line-clamp-3 text-xs leading-5 text-slate-600">{shortDescription}</p>
       </div>
     </div>
   )

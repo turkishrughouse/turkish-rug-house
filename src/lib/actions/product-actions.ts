@@ -124,12 +124,12 @@ async function generateUniqueProductSku(seed: string | null | undefined, fallbac
     }
 }
 
-async function resolveUniqueSkuForSave(requestedSku: string | null | undefined, currentProductId?: string, fallbackText?: string) {
+async function resolveUniqueSkuForSave(requestedSku: string | null | undefined, currentProductId?: string) {
     const normalized = normalizeSkuValue(requestedSku)
     if (!normalized) return null
     const conflict = await findConflictingProductSku(normalized, currentProductId)
     if (!conflict) return normalized
-    return generateUniqueProductSku(`${normalized}-COPY`, fallbackText || normalized, currentProductId)
+    throw new Error(`SKU "${normalized}" is already in use. Enter a new unique SKU before publishing.`)
 }
 
 async function setPublishedStateByProductId(productId: string, isPublished: boolean, options?: { preserveExistingPublishedAt?: boolean }) {
@@ -1013,7 +1013,7 @@ export async function createProduct(data: ProductFormValues) {
 
     try {
         const actor = await getSessionUser("admin")
-        const resolvedSku = await resolveUniqueSkuForSave(validated.sku, undefined, validated.title)
+        const resolvedSku = await resolveUniqueSkuForSave(validated.sku, undefined)
         const uniqueSlug = await ensureUniqueProductSlug(
             buildSlugBaseWithSku(validated.slug || validated.title, resolvedSku)
         )
@@ -1144,7 +1144,7 @@ export async function updateProduct(id: string, data: ProductFormValues) {
             where: { id },
             select: { slug: true },
         })
-        const resolvedSku = await resolveUniqueSkuForSave(validated.sku, id, validated.title)
+        const resolvedSku = await resolveUniqueSkuForSave(validated.sku, id)
         const before = await db.product.findUnique({
             where: { id },
             select: { compareAtPrice: true, price: true, isPublished: true },
@@ -1157,7 +1157,8 @@ export async function updateProduct(id: string, data: ProductFormValues) {
         const normalizedImageRecords = await normalizeProductImageRecordsToSkuFolder(
             validated.images,
             validated.categoryIds,
-            resolvedSku
+            resolvedSku,
+            id
         )
         const normalizedImages = normalizedImageRecords.map((image) => image.image_url)
         const categoryRows = validated.categoryIds.length > 0
@@ -1296,12 +1297,8 @@ export async function duplicateProduct(id: string) {
         const actor = await getSessionUser("admin")
         const attributeGroups = await getAttributeGroups({ activeOnly: true })
         const originalAttributeSelections = await getProductAttributeSelections(id)
-        const duplicatedSku = await generateUniqueProductSku(
-            original.sku ? `${original.sku}-COPY` : `COPY-${original.title}`,
-            original.title
-        )
         const newSlug = await ensureUniqueProductSlug(
-            buildSlugBaseWithSku(`copy-${original.title}`, duplicatedSku)
+            buildSlugBaseWithSku(`copy-${original.title}`)
         )
         const newProduct = await db.product.create({
             data: {
@@ -1325,7 +1322,6 @@ export async function duplicateProduct(id: string) {
                 ages: { connect: original.ages.map((a: { id: string }) => ({ id: a.id })) },
             }
         })
-        await setSkuByProductId(newProduct.id, duplicatedSku)
         await setPublishedStateByProductId(newProduct.id, false)
         await setFeaturedByProductId(newProduct.id, Boolean(original.isFeatured))
         await setShortDescriptionByProductId(newProduct.id, original.shortDescription || null)
@@ -1334,7 +1330,6 @@ export async function duplicateProduct(id: string) {
             newProduct.id,
             buildVisibleAttributesFromSelections(attributeGroups, originalAttributeSelections),
         )
-        await syncProductSupplierBySku(newProduct.id, duplicatedSku)
         await setProductCreatorByProductId(newProduct.id, {
             id: actor?.id || null,
             name: actor?.name || actor?.email || "Unknown",
