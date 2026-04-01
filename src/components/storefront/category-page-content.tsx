@@ -2,17 +2,17 @@ import { notFound, permanentRedirect } from "next/navigation"
 import Link from "next/link"
 import { Metadata } from "next"
 import { LayoutGrid, Grid2x2, Rows3, List } from "lucide-react"
-import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
+import { CategoryListingProductCard } from "@/components/storefront/category-listing-product-card"
+import { MobileFilterDrawer } from "@/components/storefront/mobile-filter-drawer"
 import { prisma } from "@/lib/db"
 import { getProductIdsForFacetCounts, getProducts, getProductOptions } from "@/lib/actions/product-actions"
 import { getAttributeFacetGroupsForProductIds } from "@/lib/product-attributes"
-import { buildProductImageAlt, getProductImageUrl, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
+import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { formatCurrency } from "@/lib/storefront/currency"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
-import { buildListingPricePresets, buildProductSearchWhere, getMultiParam, getSingleParam, resolveSelectedOptionSlugs, resolveSelectedSizeSlugs } from "@/lib/storefront/listing-filters"
-import { CategoryHoverProductCardServer } from "@/components/storefront/category-hover-product-card-server"
+import { buildListingPricePresets, getMultiParam, getSingleParam, resolveSelectedOptionSlugs, resolveSelectedSizeSlugs } from "@/lib/storefront/listing-filters"
 import { ListingPagination } from "@/components/storefront/listing-pagination"
-import { fetchCategoryPathRows, getCategoryPathById, resolveCategoryByPath } from "@/lib/category-paths"
+import { getCategoryPathById, resolveCategoryByPath } from "@/lib/category-paths"
 import { cn } from "@/lib/utils"
 
 type SearchParams = { [key: string]: string | string[] | undefined }
@@ -147,10 +147,10 @@ export async function renderCategoryPage({
   const productGridClassName = viewMode === "list"
     ? "mt-5 space-y-4"
     : cn(
-        "mt-5 grid min-w-0 grid-cols-2 auto-rows-fr gap-4 sm:gap-5",
+        "mt-4 grid min-w-0 grid-cols-2 auto-rows-fr gap-3 sm:gap-4",
         viewMode === "2" && "md:grid-cols-2",
-        viewMode === "3" && "xl:grid-cols-3",
-        viewMode === "4" && "lg:grid-cols-3 xl:grid-cols-4",
+        viewMode === "3" && "lg:grid-cols-3",
+        viewMode === "4" && "lg:grid-cols-3 2xl:grid-cols-4",
       )
   const sortInput = getSingleParam(searchParams, "sort")
   const sortValue: "latest" | "oldest" | "price-asc" | "price-desc" =
@@ -164,7 +164,7 @@ export async function renderCategoryPage({
   const priceMaxRaw = Number(getSingleParam(searchParams, "priceMax") || 0)
   const hasPriceFilter = Number.isFinite(priceMin) && Number.isFinite(priceMaxRaw) && priceMaxRaw > 0
 
-  const [category, options, maxPriceRow, categoryShortcutMenu] = await Promise.all([
+  const [category, options, maxPriceRow] = await Promise.all([
     prisma.category.findUnique({
       where: { id: categoryId },
       include: {
@@ -189,14 +189,6 @@ export async function renderCategoryPage({
         },
       },
       _max: { price: true },
-    }),
-    prisma.menu.findFirst({
-      where: { location: "CATEGORY_ATTRIBUTE_SHORTCUTS" },
-      include: {
-        items: {
-          orderBy: { sortOrder: "asc" },
-        },
-      },
     }),
   ])
 
@@ -313,9 +305,6 @@ export async function renderCategoryPage({
     categoryIds: categoryScopeIds,
     productIds: topRatedOnly ? topRatedIds : undefined,
   })
-  const { products: sidebarProducts } = await getProducts(1, 5, "", "published", "latest", category.slug, {
-    categoryIds: categoryScopeIds,
-  })
 
   const facetProductIds = await getProductIdsForFacetCounts(query, "published", sortValue, category.slug, {
     ...baseFilters,
@@ -338,25 +327,6 @@ export async function renderCategoryPage({
       }),
     }))
   )
-
-  const shortcutCategoryIds = (categoryShortcutMenu?.items || [])
-    .filter((item) => item.type === "CATEGORY" && item.referenceId)
-    .map((item) => item.referenceId as string)
-
-  const shortcutCategories = shortcutCategoryIds.length > 0
-    ? await prisma.category.findMany({
-        where: { id: { in: shortcutCategoryIds } },
-        select: {
-          id: true,
-          slug: true,
-          title: true,
-          image: true,
-          _count: { select: { products: true } },
-        },
-      })
-    : []
-
-  const shortcutCategoryMap = new Map(shortcutCategories.map((item) => [item.id, item]))
 
   const buildQuery = (mutator: (params: URLSearchParams) => void, options?: { resetPage?: boolean }) => {
     const params = new URLSearchParams()
@@ -423,6 +393,73 @@ export async function renderCategoryPage({
         }]
       : []),
   ]
+  const allFacetGroups = [...primaryAttributeFacetGroups, ...overflowAttributeFacetGroups]
+  const mobileFilterSections = [
+    {
+      id: "status",
+      title: "Status",
+      variant: "checkbox" as const,
+      defaultOpen: true,
+      items: [
+        {
+          label: "In stock only",
+          href: `${categoryPath}${buildQuery((p) => {
+            if (inStockOnly) p.delete("inStock")
+            else p.set("inStock", "true")
+          }, { resetPage: true })}`,
+          active: inStockOnly,
+        },
+        {
+          label: "Top rated",
+          href: `${categoryPath}${buildQuery((p) => {
+            if (topRatedOnly) p.delete("topRated")
+            else p.set("topRated", "true")
+          }, { resetPage: true })}`,
+          active: topRatedOnly,
+        },
+      ],
+    },
+    ...allFacetGroups.map((group) => ({
+      id: group.id,
+      title: group.name,
+      variant: group.slug === "size" ? "pill" as const : group.slug === "color" ? "swatch" as const : "checkbox" as const,
+      defaultOpen: group.slug === "size" || group.slug === "color",
+      items: group.options.map((option) => {
+        const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
+        return {
+          label: option.value,
+          href: `${categoryPath}${buildQuery((p) => {
+            const existing = p.getAll(group.slug)
+            p.delete(group.slug)
+            if (existing.includes(option.slug)) {
+              existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
+            } else {
+              const nextValues = group.selectionMode === "single" ? [] : existing
+              nextValues.forEach((item) => p.append(group.slug, item))
+              p.append(group.slug, option.slug)
+            }
+          }, { resetPage: true })}`,
+          active,
+          count: option.count,
+          colorHex: option.hex || undefined,
+        }
+      }),
+    })),
+    {
+      id: "price",
+      title: "Price",
+      variant: "pill" as const,
+      defaultOpen: true,
+      items: pricePresets.map((preset) => ({
+        label: preset.label,
+        href: `${categoryPath}${buildQuery((p) => {
+          p.set("priceMin", String(preset.min))
+          p.set("priceMax", String(preset.max))
+        }, { resetPage: true })}`,
+        active: priceMin === preset.min && priceMaxRaw === preset.max,
+      })),
+    },
+  ]
   const categorySchema = {
     "@context": "https://schema.org",
     "@type": "CollectionPage",
@@ -447,7 +484,7 @@ export async function renderCategoryPage({
   }
 
   return (
-    <div className="bg-[#f5f7fb] min-h-screen pb-20">
+    <div className="min-h-screen bg-[#fcfaf6] pb-20">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(categorySchema) }}
@@ -478,321 +515,271 @@ export async function renderCategoryPage({
         </div>
       </div>
 
-      <div className="container mx-auto px-6 py-10">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          <aside className="hidden lg:col-span-3 lg:block">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filters</h2>
+      <div className="container mx-auto px-4 py-6 sm:px-6 lg:py-8">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[268px_minmax(0,1fr)] lg:gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
+          <aside className="hidden lg:block">
+            <div className="sticky top-24 overflow-hidden rounded-[28px] border border-[#e7dfd4] bg-[#f7f3ed] text-[#2f2922] shadow-[0_18px_46px_rgba(31,22,16,0.08)]">
+              <div className="border-b border-[#e7dfd4] px-5 py-5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#b08a55]">Filter rail</p>
+                <p className="mt-2 text-xl font-semibold text-[#2c261f]">{metadata.total} rugs found</p>
+                <p className="mt-1 text-sm text-[#7f7669]">Refine by material, size, color, region, and price.</p>
               </div>
-              {primaryAttributeFacetGroups.map((group, groupIndex) => (
-                <div key={group.id} className={groupIndex === 0 ? "" : "border-t border-slate-200 pt-5"}>
-                  <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">{group.name}</h3>
-                  <div className="mt-4 space-y-1.5">
-                    {group.options.map((option) => {
-                      const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
-                      return (
-                        <Link
-                          key={option.id}
-                          href={`${categoryPath}${buildQuery((p) => {
-                            const existing = p.getAll(group.slug)
-                            p.delete(group.slug)
-                            if (existing.includes(option.slug)) {
-                              existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
-                            } else {
-                              const nextValues = group.selectionMode === "single" ? [] : existing
-                              nextValues.forEach((item) => p.append(group.slug, item))
-                              p.append(group.slug, option.slug)
-                            }
-                          }, { resetPage: true })}`}
-                          className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
-                        >
-                          <span className="flex items-center gap-2">
-                            {option.hex ? <span className="h-3 w-3 rounded-full border border-slate-300" style={{ backgroundColor: option.hex || "#d1d5db" }} /> : null}
-                            {option.value}
+              <div className="divide-y divide-[#e7dfd4]">
+                <div className="px-5 py-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[15px] font-semibold text-[#2c261f]">Status</h3>
+                    <span className="text-[10px] uppercase tracking-[0.18em] text-[#9b917f]">Live</span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {[
+                      {
+                        label: "In stock only",
+                        active: inStockOnly,
+                        href: `${categoryPath}${buildQuery((p) => {
+                          if (inStockOnly) p.delete("inStock")
+                          else p.set("inStock", "true")
+                        }, { resetPage: true })}`,
+                      },
+                      {
+                        label: "Top rated",
+                        active: topRatedOnly,
+                        href: `${categoryPath}${buildQuery((p) => {
+                          if (topRatedOnly) p.delete("topRated")
+                          else p.set("topRated", "true")
+                        }, { resetPage: true })}`,
+                      },
+                    ].map((item) => (
+                      <Link key={item.label} href={item.href} className={`flex items-center justify-between rounded-2xl border px-3.5 py-2.5 text-sm transition-colors ${item.active ? "border-[#dcc6a2] bg-[#f4ead9] text-[#3c3127]" : "border-[#e7dfd4] bg-[#fffdfa] text-[#70675c] hover:border-[#d8cebf] hover:text-[#2c261f]"}`}>
+                        <span className="flex items-center gap-3">
+                          <span className={`inline-flex h-5 w-5 items-center justify-center rounded border ${item.active ? "border-[#caa56a] bg-[#caa56a]" : "border-[#d7cec2] bg-transparent"}`}>
+                            {item.active ? <span className="h-2 w-2 rounded-sm bg-white" /> : null}
                           </span>
-                          <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{option.count}</span>
+                          {item.label}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+
+                {allFacetGroups.map((group) => (
+                  <div key={group.id} className="px-5 py-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-[15px] font-semibold text-[#2c261f]">{group.name}</h3>
+                      <span className="text-[10px] uppercase tracking-[0.18em] text-[#9b917f]">{group.options.length} options</span>
+                    </div>
+
+                    {group.slug === "size" ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {group.options.map((option) => {
+                          const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
+                          return (
+                            <Link
+                              key={option.id}
+                              href={`${categoryPath}${buildQuery((p) => {
+                                const existing = p.getAll(group.slug)
+                                p.delete(group.slug)
+                                if (existing.includes(option.slug)) {
+                                  existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
+                                } else {
+                                  const nextValues = group.selectionMode === "single" ? [] : existing
+                                  nextValues.forEach((item) => p.append(group.slug, item))
+                                  p.append(group.slug, option.slug)
+                                }
+                              }, { resetPage: true })}`}
+                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${active ? "border-[#dcc6a2] bg-[#f4ead9] text-[#3c3127]" : "border-[#e7dfd4] bg-[#fffdfa] text-[#70675c] hover:border-[#d8cebf] hover:text-[#2c261f]"}`}
+                            >
+                              <span>{option.value}</span>
+                              <span className="text-xs opacity-70">{option.count}</span>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    ) : group.slug === "color" ? (
+                      <div className="mt-4 grid grid-cols-3 gap-x-3 gap-y-4">
+                        {group.options.map((option) => {
+                          const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
+                          return (
+                            <Link
+                              key={option.id}
+                              href={`${categoryPath}${buildQuery((p) => {
+                                const existing = p.getAll(group.slug)
+                                p.delete(group.slug)
+                                if (existing.includes(option.slug)) {
+                                  existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
+                                } else {
+                                  const nextValues = group.selectionMode === "single" ? [] : existing
+                                  nextValues.forEach((item) => p.append(group.slug, item))
+                                  p.append(group.slug, option.slug)
+                                }
+                              }, { resetPage: true })}`}
+                              className="text-center"
+                            >
+                              <span className={`mx-auto flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-[24px] border transition-all duration-200 ${active ? "border-[#caa56a] bg-[#fcf7ef] shadow-[0_0_0_2px_rgba(255,255,255,0.95),0_0_0_5px_rgba(202,165,106,0.42),0_12px_24px_rgba(202,165,106,0.16)]" : "border-[#e3dbcf] bg-[#fffdfa] shadow-[0_8px_18px_rgba(48,38,26,0.06)] hover:border-[#d0c4b3] hover:shadow-[0_10px_20px_rgba(48,38,26,0.08)]"}`}>
+                                <span className="h-[3.35rem] w-[3.35rem] rounded-[18px] border border-[rgba(58,45,32,0.12)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" style={{ backgroundColor: option.hex || "#6b665f" }} />
+                              </span>
+                              <span className="mt-2.5 block truncate text-[13px] font-semibold leading-5 text-[#4a4138]">{option.value}</span>
+                              <span className="mt-0.5 block text-[11px] font-medium text-[#8e8578]">{option.count}</span>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div className="mt-3 space-y-2">
+                        {group.options.map((option) => {
+                          const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
+                          return (
+                            <Link
+                              key={option.id}
+                              href={`${categoryPath}${buildQuery((p) => {
+                                const existing = p.getAll(group.slug)
+                                p.delete(group.slug)
+                                if (existing.includes(option.slug)) {
+                                  existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
+                                } else {
+                                  const nextValues = group.selectionMode === "single" ? [] : existing
+                                  nextValues.forEach((item) => p.append(group.slug, item))
+                                  p.append(group.slug, option.slug)
+                                }
+                              }, { resetPage: true })}`}
+                              className={`flex items-center justify-between rounded-2xl border px-3.5 py-2.5 text-sm transition-colors ${active ? "border-[#dcc6a2] bg-[#f4ead9] text-[#3c3127]" : "border-[#e7dfd4] bg-[#fffdfa] text-[#70675c] hover:border-[#d8cebf] hover:text-[#2c261f]"}`}
+                            >
+                              <span className="flex min-w-0 items-center gap-3">
+                                <span className={`inline-flex h-5 w-5 items-center justify-center rounded border ${active ? "border-[#caa56a] bg-[#caa56a]" : "border-[#d7cec2] bg-transparent"}`}>
+                                  {active ? <span className="h-2 w-2 rounded-sm bg-white" /> : null}
+                                </span>
+                                <span className="truncate">{option.value}</span>
+                              </span>
+                              <span className="rounded-full border border-[#e4dbcf] bg-[#f5f1ea] px-2 py-0.5 text-[11px] text-[#8e8578]">{option.count}</span>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                <div className="px-5 py-4">
+                  <h3 className="text-[15px] font-semibold text-[#2c261f]">Price</h3>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {pricePresets.map((preset) => {
+                      const active = priceMin === preset.min && priceMaxRaw === preset.max
+                      return (
+                        <Link key={preset.label} href={`${categoryPath}${buildQuery((p) => { p.set("priceMin", String(preset.min)); p.set("priceMax", String(preset.max)) }, { resetPage: true })}`} className={`inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${active ? "border-[#dcc6a2] bg-[#f4ead9] text-[#3c3127]" : "border-[#e7dfd4] bg-[#fffdfa] text-[#70675c] hover:border-[#d8cebf] hover:text-[#2c261f]"}`}>
+                          {preset.label}
                         </Link>
                       )
                     })}
                   </div>
                 </div>
-              ))}
-              {overflowAttributeFacetGroups.length > 0 ? (
-                <div className="border-t border-slate-200 pt-5">
-                  <details className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
-                    <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Show more filters</summary>
-                    <div className="mt-4 space-y-5">
-                      {overflowAttributeFacetGroups.map((group) => (
-                        <div key={group.id}>
-                          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">{group.name}</h3>
-                          <div className="mt-3 space-y-1.5">
-                            {group.options.map((option) => {
-                              const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
-                              return (
-                                <Link
-                                  key={option.id}
-                                  href={`${categoryPath}${buildQuery((p) => {
-                                    const existing = p.getAll(group.slug)
-                                    p.delete(group.slug)
-                                    if (existing.includes(option.slug)) {
-                                      existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
-                                    } else {
-                                      const nextValues = group.selectionMode === "single" ? [] : existing
-                                      nextValues.forEach((item) => p.append(group.slug, item))
-                                      p.append(group.slug, option.slug)
-                                    }
-                                  }, { resetPage: true })}`}
-                                  className={`flex items-center justify-between rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}
-                                >
-                                  <span className="flex items-center gap-2">
-                                    {option.hex ? <span className="h-3 w-3 rounded-full border border-slate-300" style={{ backgroundColor: option.hex || "#d1d5db" }} /> : null}
-                                    {option.value}
-                                  </span>
-                                  <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{option.count}</span>
-                                </Link>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                </div>
-              ) : null}
-
-              <div className="border-t border-slate-200 pt-5">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filter By Price</h3>
-                <p className="mt-2 text-xs text-slate-500">Selected: {activePriceLabel}</p>
-                <div className="mt-4 space-y-2">
-                  {pricePresets.map((preset) => {
-                    const active = priceMin === preset.min && priceMaxRaw === preset.max
-                    return (
-                      <Link key={preset.label} href={`${categoryPath}${buildQuery((p) => { p.set("priceMin", String(preset.min)); p.set("priceMax", String(preset.max)) }, { resetPage: true })}`} className={`block rounded-md px-2 py-2 text-sm ${active ? "bg-teal-50 text-teal-800" : "text-slate-700 hover:bg-slate-50"}`}>{preset.label}</Link>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div className="border-t border-slate-200 pt-5">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">Category Products</h3>
-                <div className="mt-4 space-y-3">
-                  {sidebarProducts.length === 0 ? <p className="text-sm text-slate-500">No products found in this category.</p> : sidebarProducts.map((product) => {
-                    const parsedImages = parseProductImageRecords(product.images)
-                    const thumbCandidates = getProductImageUrlCandidates(parsedImages[0], "thumb")
-                    const largeCandidates = getProductImageUrlCandidates(parsedImages[0], "large")
-                    return (
-                      <Link key={product.id} href={`/product/${product.slug}`} className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-slate-50">
-                        <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-slate-50 p-1">
-                          <StorefrontProductImage
-                            candidates={[...thumbCandidates, ...largeCandidates]}
-                            alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt, categories: product.categories })}
-                            fill
-                            sizes="48px"
-                            className=""
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-slate-900">{product.title}</p>
-                          <p className="text-sm font-semibold text-emerald-700">{formatCurrency(product.price, currencySettings)}</p>
-                        </div>
-                      </Link>
-                    )
-                  })}
-                </div>
               </div>
             </div>
           </aside>
 
-          <section className="min-w-0 lg:col-span-9">
-            <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-5">
-                <h2 className="text-2xl font-serif font-bold text-slate-900">{category.title}</h2>
-                {category.description ? (
-                  <p className="mt-3 max-w-4xl text-sm leading-7 text-slate-600">{stripHtml(category.description)}</p>
-                ) : null}
+          <section className="min-w-0">
+            <div className="min-w-0 rounded-[30px] border border-[#ece5da] bg-[#f8f5f0] p-3 text-[#4d453b] shadow-[0_20px_52px_rgba(31,22,16,0.08)] sm:p-4 lg:p-5">
+              <div className="lg:hidden">
+                <MobileFilterDrawer
+                  categoryPath={categoryPath}
+                  resultCount={metadata.total}
+                  sections={mobileFilterSections}
+                  activeChips={activeFilterChips}
+                />
               </div>
 
-              <div className="mt-5 lg:hidden">
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <h2 className="text-sm font-bold uppercase tracking-wide text-slate-900">Filters</h2>
-                    <p className="text-xs text-slate-500">{metadata.total} products</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    {primaryAttributeFacetGroups.map((group) => (
-                      <details key={group.id} className={`rounded-xl border border-slate-200 bg-slate-50 p-3 ${group.options.length > 6 ? "col-span-2" : ""}`}>
-                        <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">{group.name}</summary>
-                        <div className="mt-3 grid grid-cols-2 gap-2">
-                          {group.options.map((option) => {
-                            const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
-                            return (
-                              <Link
-                                key={option.id}
-                                href={`${categoryPath}${buildQuery((p) => {
-                                  const existing = p.getAll(group.slug)
-                                  p.delete(group.slug)
-                                  if (existing.includes(option.slug)) {
-                                    existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
-                                  } else {
-                                    const nextValues = group.selectionMode === "single" ? [] : existing
-                                    nextValues.forEach((item) => p.append(group.slug, item))
-                                    p.append(group.slug, option.slug)
-                                  }
-                                }, { resetPage: true })}`}
-                                className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
-                              >
-                                <span className="flex items-center gap-2 truncate">
-                                  {option.hex ? <span className="h-2.5 w-2.5 rounded-full border border-slate-300" style={{ backgroundColor: option.hex || "#d1d5db" }} /> : null}
-                                  {option.value}
-                                </span>
-                                <span className="mt-1 block text-[11px] text-slate-500">{option.count}</span>
-                              </Link>
-                            )
-                          })}
-                        </div>
-                      </details>
-                    ))}
-                    {overflowAttributeFacetGroups.length > 0 ? (
-                      <details className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Show more filters</summary>
-                        <div className="mt-3 grid grid-cols-1 gap-3">
-                          {overflowAttributeFacetGroups.map((group) => (
-                            <details key={group.id} className="rounded-lg border border-slate-200 bg-white p-3">
-                              <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">{group.name}</summary>
-                              <div className="mt-3 grid grid-cols-2 gap-2">
-                                {group.options.map((option) => {
-                                  const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
-                                  return (
-                                    <Link
-                                      key={option.id}
-                                      href={`${categoryPath}${buildQuery((p) => {
-                                        const existing = p.getAll(group.slug)
-                                        p.delete(group.slug)
-                                        if (existing.includes(option.slug)) {
-                                          existing.filter((item) => item !== option.slug).forEach((item) => p.append(group.slug, item))
-                                        } else {
-                                          const nextValues = group.selectionMode === "single" ? [] : existing
-                                          nextValues.forEach((item) => p.append(group.slug, item))
-                                          p.append(group.slug, option.slug)
-                                        }
-                                      }, { resetPage: true })}`}
-                                      className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}
-                                    >
-                                      <span className="flex items-center gap-2 truncate">
-                                        {option.hex ? <span className="h-2.5 w-2.5 rounded-full border border-slate-300" style={{ backgroundColor: option.hex || "#d1d5db" }} /> : null}
-                                        {option.value}
-                                      </span>
-                                      <span className="mt-1 block text-[11px] text-slate-500">{option.count}</span>
-                                    </Link>
-                                  )
-                                })}
-                              </div>
-                            </details>
-                          ))}
-                        </div>
-                      </details>
-                    ) : null}
-                    <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Price</summary>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        {pricePresets.map((preset) => {
-                          const active = priceMin === preset.min && priceMaxRaw === preset.max
-                          return (
-                            <Link key={preset.label} href={`${categoryPath}${buildQuery((p) => { p.set("priceMin", String(preset.min)); p.set("priceMax", String(preset.max)) }, { resetPage: true })}`} className={`rounded-md px-3 py-2 text-xs ${active ? "bg-teal-50 text-teal-800" : "bg-white text-slate-700"}`}>
-                              {preset.label}
-                            </Link>
-                          )
-                        })}
-                      </div>
-                    </details>
-                  </div>
-                </div>
-              </div>
+              <div className="rounded-[24px] border border-[#e7dfd4] bg-[#fffdfa] px-4 py-4 sm:px-5">
+                <div className="flex flex-col gap-4">
+                  <div className="min-w-0">
+                    <div className="text-sm text-[#918778]">
+                      <Link href="/" className="hover:text-[#2c261f]">Home</Link>
+                      {" / "}
+                      <Link href="/shop" className="hover:text-[#2c261f]">Shop</Link>
+                      {breadcrumbItems.map((item) => (
+                        <span key={item.id}>
+                          {" / "}
+                          <Link href={item.path} className={item.id === category.id ? "font-medium text-[#2c261f]" : "hover:text-[#2c261f]"}>
+                            {item.title}
+                          </Link>
+                        </span>
+                      ))}
+                    </div>
 
-              {activeFilterChips.length > 0 ? (
-                <div className="mt-5 rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-semibold text-slate-900">Active filters</span>
-                      {activeFilterChips.map((chip) => (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold text-[#6f655b]">Active:</span>
+                      {activeFilterChips.length > 0 ? activeFilterChips.map((chip) => (
                         <Link
                           key={chip.key}
                           href={chip.href}
-                          className="inline-flex items-center rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-medium text-teal-800 hover:bg-teal-100"
+                          className="inline-flex items-center rounded-full border border-[#dcc6a2] bg-[#f4ead9] px-3 py-1.5 text-sm font-medium text-[#3c3127]"
                         >
                           {chip.label}
                         </Link>
-                      ))}
-                    </div>
-                    <Link
-                      href={categoryPath}
-                      className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-slate-100 px-3.5 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-200"
-                    >
-                      Clear all filters
-                    </Link>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="mt-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                <div className="text-sm text-slate-500">
-                  <Link href="/" className="hover:text-slate-900">Home</Link>
-                  {" / "}
-                  <Link href="/shop" className="hover:text-slate-900">Shop</Link>
-                  {breadcrumbItems.map((item) => (
-                    <span key={item.id}>
-                      {" / "}
-                      <Link href={item.path} className={item.id === category.id ? "font-medium text-slate-900" : "hover:text-slate-900"}>
-                        {item.title}
+                      )) : <span className="text-sm text-[#8f877a]">No active filters</span>}
+                      <Link href={categoryPath} className="ml-auto text-sm font-medium text-[#8f877a] transition-colors hover:text-[#2c261f]">
+                        Clear all
                       </Link>
-                    </span>
-                  ))}
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex items-center gap-2 text-sm text-slate-700"><span className="font-semibold">Show :</span>{[8, 16, 20, 32, 36].map((n) => <Link key={n} href={`${categoryPath}${buildQuery((p) => p.set("limit", String(n)), { resetPage: true })}`} className={limitValue === n ? "font-semibold text-slate-900" : "text-slate-500 hover:text-slate-900"}>{n}</Link>)}</div>
-                  <div className="h-5 w-px bg-slate-200" />
-                  <div className="flex items-center gap-1">
-                      <Link href={`${categoryPath}${buildQuery((p) => p.set("view", "2"))}`} className={`rounded border p-1.5 ${viewMode === "2" ? "bg-slate-900 text-white border-slate-900" : "text-slate-500 border-slate-200"}`}><Grid2x2 className="h-4 w-4" /></Link>
-                    <Link href={`${categoryPath}${buildQuery((p) => p.set("view", "3"))}`} className={`rounded border p-1.5 ${viewMode === "3" ? "bg-slate-900 text-white border-slate-900" : "text-slate-500 border-slate-200"}`}><Rows3 className="h-4 w-4" /></Link>
-                    <Link href={`${categoryPath}${buildQuery((p) => p.set("view", "4"))}`} className={`rounded border p-1.5 ${viewMode === "4" ? "bg-slate-900 text-white border-slate-900" : "text-slate-500 border-slate-200"}`}><LayoutGrid className="h-4 w-4" /></Link>
-                    <Link href={`${categoryPath}${buildQuery((p) => p.set("view", "list"))}`} className={`rounded border p-1.5 ${viewMode === "list" ? "bg-slate-900 text-white border-slate-900" : "text-slate-500 border-slate-200"}`}><List className="h-4 w-4" /></Link>
+                    </div>
                   </div>
-                  <form method="get" action={categoryPath} className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
-                    {Object.entries(searchParams).flatMap(([key, value]) => {
-                      if (key === "sort" || key === "page" || value === undefined) return []
-                      if (Array.isArray(value)) return value.map((item, idx) => <input key={`${key}-${item}-${idx}`} type="hidden" name={key} value={item} />)
-                      return <input key={key} type="hidden" name={key} value={value} />
-                    })}
-                    <input type="hidden" name="page" value="1" />
-                    <input type="hidden" name="limit" value={String(limitValue)} />
-                    <select name="sort" defaultValue={sortValue} className="h-9 w-full min-w-0 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 sm:min-w-[190px]">
-                      <option value="latest">Default sorting</option>
-                      <option value="price-asc">Price: low to high</option>
-                      <option value="price-desc">Price: high to low</option>
-                      <option value="oldest">Oldest first</option>
-                    </select>
-                    <button type="submit" className="h-9 rounded border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">Apply</button>
-                  </form>
+
+                  <div className="grid gap-3 border-t border-[#eee6db] pt-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                    <div>
+                      <div className="flex flex-wrap items-end justify-between gap-3">
+                        <div>
+                          <p className="text-2xl font-semibold tracking-[-0.03em] text-[#2c261f]">{metadata.total} rugs found</p>
+                          <p className="mt-1 text-sm text-[#8d8478]">Dense editorial browsing with live filters and search.</p>
+                        </div>
+                        <div className="flex items-center gap-3 text-sm text-[#7c7368]">
+                          <span className="font-medium text-[#5f564b]">Show</span>
+                          {[8, 16, 20, 32, 36].map((n) => (
+                            <Link key={n} href={`${categoryPath}${buildQuery((p) => p.set("limit", String(n)), { resetPage: true })}`} className={limitValue === n ? "rounded-full bg-[#caa56a] px-2.5 py-1 text-white" : "rounded-full border border-[#e7dfd4] bg-[#f5f1ea] px-2.5 py-1 text-[#8f877a] hover:border-[#d8cebf] hover:text-[#2c261f]"}>
+                              {n}
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                      <form method="get" action={categoryPath} className="mt-3 flex flex-col gap-3 xl:flex-row">
+                        {Object.entries(searchParams).flatMap(([key, value]) => {
+                          if (key === "q" || key === "page" || value === undefined) return []
+                          if (Array.isArray(value)) return value.map((item, idx) => <input key={`${key}-${item}-${idx}`} type="hidden" name={key} value={item} />)
+                          return <input key={key} type="hidden" name={key} value={value} />
+                        })}
+                        <input type="hidden" name="page" value="1" />
+                        <input type="hidden" name="limit" value={String(limitValue)} />
+                        <div className="flex h-12 w-full items-center rounded-full border border-[#e7dfd4] bg-[#f7f3ed] px-4 xl:max-w-[430px]">
+                          <input name="q" defaultValue={query} placeholder="Search within this collection" className="w-full bg-transparent text-sm text-[#3f372e] placeholder:text-[#9a9083] outline-none" />
+                        </div>
+                        <div className="flex items-center gap-1 self-start rounded-full border border-[#e7dfd4] bg-[#f7f3ed] p-1">
+                          <Link href={`${categoryPath}${buildQuery((p) => p.set("view", "2"))}`} className={`rounded-full p-2 ${viewMode === "2" ? "bg-[#caa56a] text-white" : "text-[#8f877a]"}`}><Grid2x2 className="h-4 w-4" /></Link>
+                          <Link href={`${categoryPath}${buildQuery((p) => p.set("view", "3"))}`} className={`rounded-full p-2 ${viewMode === "3" ? "bg-[#caa56a] text-white" : "text-[#8f877a]"}`}><Rows3 className="h-4 w-4" /></Link>
+                          <Link href={`${categoryPath}${buildQuery((p) => p.set("view", "4"))}`} className={`rounded-full p-2 ${viewMode === "4" ? "bg-[#caa56a] text-white" : "text-[#8f877a]"}`}><LayoutGrid className="h-4 w-4" /></Link>
+                          <Link href={`${categoryPath}${buildQuery((p) => p.set("view", "list"))}`} className={`rounded-full p-2 ${viewMode === "list" ? "bg-[#caa56a] text-white" : "text-[#8f877a]"}`}><List className="h-4 w-4" /></Link>
+                        </div>
+                      </form>
+                    </div>
+
+                    <form method="get" action={categoryPath} className="flex w-full flex-col gap-3 lg:w-auto lg:min-w-[250px]">
+                      {Object.entries(searchParams).flatMap(([key, value]) => {
+                        if (key === "sort" || key === "page" || value === undefined) return []
+                        if (Array.isArray(value)) return value.map((item, idx) => <input key={`${key}-${item}-${idx}`} type="hidden" name={key} value={item} />)
+                        return <input key={key} type="hidden" name={key} value={value} />
+                      })}
+                      <input type="hidden" name="page" value="1" />
+                      <input type="hidden" name="limit" value={String(limitValue)} />
+                      <label className="text-sm font-medium text-[#6f655b]">Sort</label>
+                      <select name="sort" defaultValue={sortValue} className="h-12 min-w-0 rounded-full border border-[#e7dfd4] bg-[#f7f3ed] px-4 text-sm font-medium text-[#3f372e] sm:min-w-[220px]">
+                        <option value="latest">Newest first</option>
+                        <option value="price-asc">Price: low to high</option>
+                        <option value="price-desc">Price: high to low</option>
+                        <option value="oldest">Oldest first</option>
+                      </select>
+                      <button type="submit" className="h-11 rounded-full border border-[#dcc6a2] bg-[#f4ead9] px-5 text-sm font-semibold text-[#3c3127] transition-colors hover:bg-[#efdfc7]">
+                        Apply Sort
+                      </button>
+                    </form>
+                  </div>
                 </div>
               </div>
 
-              <form method="get" action={categoryPath} className="mt-4 rounded-md border border-slate-300 bg-white px-4 py-3">
-                {Object.entries(searchParams).flatMap(([key, value]) => {
-                  if (key === "q" || key === "page" || value === undefined) return []
-                  if (Array.isArray(value)) return value.map((item, idx) => <input key={`${key}-${item}-${idx}`} type="hidden" name={key} value={item} />)
-                  return <input key={key} type="hidden" name={key} value={value} />
-                })}
-                <input type="hidden" name="page" value="1" />
-                <input type="hidden" name="limit" value={String(limitValue)} />
-                <input name="q" defaultValue={query} placeholder="Search for products" className="w-full bg-transparent text-slate-900 placeholder:text-slate-400 outline-none" />
-              </form>
-
-              <div className="mt-3 flex items-center justify-between">
-                <h2 className="text-sm font-medium text-slate-600">{metadata.total} products found</h2>
-              </div>
-
-              {products.length === 0 ? <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-8 py-16 text-center text-slate-500">No products were found matching your selection.</div> : (
+              {products.length === 0 ? <div className="mt-4 rounded-[24px] border border-dashed border-[#e7dfd4] bg-[#fffdfa] px-8 py-16 text-center text-[#948b7d]">No products were found matching your selection.</div> : (
                 <>
                   <div className={productGridClassName}>
                     {products.map((product) => {
@@ -800,24 +787,26 @@ export async function renderCategoryPage({
                     if (viewMode === "list") {
                       const image = getProductImageUrl(parsedImages[0], "large") || "/placeholder.jpg"
                       return (
-                        <Link key={product.id} href={`/product/${product.slug}`} className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 hover:bg-slate-50 sm:flex-row">
-                          <div className="flex h-40 w-full items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-slate-50 p-3 sm:h-36 sm:w-36 sm:shrink-0"><img src={image} alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt, categories: product.categories })} loading="lazy" decoding="async" className="h-full w-full object-contain transition-transform duration-300 hover:scale-105" /></div>
+                        <Link key={product.id} href={`/product/${product.slug}`} className="flex flex-col gap-4 rounded-[26px] border border-[#e7dfd4] bg-[#fffdfa] p-4 hover:bg-[#fcf8f3] sm:flex-row">
+                          <div className="flex h-40 w-full items-center justify-center overflow-hidden rounded-2xl bg-[linear-gradient(180deg,#efe5d5_0%,#eadfcf_100%)] p-3 sm:h-36 sm:w-36 sm:shrink-0"><img src={image} alt={buildProductImageAlt({ title: product.title, fallbackAlt: parsedImages[0]?.alt, categories: product.categories })} loading="lazy" decoding="async" className="h-full w-full object-contain transition-transform duration-300 hover:scale-105" /></div>
                           <div className="min-w-0 flex-1">
-                            <p className="line-clamp-2 text-lg font-serif font-bold text-slate-900">{product.title}</p>
-                            <p className="mt-1 text-sm text-slate-500">{product.categories?.map((c) => c.title).slice(0, 2).join(", ") || "Rug House Collection"}</p>
-                            <div className="mt-3 flex items-center gap-2"><span className="text-2xl font-bold text-slate-900">{formatCurrency(product.price, currencySettings)}</span>{product.compareAtPrice && product.compareAtPrice > product.price ? <span className="text-base text-slate-400 line-through">{formatCurrency(product.compareAtPrice, currencySettings)}</span> : null}</div>
-                            <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-600">{stripHtml(product.description) || "Premium hand-crafted rug with authentic weaving details and durable natural fibers."}</p>
+                            <p className="line-clamp-2 text-lg font-semibold text-[#2c261f]">{product.title}</p>
+                            <p className="mt-1 text-sm text-[#8d8478]">{product.categories?.map((c) => c.title).slice(0, 2).join(", ") || "Rug House Collection"}</p>
+                            <div className="mt-3 flex items-center gap-2"><span className="text-2xl font-bold text-[#2c261f]">{formatCurrency(product.price, currencySettings)}</span>{product.compareAtPrice && product.compareAtPrice > product.price ? <span className="text-base text-[#8d857b] line-through">{formatCurrency(product.compareAtPrice, currencySettings)}</span> : null}</div>
+                            <p className="mt-2 line-clamp-3 text-xs leading-5 text-[#8d857b]">{stripHtml(product.description) || "Premium hand-crafted rug with authentic weaving details and durable natural fibers."}</p>
                           </div>
                         </Link>
                       )
                     }
-                    return <CategoryHoverProductCardServer key={product.id} product={product} currencySettings={currencySettings} />
+                    return <CategoryListingProductCard key={product.id} product={product} currencySettings={currencySettings} />
                   })}
                   </div>
                   <ListingPagination
                     currentPage={metadata.page}
                     totalPages={metadata.totalPages}
                     buildHref={(nextPage) => `${categoryPath}${buildQuery((p) => p.set("page", String(nextPage)))}`}
+                    theme="dark"
+                    className="mt-5"
                   />
                 </>
               )}

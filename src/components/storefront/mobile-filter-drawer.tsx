@@ -18,7 +18,7 @@ type FilterSection = {
   title: string
   items: FilterItem[]
   defaultOpen?: boolean
-  colorGrid?: boolean
+  variant?: "checkbox" | "pill" | "swatch"
 }
 
 type ActiveChip = {
@@ -48,19 +48,19 @@ export function MobileFilterDrawer({
 
   return (
     <div className="space-y-4 lg:hidden">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="rounded-[24px] border border-[#e7dfd4] bg-[#f7f3ed] p-4 text-[#4d453b] shadow-[0_14px_36px_rgba(31,22,16,0.08)]">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-slate-900 px-4 text-sm font-semibold text-white"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-[#dcc6a2] bg-[#f4ead9] px-4 text-sm font-semibold text-[#3c3127]"
           >
             <SlidersHorizontal className="h-4 w-4" />
             Filter
           </button>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-900">{resultCount} products</p>
-            <p className="text-xs text-slate-500">Compact mobile filtering</p>
+            <p className="text-sm font-semibold text-[#2c261f]">{resultCount} products</p>
+            <p className="text-xs text-[#8f877a]">Browse with filters</p>
           </div>
         </div>
 
@@ -70,12 +70,12 @@ export function MobileFilterDrawer({
               <Link
                 key={chip.key}
                 href={chip.href}
-                className="inline-flex items-center rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-medium text-teal-800"
+                className="inline-flex items-center rounded-full border border-[#dcc6a2] bg-[#f4ead9] px-3 py-1 text-xs font-medium text-[#3c3127]"
               >
                 {chip.label}
               </Link>
             ))}
-            <Link href={categoryPath} className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600">
+            <Link href={categoryPath} className="inline-flex items-center rounded-full border border-[#e7dfd4] bg-[#fffdfa] px-3 py-1 text-xs font-medium text-[#7d7468]">
               Clear
             </Link>
           </div>
@@ -83,16 +83,16 @@ export function MobileFilterDrawer({
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="left-0 top-auto bottom-0 h-[88vh] max-w-none translate-x-0 translate-y-0 rounded-t-[28px] border-0 bg-white p-0 shadow-2xl sm:h-[82vh]">
+        <DialogContent className="left-0 top-auto bottom-0 h-[88vh] max-w-none translate-x-0 translate-y-0 rounded-t-[28px] border-0 bg-[#fcfaf6] p-0 text-[#4d453b] shadow-2xl sm:h-[82vh]">
           <DialogTitle className="sr-only">Product filters</DialogTitle>
           <div className="flex h-full flex-col">
-            <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-5 py-4">
+            <div className="sticky top-0 z-10 border-b border-[#e7dfd4] bg-[#fcfaf6] px-5 py-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#0f766e]">Filters</p>
-                  <p className="mt-2 text-lg font-semibold text-slate-900">{resultCount} matching products</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#b08a55]">Filters</p>
+                  <p className="mt-2 text-lg font-semibold text-[#2c261f]">{resultCount} matching products</p>
                 </div>
-                <button type="button" onClick={() => setOpen(false)} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600">
+                <button type="button" onClick={() => setOpen(false)} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#e7dfd4] text-[#8f877a]">
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -100,18 +100,18 @@ export function MobileFilterDrawer({
 
             <div className="flex-1 overflow-y-auto px-5 py-5">
               {statusSection ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-sm font-semibold text-slate-900">{statusSection.title}</p>
+                <div className="rounded-2xl border border-[#e7dfd4] bg-[#fffdfa] p-4">
+                  <p className="text-sm font-semibold text-[#2c261f]">{statusSection.title}</p>
                   <div className="mt-4 grid grid-cols-2 gap-3">
                     {statusSection.items.map((item) => (
                       <Link
                         key={item.label}
                         href={item.href}
-                        className={`rounded-xl border px-3 py-3 text-sm font-medium ${item.active ? "border-teal-200 bg-teal-50 text-teal-800" : "border-slate-200 bg-white text-slate-700"}`}
+                        className={`rounded-xl border px-3 py-3 text-sm font-medium ${item.active ? "border-[#dcc6a2] bg-[#f4ead9] text-[#3c3127]" : "border-[#e7dfd4] bg-[#fffdfa] text-[#70675c]"}`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span>{item.label}</span>
-                          <span className={`h-2.5 w-2.5 rounded-full ${item.active ? "bg-teal-600" : "bg-slate-300"}`} />
+                          <span className={`h-2.5 w-2.5 rounded-full ${item.active ? "bg-[#caa56a]" : "bg-[#d6cec2]"}`} />
                         </div>
                       </Link>
                     ))}
@@ -123,7 +123,7 @@ export function MobileFilterDrawer({
                 {restSections.map((section) => {
                   const isOpen = openSections[section.id] ?? false
                   return (
-                    <div key={section.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                    <div key={section.id} className="overflow-hidden rounded-2xl border border-[#e7dfd4] bg-[#fffdfa]">
                       <button
                         type="button"
                         onClick={() => setOpenSections((current) => ({ ...current, [section.id]: !isOpen }))}
@@ -131,24 +131,54 @@ export function MobileFilterDrawer({
                         aria-expanded={isOpen}
                         aria-controls={`filter-section-${section.id}`}
                       >
-                        <span className="text-sm font-semibold text-slate-900">{section.title}</span>
-                        <span className="text-xs text-slate-400">{isOpen ? "Hide" : "Show"}</span>
+                        <span className="text-sm font-semibold text-[#2c261f]">{section.title}</span>
+                        <span className="text-xs text-[#8b8277]">{isOpen ? "Hide" : "Show"}</span>
                       </button>
                       {isOpen ? (
-                        <div id={`filter-section-${section.id}`} className={`border-t border-slate-100 p-4 ${section.colorGrid ? "grid grid-cols-2 gap-2" : "space-y-2"}`}>
+                        <div
+                          id={`filter-section-${section.id}`}
+                          className={`border-t border-[#eee6db] p-4 ${
+                            section.variant === "swatch" ? "grid grid-cols-3 gap-x-3 gap-y-4" :
+                            section.variant === "pill" ? "flex flex-wrap gap-2" :
+                            "space-y-2"
+                          }`}
+                        >
                           {section.items.map((item) => (
                             <Link
                               key={`${section.id}-${item.label}`}
                               href={item.href}
-                              className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-sm ${item.active ? "border-teal-200 bg-teal-50 text-teal-800" : "border-slate-200 bg-white text-slate-700"}`}
+                              className={
+                                section.variant === "swatch"
+                                  ? `rounded-[22px] border px-2 py-2.5 text-center transition-all duration-200 ${item.active ? "border-[#caa56a] bg-[#fcf7ef] shadow-[0_0_0_2px_rgba(255,255,255,0.96),0_0_0_5px_rgba(202,165,106,0.38),0_10px_22px_rgba(202,165,106,0.16)]" : "border-[#e7dfd4] bg-[#fffdfa] shadow-[0_8px_18px_rgba(48,38,26,0.06)]"}`
+                                  : section.variant === "pill"
+                                    ? `inline-flex items-center rounded-full border px-3 py-2 text-sm ${item.active ? "border-[#dcc6a2] bg-[#f4ead9] text-[#3c3127]" : "border-[#e7dfd4] bg-[#fffdfa] text-[#70675c]"}`
+                                    : `flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-sm ${item.active ? "border-[#dcc6a2] bg-[#f4ead9] text-[#3c3127]" : "border-[#e7dfd4] bg-[#fffdfa] text-[#70675c]"}`
+                              }
                             >
-                              <span className="flex min-w-0 items-center gap-2">
-                                {item.colorHex ? <span className="h-3 w-3 shrink-0 rounded-full border border-slate-300" style={{ backgroundColor: item.colorHex }} /> : null}
-                                <span className="truncate">{item.label}</span>
-                              </span>
-                              {typeof item.count === "number" ? (
-                                <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[11px] text-slate-500">{item.count}</span>
-                              ) : null}
+                              {section.variant === "swatch" ? (
+                                <span className="block">
+                                  <span className="mx-auto block h-[3.35rem] w-[3.35rem] rounded-[18px] border border-[rgba(58,45,32,0.12)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" style={{ backgroundColor: item.colorHex || "#6b665f" }} />
+                                  <span className="mt-2.5 block truncate text-[13px] font-semibold leading-5 text-[#4a4138]">{item.label}</span>
+                                  {typeof item.count === "number" ? (
+                                    <span className="mt-0.5 block text-[11px] font-medium text-[#8e8578]">{item.count}</span>
+                                  ) : null}
+                                </span>
+                              ) : (
+                                <>
+                                  <span className="flex min-w-0 items-center gap-2">
+                                    {section.variant === "checkbox" ? (
+                                      <span className={`inline-flex h-5 w-5 items-center justify-center rounded border ${item.active ? "border-[#caa56a] bg-[#caa56a]" : "border-[#d7cec2] bg-transparent"}`}>
+                                        {item.active ? <span className="h-2 w-2 rounded-sm bg-white" /> : null}
+                                      </span>
+                                    ) : null}
+                                    {item.colorHex ? <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-[#d7cec2]" style={{ backgroundColor: item.colorHex }} /> : null}
+                                    <span className="truncate">{item.label}</span>
+                                  </span>
+                                  {typeof item.count === "number" ? (
+                                    <span className="rounded-full border border-[#e4dbcf] bg-[#f5f1ea] px-2 py-0.5 text-[11px] text-[#938c82]">{item.count}</span>
+                                  ) : null}
+                                </>
+                              )}
                             </Link>
                           ))}
                         </div>
@@ -159,12 +189,12 @@ export function MobileFilterDrawer({
               </div>
             </div>
 
-            <div className="sticky bottom-0 border-t border-slate-200 bg-white px-5 py-4">
+            <div className="sticky bottom-0 border-t border-[#e7dfd4] bg-[#fcfaf6] px-5 py-4">
               <div className="flex gap-3">
-                <Link href={categoryPath} className="inline-flex h-11 flex-1 items-center justify-center rounded-full border border-slate-200 text-sm font-semibold text-slate-700">
+                <Link href={categoryPath} className="inline-flex h-11 flex-1 items-center justify-center rounded-full border border-[#e7dfd4] bg-[#fffdfa] text-sm font-semibold text-[#70675c]">
                   Clear
                 </Link>
-                <button type="button" onClick={() => setOpen(false)} className="inline-flex h-11 flex-1 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white">
+                <button type="button" onClick={() => setOpen(false)} className="inline-flex h-11 flex-1 items-center justify-center rounded-full bg-[#f4ead9] text-sm font-semibold text-[#3c3127]">
                   Apply Filters
                 </button>
               </div>
