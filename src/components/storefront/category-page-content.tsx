@@ -13,6 +13,7 @@ import { buildListingPricePresets, buildProductSearchWhere, getMultiParam, getSi
 import { CategoryHoverProductCardServer } from "@/components/storefront/category-hover-product-card-server"
 import { ListingPagination } from "@/components/storefront/listing-pagination"
 import { fetchCategoryPathRows, getCategoryPathById, resolveCategoryByPath } from "@/lib/category-paths"
+import { cn } from "@/lib/utils"
 
 type SearchParams = { [key: string]: string | string[] | undefined }
 
@@ -143,6 +144,14 @@ export async function renderCategoryPage({
   const query = getSingleParam(searchParams, "q")
   const viewInput = getSingleParam(searchParams, "view")
   const viewMode: "2" | "3" | "4" | "list" = viewInput === "2" || viewInput === "3" || viewInput === "4" || viewInput === "list" ? viewInput : "3"
+  const productGridClassName = viewMode === "list"
+    ? "mt-5 space-y-4"
+    : cn(
+        "mt-5 grid min-w-0 grid-cols-2 auto-rows-fr gap-4 sm:gap-5",
+        viewMode === "2" && "md:grid-cols-2",
+        viewMode === "3" && "xl:grid-cols-3",
+        viewMode === "4" && "lg:grid-cols-3 xl:grid-cols-4",
+      )
   const sortInput = getSingleParam(searchParams, "sort")
   const sortValue: "latest" | "oldest" | "price-asc" | "price-desc" =
     sortInput === "oldest" || sortInput === "price-asc" || sortInput === "price-desc" ? sortInput : "latest"
@@ -590,8 +599,8 @@ export async function renderCategoryPage({
             </div>
           </aside>
 
-          <section className="lg:col-span-9">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <section className="min-w-0 lg:col-span-9">
+            <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-5">
                 <h2 className="text-2xl font-serif font-bold text-slate-900">{category.title}</h2>
                 {category.description ? (
@@ -780,7 +789,7 @@ export async function renderCategoryPage({
 
               {products.length === 0 ? <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-8 py-16 text-center text-slate-500">No products were found matching your selection.</div> : (
                 <>
-                  <div className={viewMode === "list" ? "mt-5 space-y-4" : viewMode === "2" ? "mt-5 grid grid-cols-2 gap-4 sm:gap-5 md:grid-cols-2" : viewMode === "4" ? "mt-5 grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4" : "mt-5 grid grid-cols-2 gap-4 sm:gap-5 xl:grid-cols-3"}>
+                  <div className={productGridClassName}>
                     {products.map((product) => {
                     const parsedImages = parseProductImageRecords(product.images)
                     if (viewMode === "list") {
