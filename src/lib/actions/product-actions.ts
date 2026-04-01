@@ -699,13 +699,115 @@ export async function getProducts(
     await purgeExpiredTrashedProducts()
     const skip = (page - 1) * limit
     const hasQuery = query.trim().length > 0
+    const listingContext = await buildProductListingContext(query, status, sort, categorySlug, filters)
+    const baseTotal = await db.product.count({ where: listingContext.baseWhere })
+    const candidateTake = hasQuery ? Math.min(Math.max(baseTotal, limit * page * 8, 120), 1000) : limit
+    const candidateSkip = hasQuery ? 0 : skip
 
+    const products = await db.product.findMany({
+        where: listingContext.queryWhere,
+        skip: candidateSkip,
+        take: candidateTake,
+        orderBy: listingContext.orderBy,
+        include: {
+            categories: {
+                include: {
+                    parent: true
+                }
+            },
+            types: true,
+            styles: true,
+            colors: true,
+            sizes: true,
+            ages: true,
+            materials: true,
+        }
+    })
+
+    const searchSupplementalData = hasQuery
+        ? await getSearchSupplementalData(products.map((product) => product.id))
+        : new Map<string, { shortDescription: string | null; customAttributeValues: string[] }>()
+
+    const enrichedProducts = products.map((product) => {
+        const supplemental = searchSupplementalData.get(product.id)
+        return {
+            ...product,
+            shortDescription: supplemental?.shortDescription ?? null,
+            customAttributeValues: supplemental?.customAttributeValues ?? [],
+        }
+    })
+
+    const rankedEntries = hasQuery
+        ? enrichedProducts
+            .map((product) => ({
+                product,
+                ...scoreProductSearchCandidate(product, query),
+            }))
+            .filter((entry) => entry.score > 0)
+            .sort((left, right) => {
+                if (right.score !== left.score) return right.score - left.score
+                if (right.matchedTokens !== left.matchedTokens) return right.matchedTokens - left.matchedTokens
+                return right.product.createdAt.getTime() - left.product.createdAt.getTime()
+            })
+        : []
+
+    const rankedProducts = hasQuery
+        ? rankedEntries.slice(skip, skip + limit).map((entry) => entry.product)
+        : products
+
+    const total = hasQuery ? rankedEntries.length : baseTotal
+
+    const serializedProducts = rankedProducts.map(product => ({
+        ...product,
+        sku: product.sku ?? null,
+        isFeatured: Boolean(product.isFeatured),
+        price: product.price.toNumber(),
+        compareAtPrice: product.compareAtPrice ? product.compareAtPrice.toNumber() : null,
+        primaryImage: getPrimaryProductImage(product.images),
+        primaryImageCandidates: getPrimaryProductImageCandidates(product.images),
+    }))
+
+    return {
+        products: serializedProducts,
+        metadata: {
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit)
+        }
+    }
+}
+
+async function buildProductListingContext(
+    query = "",
+    status?: string,
+    sort?: 'latest' | 'oldest' | 'price-asc' | 'price-desc',
+    categorySlug?: string,
+    filters?: {
+        types?: string[],
+        styles?: string[],
+        colors?: string[],
+        sizes?: string[],
+        ages?: string[],
+        materials?: string[],
+        attributeFilters?: Record<string, string[]>,
+        categoryIds?: string[],
+        priceMin?: number,
+        priceMax?: number,
+        inStock?: boolean,
+        stockStatus?: "instock" | "outofstock",
+        productIds?: string[],
+        featuredOnly?: boolean,
+        trashOnly?: boolean,
+        scheduledDate?: string
+    }
+) {
     const orderBy: Prisma.ProductOrderByWithRelationInput =
         sort === 'latest' ? { createdAt: 'desc' } :
             sort === 'oldest' ? { createdAt: 'asc' } :
                 sort === 'price-asc' ? { price: 'asc' } :
                     sort === 'price-desc' ? { price: 'desc' } :
-                        { updatedAt: 'desc' } // Default
+                        { updatedAt: 'desc' }
 
     const stockFilter =
         filters?.stockStatus === "instock"
@@ -778,7 +880,6 @@ export async function getProducts(
                 slug: categorySlug
             }
         } : undefined,
-        // --- Filters ---
         types: filters?.types?.length ? { some: { slug: { in: filters.types } } } : undefined,
         styles: filters?.styles?.length ? { some: { slug: { in: filters.styles } } } : undefined,
         colors: filters?.colors?.length ? { some: { slug: { in: filters.colors } } } : undefined,
@@ -799,82 +900,125 @@ export async function getProducts(
             : undefined,
     }
 
-    const baseTotal = await db.product.count({ where: baseWhere })
-    const candidateTake = hasQuery ? Math.min(Math.max(baseTotal, limit * page * 8, 120), 1000) : limit
-    const candidateSkip = hasQuery ? 0 : skip
-
-    const products = await db.product.findMany({
-        where: hasQuery ? baseWhere : { ...baseWhere, AND: buildProductSearchWhere(query) },
-        skip: candidateSkip,
-        take: candidateTake,
-        orderBy,
-        include: {
-            categories: {
-                include: {
-                    parent: true
-                }
-            },
-            types: true,
-            styles: true,
-            colors: true,
-            sizes: true,
-            ages: true,
-            materials: true,
-        }
-    })
-
-    const searchSupplementalData = hasQuery
-        ? await getSearchSupplementalData(products.map((product) => product.id))
-        : new Map<string, { shortDescription: string | null; customAttributeValues: string[] }>()
-
-    const enrichedProducts = products.map((product) => {
-        const supplemental = searchSupplementalData.get(product.id)
-        return {
-            ...product,
-            shortDescription: supplemental?.shortDescription ?? null,
-            customAttributeValues: supplemental?.customAttributeValues ?? [],
-        }
-    })
-
-    const rankedEntries = hasQuery
-        ? enrichedProducts
-            .map((product) => ({
-                product,
-                ...scoreProductSearchCandidate(product, query),
-            }))
-            .filter((entry) => entry.score > 0)
-            .sort((left, right) => {
-                if (right.score !== left.score) return right.score - left.score
-                if (right.matchedTokens !== left.matchedTokens) return right.matchedTokens - left.matchedTokens
-                return right.product.createdAt.getTime() - left.product.createdAt.getTime()
-            })
-        : []
-
-    const rankedProducts = hasQuery
-        ? rankedEntries.slice(skip, skip + limit).map((entry) => entry.product)
-        : products
-
-    const total = hasQuery ? rankedEntries.length : baseTotal
-
-    const serializedProducts = rankedProducts.map(product => ({
-        ...product,
-        sku: product.sku ?? null,
-        isFeatured: Boolean(product.isFeatured),
-        price: product.price.toNumber(),
-        compareAtPrice: product.compareAtPrice ? product.compareAtPrice.toNumber() : null,
-        primaryImage: getPrimaryProductImage(product.images),
-        primaryImageCandidates: getPrimaryProductImageCandidates(product.images),
-    }))
-
     return {
-        products: serializedProducts,
-        metadata: {
-            total,
-            page,
-            limit,
-            totalPages: Math.ceil(total / limit)
-        }
+        hasQuery: query.trim().length > 0,
+        orderBy,
+        baseWhere,
+        queryWhere: query.trim().length > 0 ? baseWhere : { ...baseWhere, AND: buildProductSearchWhere(query) },
     }
+}
+
+export async function getProductIdsForFacetCounts(
+    query = "",
+    status?: string,
+    sort?: 'latest' | 'oldest' | 'price-asc' | 'price-desc',
+    categorySlug?: string,
+    filters?: {
+        types?: string[],
+        styles?: string[],
+        colors?: string[],
+        sizes?: string[],
+        ages?: string[],
+        materials?: string[],
+        attributeFilters?: Record<string, string[]>,
+        categoryIds?: string[],
+        priceMin?: number,
+        priceMax?: number,
+        inStock?: boolean,
+        stockStatus?: "instock" | "outofstock",
+        productIds?: string[],
+        featuredOnly?: boolean,
+        trashOnly?: boolean,
+        scheduledDate?: string
+    }
+) {
+    await ensureProductSkuIntegrity()
+    await purgeExpiredTrashedProducts()
+
+    const listingContext = await buildProductListingContext(query, status, sort, categorySlug, filters)
+    const candidates = await db.product.findMany({
+        where: listingContext.queryWhere,
+        orderBy: listingContext.orderBy,
+        take: listingContext.hasQuery ? 1000 : undefined,
+        select: {
+            id: true,
+            title: true,
+            slug: true,
+            sku: true,
+            description: true,
+            shortDescription: true,
+            price: true,
+            createdAt: true,
+            categories: {
+                select: {
+                    title: true,
+                    slug: true,
+                },
+            },
+            styles: {
+                select: {
+                    name: true,
+                    slug: true,
+                },
+            },
+            types: {
+                select: {
+                    name: true,
+                    slug: true,
+                },
+            },
+            colors: {
+                select: {
+                    name: true,
+                    slug: true,
+                },
+            },
+            sizes: {
+                select: {
+                    name: true,
+                    slug: true,
+                },
+            },
+            ages: {
+                select: {
+                    name: true,
+                    slug: true,
+                },
+            },
+            materials: {
+                select: {
+                    name: true,
+                    slug: true,
+                },
+            },
+        },
+    })
+
+    if (!listingContext.hasQuery) {
+        return candidates.map((product) => product.id)
+    }
+
+    const searchSupplementalData = await getSearchSupplementalData(candidates.map((product) => product.id))
+    return candidates
+        .map((product) => {
+            const supplemental = searchSupplementalData.get(product.id)
+            return {
+                ...product,
+                shortDescription: supplemental?.shortDescription ?? null,
+                customAttributeValues: supplemental?.customAttributeValues ?? [],
+            }
+        })
+        .map((product) => ({
+            product,
+            ...scoreProductSearchCandidate(product, query),
+        }))
+        .filter((entry) => entry.score > 0)
+        .sort((left, right) => {
+            if (right.score !== left.score) return right.score - left.score
+            if (right.matchedTokens !== left.matchedTokens) return right.matchedTokens - left.matchedTokens
+            return right.product.createdAt.getTime() - left.product.createdAt.getTime()
+        })
+        .map((entry) => entry.product.id)
 }
 
 export async function getProductAdminStats(query = "") {

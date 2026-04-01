@@ -4,7 +4,7 @@ import { Metadata } from "next"
 import { LayoutGrid, Grid2x2, Rows3, List } from "lucide-react"
 import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
 import { prisma } from "@/lib/db"
-import { getProducts, getProductOptions } from "@/lib/actions/product-actions"
+import { getProductIdsForFacetCounts, getProducts, getProductOptions } from "@/lib/actions/product-actions"
 import { getAttributeFacetGroupsForProductIds } from "@/lib/product-attributes"
 import { buildProductImageAlt, getProductImageUrl, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
 import { formatCurrency } from "@/lib/storefront/currency"
@@ -317,7 +317,12 @@ export async function renderCategoryPage({
     categoryIds: categoryScopeIds,
   })
 
-  const attributeFacetGroups = await getAttributeFacetGroupsForProductIds(products.map((product) => product.id))
+  const facetProductIds = await getProductIdsForFacetCounts(query, "published", sortValue, category.slug, {
+    ...baseFilters,
+    categoryIds: categoryScopeIds,
+    productIds: topRatedOnly ? topRatedIds : undefined,
+  })
+  const attributeFacetGroups = await getAttributeFacetGroupsForProductIds(facetProductIds)
   const primaryAttributeFacetGroups = attributeFacetGroups.slice(0, 6)
   const overflowAttributeFacetGroups = attributeFacetGroups.slice(6)
 
