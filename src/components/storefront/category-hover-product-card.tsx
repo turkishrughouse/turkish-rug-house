@@ -11,6 +11,7 @@ import { addToCart } from "@/lib/storefront/cart"
 import { addEngagementItem } from "@/lib/storefront/engagement"
 import { formatCurrency, type CurrencySettings } from "@/lib/storefront/currency"
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
+import { toPlainTextSnippet } from "@/lib/storefront/plain-text"
 import { useStorefrontCurrency } from "@/components/storefront/currency-provider"
 
 type ProductCardData = {
@@ -36,11 +37,6 @@ function parseImages(images: string) {
   return parseProductImageRecords(images)
 }
 
-function stripHtml(input: string | null | undefined) {
-  if (!input) return ""
-  return input.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
-}
-
 export function CategoryHoverProductCard({ product }: { product: ProductCardData }) {
   const { formatUsd } = useStorefrontCurrency()
   const gallery = useMemo(() => {
@@ -64,7 +60,7 @@ export function CategoryHoverProductCard({ product }: { product: ProductCardData
     ? Math.round((((product.compareAtPrice as number) - product.price) / (product.compareAtPrice as number)) * 100)
     : 0
   const shortDescription = (
-    stripHtml(product.description) || "Premium handcrafted product with quality materials and authentic details."
+    toPlainTextSnippet(product.description) || "Premium handcrafted product with quality materials and authentic details."
   ).slice(0, 140)
   const categoryText = product.categories?.slice(0, 2).map((c) => c.title).join(", ") || "Rug House"
 
@@ -145,7 +141,7 @@ export function CategoryHoverProductCardClient({ product }: { product: ClientOve
   const canBuy = (product.isStock ?? true) && stockCount > 0
   const mainImage = product.mainImage || getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
   const primaryLargeImage = product.primaryLargeImage || getProductImageUrl(gallery[0], "large") || "/placeholder.jpg"
-  const fullDescription = stripHtml(product.description) || "Premium handcrafted product with quality materials and authentic details."
+  const fullDescription = toPlainTextSnippet(product.description) || "Premium handcrafted product with quality materials and authentic details."
   const hasDiscount = Boolean(product.compareAtPrice && product.compareAtPrice > product.price)
   const discountPercent = hasDiscount
     ? Math.round((((product.compareAtPrice as number) - product.price) / (product.compareAtPrice as number)) * 100)

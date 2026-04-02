@@ -4,6 +4,7 @@ import { CategoryHoverProductCardClient } from "@/components/storefront/category
 import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
 import { formatCurrency, type CurrencySettings } from "@/lib/storefront/currency"
 import { buildProductImageAlt, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
+import { toPlainTextSnippet } from "@/lib/storefront/plain-text"
 
 type ProductCardData = {
   id: string
@@ -16,11 +17,6 @@ type ProductCardData = {
   stockCount?: number
   isStock?: boolean
   categories?: Array<{ id: string; title: string; slug: string }>
-}
-
-function stripHtml(input: string | null | undefined) {
-  if (!input) return ""
-  return input.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
 }
 
 export function CategoryHoverProductCardServer({
@@ -47,7 +43,7 @@ export function CategoryHoverProductCardServer({
     ? Math.round((((product.compareAtPrice as number) - product.price) / (product.compareAtPrice as number)) * 100)
     : 0
   const shortDescription = (
-    stripHtml(product.description) || "Premium handcrafted product with quality materials and authentic details."
+    toPlainTextSnippet(product.description) || "Premium handcrafted product with quality materials and authentic details."
   ).slice(0, 140)
   const categoryText = product.categories?.slice(0, 2).map((c) => c.title).join(", ") || "Rug House"
 

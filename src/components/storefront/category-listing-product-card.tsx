@@ -5,6 +5,7 @@ import { StorefrontProductImage } from "@/components/storefront/storefront-produ
 import { buildProductImageAlt, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
 import { formatCurrency, type CurrencySettings } from "@/lib/storefront/currency"
 import { buildStorefrontProductTags, type ProductRelation as StorefrontProductRelation } from "@/lib/storefront/product-tags"
+import { toPlainTextSnippet } from "@/lib/storefront/plain-text"
 
 type ProductRelation = StorefrontProductRelation & { slug: string }
 
@@ -25,11 +26,6 @@ type CategoryListingProduct = {
   colors?: ProductRelation[]
   ages?: ProductRelation[]
   materials?: ProductRelation[]
-}
-
-function stripHtml(input: string | null | undefined) {
-  if (!input) return ""
-  return input.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
 }
 
 function relationLabel(item: ProductRelation | undefined) {
@@ -62,8 +58,7 @@ export function CategoryListingProductCard({
     : 0
 
   const badgeLabel = relationLabel(product.ages?.[0]) || relationLabel(product.types?.[0]) || product.categories?.[0]?.title || "Featured"
-  const sizeLabel = relationLabel(product.sizes?.[0]) || "One of a kind"
-  const shortDescription = stripHtml(product.description).slice(0, 110)
+  const shortDescription = toPlainTextSnippet(product.description).slice(0, 110)
 
   const attributeTags = buildStorefrontProductTags(product)
 
@@ -125,11 +120,7 @@ export function CategoryListingProductCard({
                   <span className="text-sm text-[#9b9286] line-through">{formatCurrency(product.compareAtPrice, currencySettings)}</span>
                 ) : null}
               </div>
-              <p className="mt-0.5 text-sm text-[#7b7267]">{sizeLabel}</p>
             </div>
-            <span className="rounded-full border border-[#e6ddd2] bg-[#f5f1ea] px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[#7b7267]">
-              Detail
-            </span>
           </div>
           <p className="mt-2.5 min-h-[2.5rem] line-clamp-2 text-[11px] leading-5 text-[#8d8478]">
             {shortDescription || "Hand-selected vintage rug with refined character and collectible appeal."}

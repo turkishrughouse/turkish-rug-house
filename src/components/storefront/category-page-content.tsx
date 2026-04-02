@@ -12,6 +12,7 @@ import { formatCurrency } from "@/lib/storefront/currency"
 import { getStorefrontCurrencySnapshot } from "@/lib/storefront/currency-server"
 import { resolveColorSwatch } from "@/lib/storefront/color-swatches"
 import { buildListingPricePresets, getMultiParam, getSingleParam, resolveSelectedOptionSlugs, resolveSelectedSizeSlugs } from "@/lib/storefront/listing-filters"
+import { toPlainTextSnippet } from "@/lib/storefront/plain-text"
 import { ListingPagination } from "@/components/storefront/listing-pagination"
 import { getCategoryPathById, resolveCategoryByPath } from "@/lib/category-paths"
 import { cn } from "@/lib/utils"
@@ -45,13 +46,8 @@ function getSiteUrl() {
   ).replace(/\/+$/, "")
 }
 
-function stripHtml(input: string | null | undefined) {
-  if (!input) return ""
-  return input.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
-}
-
 function buildCategoryMetaDescription(title: string, description: string | null | undefined) {
-  const plainDescription = stripHtml(description)
+  const plainDescription = toPlainTextSnippet(description)
   if (plainDescription) {
     return plainDescription.slice(0, 160)
   }
@@ -515,7 +511,7 @@ export async function renderCategoryPage({
         <div className="absolute inset-0 bg-slate-900/60" />
         <div className="container relative mx-auto px-6 py-14 md:py-16">
           <h1 className="font-serif text-4xl md:text-5xl font-bold text-white">{category.title}</h1>
-          {category.description ? <p className="mt-4 max-w-3xl text-slate-100/90 text-lg leading-relaxed">{stripHtml(category.description)}</p> : null}
+          {category.description ? <p className="mt-4 max-w-3xl text-slate-100/90 text-lg leading-relaxed">{toPlainTextSnippet(category.description)}</p> : null}
           {childCounts.length > 0 ? (
             <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {childCounts.filter((child) => child.productCount > 0).map((child) => (
@@ -612,7 +608,7 @@ export async function renderCategoryPage({
                         })}
                       </div>
                     ) : group.slug === "color" ? (
-                      <div className="mt-4 grid grid-cols-3 gap-x-3 gap-y-4">
+                      <div className="mt-4 grid grid-cols-5 gap-x-2.5 gap-y-3">
                         {group.options.map((option) => {
                           const active = (selectedAttributeFilters[group.slug] || []).includes(option.slug)
                           const swatch = resolveColorSwatch({
@@ -636,11 +632,11 @@ export async function renderCategoryPage({
                               }, { resetPage: true })}`}
                               className="text-center"
                             >
-                              <span className={`mx-auto flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-[24px] border transition-all duration-200 ${active ? "border-[#caa56a] bg-[#fcf7ef] shadow-[0_0_0_2px_rgba(255,255,255,0.95),0_0_0_5px_rgba(202,165,106,0.42),0_12px_24px_rgba(202,165,106,0.16)]" : "border-[#e3dbcf] bg-[#fffdfa] shadow-[0_8px_18px_rgba(48,38,26,0.06)] hover:border-[#d0c4b3] hover:shadow-[0_10px_20px_rgba(48,38,26,0.08)]"}`}>
-                                <span className="h-[3.35rem] w-[3.35rem] rounded-[18px] border shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" style={{ background: swatch.background, borderColor: swatch.borderColor || "rgba(58,45,32,0.12)" }} />
+                              <span className={`mx-auto flex h-[3.8rem] w-[3.8rem] items-center justify-center rounded-[20px] border transition-all duration-200 ${active ? "border-[#caa56a] bg-[#fcf7ef] shadow-[0_0_0_2px_rgba(255,255,255,0.95),0_0_0_4px_rgba(202,165,106,0.36),0_10px_18px_rgba(202,165,106,0.14)]" : "border-[#e3dbcf] bg-[#fffdfa] shadow-[0_6px_14px_rgba(48,38,26,0.05)] hover:border-[#d0c4b3] hover:shadow-[0_8px_16px_rgba(48,38,26,0.07)]"}`}>
+                                <span className="h-[2.8rem] w-[2.8rem] rounded-[15px] border shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" style={{ background: swatch.background, borderColor: swatch.borderColor || "rgba(58,45,32,0.12)" }} />
                               </span>
-                              <span className="mt-2.5 block truncate text-[13px] font-semibold leading-5 text-[#4a4138]">{option.value}</span>
-                              <span className="mt-0.5 block text-[11px] font-medium text-[#8e8578]">{option.count}</span>
+                              <span className="mt-1.5 block truncate text-[12px] font-semibold leading-4 text-[#4a4138]">{option.value}</span>
+                              <span className="mt-0.5 block text-[10px] font-medium leading-4 text-[#8e8578]">{option.count}</span>
                             </Link>
                           )
                         })}
@@ -815,7 +811,7 @@ export async function renderCategoryPage({
                             <p className="line-clamp-2 text-lg font-semibold text-[#2c261f]">{product.title}</p>
                             <p className="mt-1 text-sm text-[#8d8478]">{product.categories?.map((c) => c.title).slice(0, 2).join(", ") || "Rug House Collection"}</p>
                             <div className="mt-3 flex items-center gap-2"><span className="text-2xl font-bold text-[#2c261f]">{formatCurrency(product.price, currencySettings)}</span>{product.compareAtPrice && product.compareAtPrice > product.price ? <span className="text-base text-[#8d857b] line-through">{formatCurrency(product.compareAtPrice, currencySettings)}</span> : null}</div>
-                            <p className="mt-2 line-clamp-3 text-xs leading-5 text-[#8d857b]">{stripHtml(product.description) || "Premium hand-crafted rug with authentic weaving details and durable natural fibers."}</p>
+                            <p className="mt-2 line-clamp-3 text-xs leading-5 text-[#8d857b]">{toPlainTextSnippet(product.description) || "Premium hand-crafted rug with authentic weaving details and durable natural fibers."}</p>
                           </div>
                         </Link>
                       )

@@ -48,10 +48,6 @@ export function buildStorefrontProductTags(product: StorefrontTagProduct) {
   pushTag(relationLabel(product.styles?.[0]))
   pushTag(relationLabel(product.materials?.[0]))
 
-  if ((product.colors || []).length === 1) {
-    pushTag(relationLabel(product.colors?.[0]))
-  }
-
   return tags.slice(0, 4)
 }
 
