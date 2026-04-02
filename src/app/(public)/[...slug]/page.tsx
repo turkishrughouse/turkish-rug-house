@@ -18,5 +18,6 @@ export default async function NestedCategoryPage({ params, searchParams }: Props
   return renderCategoryPage({
     slugPath: slug,
     searchParams: resolvedSearchParams,
+    redirectIfCanonicalMismatch: true,
   })
 }

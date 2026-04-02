@@ -64,6 +64,16 @@ function getPositiveIntParam(value: string | null | undefined, fallback: number)
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
+function buildQueryString(searchParams: SearchParams) {
+  const params = new URLSearchParams()
+  Object.entries(searchParams).forEach(([key, value]) => {
+    if (Array.isArray(value)) value.forEach((item) => params.append(key, item))
+    else if (value !== undefined) params.set(key, value)
+  })
+  const query = params.toString()
+  return query ? `?${query}` : ""
+}
+
 export async function generateCategoryMetadataByPath(slugPath: string[]): Promise<Metadata> {
   return generateCategoryMetadataByPathWithSearch(slugPath, {})
 }
@@ -135,7 +145,13 @@ export async function renderCategoryPage({
   if (!resolved) notFound()
 
   if (redirectIfCanonicalMismatch && resolved.path !== `/${slugPath.join("/")}`) {
-    permanentRedirect(resolved.path)
+    console.info("[Category Redirect] redirecting outdated category path", {
+      requestedPath: `/${slugPath.join("/")}`,
+      canonicalPath: resolved.path,
+      categoryId: resolved.category.id,
+      slug: resolved.category.slug,
+    })
+    permanentRedirect(`${resolved.path}${buildQueryString(searchParams)}`)
   }
 
   const rows = resolved.rows

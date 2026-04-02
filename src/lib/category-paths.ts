@@ -59,13 +59,16 @@ export function resolveCategoryRowByPath(rows: CategoryPathRow[], segments: stri
 
 export async function resolveCategoryByPath(segments: string[]) {
   const rows = await fetchCategoryPathRows()
-  const category = resolveCategoryRowByPath(rows, segments)
+  const { bySlug, pathById } = buildCategoryPathMap(rows)
+  const exactCategory = resolveCategoryRowByPath(rows, segments)
+  const category = exactCategory || bySlug.get(segments[segments.length - 1] || "")
   if (!category) return null
-  const { pathById } = buildCategoryPathMap(rows)
+  const canonicalPath = pathById.get(category.id) || `/${category.slug}`
   return {
     category,
     rows,
-    path: pathById.get(category.id) || `/${category.slug}`,
+    path: canonicalPath,
+    exactMatch: canonicalPath === `/${segments.join("/")}`,
   }
 }
 
