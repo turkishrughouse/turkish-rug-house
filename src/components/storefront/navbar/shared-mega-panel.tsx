@@ -3,8 +3,10 @@
 import * as React from "react"
 import Link from "next/link"
 import { ChevronRight } from "lucide-react"
+import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
+import { buildProductImageAlt, getPrimaryProductImageCandidates } from "@/lib/product-images"
+import { formatCurrency } from "@/lib/storefront/currency"
 import { cn } from "@/lib/utils"
-import { getImageUrl } from "@/lib/storage/url"
 
 interface SharedMegaPanelProps {
     activeTab: "categories" | "information" | null
@@ -27,8 +29,22 @@ type TreeCategory = {
     title: string
     slug: string
     path?: string | null
-    image?: string | null
     children?: TreeCategory[]
+}
+
+type TextNode = {
+    id: string
+    label: string
+    href: string
+    children: TextNode[]
+}
+
+type PreviewProduct = {
+    id: string
+    slug: string
+    title: string
+    price: number
+    images: string
 }
 
 export function SharedMegaPanel({
@@ -38,32 +54,25 @@ export function SharedMegaPanel({
     onMouseEnter,
     onMouseLeave,
     onLinkClick,
-}: SharedMegaPanelProps & {
-    categoryItems?: MenuNode[]
-    infoItems?: MenuNode[]
-}) {
-    const [categoryItems, setCategoryItems] = React.useState<MenuNode[]>([])
+}: SharedMegaPanelProps) {
     const [infoItems, setInfoItems] = React.useState<MenuNode[]>([])
     const [categoryTree, setCategoryTree] = React.useState<TreeCategory[]>([])
     const [activeCategoryId, setActiveCategoryId] = React.useState<string | null>(null)
-    const [activeChildId, setActiveChildId] = React.useState<string | null>(null)
+    const [activeChildPath, setActiveChildPath] = React.useState<string[]>([])
+    const [previewByHref, setPreviewByHref] = React.useState<Record<string, PreviewProduct[]>>({})
+    const [previewLoadingHref, setPreviewLoadingHref] = React.useState<string | null>(null)
     const [categoriesLoading, setCategoriesLoading] = React.useState(true)
     const [infoLoading, setInfoLoading] = React.useState(true)
     const categoriesLoadedRef = React.useRef(false)
-    const infoLoadedRef = React.useRef(false)
 
     React.useEffect(() => {
-        setCategoryItems(Array.isArray(initialCategoryItems) ? initialCategoryItems : [])
-    }, [initialCategoryItems])
-
-    React.useEffect(() => {
-        const fetchCategoryTree = async (force = false) => {
+        const fetchCategoryTree = async () => {
             if (Array.isArray(initialCategoryItems) && initialCategoryItems.length > 0) {
                 setCategoriesLoading(false)
                 categoriesLoadedRef.current = true
                 return
             }
-            if (categoriesLoadedRef.current && !force) {
+            if (categoriesLoadedRef.current) {
                 setCategoriesLoading(false)
                 return
             }
@@ -87,58 +96,99 @@ export function SharedMegaPanel({
         void fetchCategoryTree()
     }, [initialCategoryItems])
 
-    const activeCategoryMenu = React.useMemo(
-        () => categoryItems.find((item) => item.id === activeCategoryId) || categoryItems[0] || null,
-        [activeCategoryId, categoryItems]
-    )
-
-    React.useEffect(() => {
-        if (categoryItems.length === 0) return
-        setActiveCategoryId((current) => {
-            if (current && categoryItems.some((item) => item.id === current)) return current
-            return categoryItems[0]?.id || null
-        })
-    }, [categoryItems])
-
     React.useEffect(() => {
         setInfoItems(Array.isArray(initialInfoItems) ? initialInfoItems : [])
-        infoLoadedRef.current = true
         setInfoLoading(false)
     }, [initialInfoItems])
 
+    const categoryNodes = React.useMemo<TextNode[]>(() => {
+        if (initialCategoryItems.length > 0) {
+            return normalizeMenuNodes(initialCategoryItems)
+        }
+        return normalizeTreeNodes(categoryTree)
+    }, [initialCategoryItems, categoryTree])
+
+    const activeCategory = React.useMemo(
+        () => categoryNodes.find((item) => item.id === activeCategoryId) || categoryNodes[0] || null,
+        [activeCategoryId, categoryNodes]
+    )
+
+    const activePreviewCategory = React.useMemo(() => {
+        if (!activeCategory) return null
+        if (activeChildPath.length === 0 || activeCategory.children.length === 0) return activeCategory
+
+        let nodes = activeCategory.children
+        let current: TextNode | null = null
+
+        for (const id of activeChildPath) {
+            const match = nodes.find((node) => node.id === id)
+            if (!match) break
+            current = match
+            nodes = match.children
+        }
+
+        return current || activeCategory
+    }, [activeCategory, activeChildPath])
+
     React.useEffect(() => {
-        if (categoryTree.length === 0) {
+        if (categoryNodes.length === 0) {
             setActiveCategoryId(null)
             return
         }
         setActiveCategoryId((current) => {
-            if (current && categoryTree.some((item) => item.id === current)) return current
-            return categoryTree[0]?.id || null
+            if (current && categoryNodes.some((item) => item.id === current)) return current
+            return categoryNodes[0]?.id || null
         })
-    }, [categoryTree])
-
-    const activeCategory = React.useMemo(
-        () => categoryTree.find((item) => item.id === activeCategoryId) || categoryTree[0] || null,
-        [activeCategoryId, categoryTree]
-    )
-
-    const activeChildren = React.useMemo(() => activeCategory?.children || [], [activeCategory])
+    }, [categoryNodes])
 
     React.useEffect(() => {
-        if (activeChildren.length === 0) {
-            setActiveChildId(null)
+        if (!activeCategory || activeCategory.children.length === 0) {
+            setActiveChildPath([])
             return
         }
-        setActiveChildId((current) => {
-            if (current && activeChildren.some((item) => item.id === current)) return current
-            return activeChildren[0]?.id || null
-        })
-    }, [activeChildren])
 
-    const activeChild = React.useMemo(
-        () => activeChildren.find((item) => item.id === activeChildId) || activeChildren[0] || null,
-        [activeChildId, activeChildren]
-    )
+        setActiveChildPath((current) => {
+            if (current.length === 0) return [activeCategory.children[0].id]
+
+            let nodes = activeCategory.children
+            const nextPath: string[] = []
+            for (const id of current) {
+                const match = nodes.find((node) => node.id === id)
+                if (!match) break
+                nextPath.push(match.id)
+                nodes = match.children
+            }
+            return nextPath.length > 0 ? nextPath : [activeCategory.children[0].id]
+        })
+    }, [activeCategory])
+
+    React.useEffect(() => {
+        const href = activePreviewCategory?.href
+        if (!href || href === "#" || previewByHref[href]) return
+
+        let cancelled = false
+        setPreviewLoadingHref(href)
+
+        const load = async () => {
+            try {
+                const response = await fetch(`/api/categories/previews?path=${encodeURIComponent(href)}`, { cache: "no-store" })
+                const data = await response.json().catch(() => ({ products: [] })) as { products?: PreviewProduct[] }
+                if (cancelled) return
+                setPreviewByHref((current) => ({ ...current, [href]: Array.isArray(data.products) ? data.products : [] }))
+            } catch {
+                if (cancelled) return
+                setPreviewByHref((current) => ({ ...current, [href]: [] }))
+            } finally {
+                if (!cancelled) setPreviewLoadingHref((current) => (current === href ? null : current))
+            }
+        }
+
+        void load()
+
+        return () => {
+            cancelled = true
+        }
+    }, [activePreviewCategory, previewByHref])
 
     if (!activeTab) return null
 
@@ -153,19 +203,23 @@ export function SharedMegaPanel({
         >
             {activeTab === "categories" && (
                 <div className="w-full border-y border-[#ece5dc] bg-white shadow-[0_22px_50px_rgba(26,25,22,0.08)]">
-                    <div className="grid min-h-[380px] grid-cols-[252px_minmax(0,1fr)] items-stretch">
+                    <div className="grid min-h-[320px] grid-cols-[252px_minmax(0,1fr)] items-stretch">
                         <aside className="border-r border-[#d7e4dc] bg-[#edf5f0] px-8 py-7">
                             <p className="mb-5 text-[10px] font-medium uppercase tracking-[0.22em] text-[#8c8070]">
                                 Shop Collections
                             </p>
-                            {categoryItems.length > 0 ? (
+                            {categoriesLoading ? (
+                                <p className="text-sm text-[#8c8070]">Loading categories...</p>
+                            ) : categoryNodes.length === 0 ? (
+                                <p className="text-sm text-[#8c8070]">No categories found.</p>
+                            ) : (
                                 <ul className="space-y-2.5">
-                                    {categoryItems.map((group) => {
-                                        const active = group.id === activeCategoryMenu?.id
+                                    {categoryNodes.map((group) => {
+                                        const active = group.id === activeCategory?.id
                                         return (
                                             <li key={group.id}>
                                                 <Link
-                                                    href={getSafeUrl(group.url)}
+                                                    href={group.href}
                                                     onClick={onLinkClick}
                                                     onMouseEnter={() => setActiveCategoryId(group.id)}
                                                     onFocus={() => setActiveCategoryId(group.id)}
@@ -177,36 +231,12 @@ export function SharedMegaPanel({
                                                     )}
                                                 >
                                                     <span>{group.label}</span>
-                                                    <ChevronRight className={cn("h-4 w-4 transition-transform duration-300", active ? "translate-x-0.5 text-[#6b645b]" : "text-[#9b9389] group-hover:translate-x-0.5")} />
-                                                </Link>
-                                            </li>
-                                        )
-                                    })}
-                                </ul>
-                            ) : categoriesLoading ? (
-                                <p className="text-sm text-[#8c8070]">Loading categories...</p>
-                            ) : categoryTree.length === 0 ? (
-                                <p className="text-sm text-[#8c8070]">No categories found.</p>
-                            ) : (
-                                <ul className="space-y-2.5">
-                                    {categoryTree.map((group) => {
-                                        const active = group.id === activeCategory?.id
-                                        return (
-                                            <li key={group.id}>
-                                                <Link
-                                                    href={group.path || `/${group.slug}`}
-                                                    onClick={onLinkClick}
-                                                    onMouseEnter={() => setActiveCategoryId(group.id)}
-                                                    onFocus={() => setActiveCategoryId(group.id)}
-                                                    className={cn(
-                                                        "group flex items-center justify-between rounded-sm px-4 py-3 font-serif text-[16px] font-medium text-[#2d2a26] transition-all duration-300",
-                                                        active
-                                                            ? "bg-[#f4ede5] text-[#1f1b16] shadow-[inset_0_0_0_1px_rgba(88,75,61,0.05)]"
-                                                            : "hover:bg-[#faf5ef] hover:text-[#1f1b16]"
-                                                    )}
-                                                >
-                                                    <span>{group.title}</span>
-                                                    <ChevronRight className={cn("h-4 w-4 transition-transform duration-300", active ? "translate-x-0.5 text-[#6b645b]" : "text-[#9b9389] group-hover:translate-x-0.5")} />
+                                                    <ChevronRight
+                                                        className={cn(
+                                                            "h-4 w-4 transition-transform duration-300",
+                                                            active ? "translate-x-0.5 text-[#6b645b]" : "text-[#9b9389] group-hover:translate-x-0.5"
+                                                        )}
+                                                    />
                                                 </Link>
                                             </li>
                                         )
@@ -216,92 +246,42 @@ export function SharedMegaPanel({
                         </aside>
 
                         <div className="bg-white px-9 py-7">
-                            {categoryItems.length > 0 ? (
-                                activeCategoryMenu ? (
-                                    activeCategoryMenu.children && activeCategoryMenu.children.length > 0 ? (
-                                        <div className="max-w-[840px]">
-                                            <div className="mb-5 flex items-center gap-4">
-                                                <h3 className="font-serif text-[26px] font-semibold tracking-[-0.02em] text-[#231f1a]">
-                                                    {activeCategoryMenu.label}
-                                                </h3>
-                                                <div className="h-px flex-1 bg-[#e7ddd1]" />
-                                            </div>
-                                            <div className="grid grid-cols-3 gap-8">
-                                                {activeCategoryMenu.children.map((group) => (
-                                                    <div key={group.id} className="space-y-4">
-                                                        <h4 className="border-b border-slate-100 pb-2 font-serif text-lg font-semibold text-slate-900">
-                                                            <Link href={getSafeUrl(group.url)} onClick={onLinkClick} className="hover:text-teal-700">
-                                                                {group.label}
-                                                            </Link>
-                                                        </h4>
-                                                        <ul className="space-y-2">
-                                                            {group.children && group.children.length > 0 ? (
-                                                                group.children.map((child) => (
-                                                                    <li key={child.id}>
-                                                                        <Link
-                                                                            href={getSafeUrl(child.url)}
-                                                                            onClick={onLinkClick}
-                                                                            className="block text-sm text-slate-600 transition-all hover:translate-x-1 hover:text-teal-700"
-                                                                        >
-                                                                            {child.label}
-                                                                        </Link>
-                                                                    </li>
-                                                                ))
-                                                            ) : getSafeUrl(group.url) !== "#" ? (
-                                                                <li>
-                                                                    <Link
-                                                                        href={getSafeUrl(group.url)}
-                                                                        onClick={onLinkClick}
-                                                                        className="block text-sm text-slate-600 transition-all hover:translate-x-1 hover:text-teal-700"
-                                                                    >
-                                                                        {group.label}
-                                                                    </Link>
-                                                                </li>
-                                                            ) : (
-                                                                <li className="text-sm text-slate-400">No links</li>
-                                                            )}
-                                                        </ul>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ) : getSafeUrl(activeCategoryMenu.url) !== "#" ? (
-                                        <div className="max-w-[840px]">
-                                            <div className="mb-5 flex items-center gap-4">
-                                                <h3 className="font-serif text-[26px] font-semibold tracking-[-0.02em] text-[#231f1a]">
-                                                    {activeCategoryMenu.label}
-                                                </h3>
-                                                <div className="h-px flex-1 bg-[#e7ddd1]" />
-                                            </div>
-                                            <Link href={getSafeUrl(activeCategoryMenu.url)} onClick={onLinkClick} className="text-sm text-slate-600 hover:text-teal-700">
-                                                {activeCategoryMenu.label}
-                                            </Link>
-                                        </div>
-                                    ) : (
-                                        <div className="flex h-40 items-center justify-center text-sm text-[#8c8070]">No menu links found.</div>
-                                    )
-                                ) : (
-                                    <div className="flex h-40 items-center justify-center text-sm text-[#8c8070]">No menu links found.</div>
-                                )
-                            ) : categoriesLoading ? (
+                            {categoriesLoading ? (
                                 <div className="flex h-40 items-center justify-center text-sm text-[#8c8070]">Loading categories...</div>
                             ) : activeCategory ? (
-                                activeChildren.length > 0 ? (
-                                    <div className="max-w-[840px]">
-                                        <div className="mb-5 flex items-center gap-4">
-                                            <h3 className="font-serif text-[26px] font-semibold tracking-[-0.02em] text-[#231f1a]">
-                                                {activeCategory.title}
-                                            </h3>
-                                            <div className="h-px flex-1 bg-[#e7ddd1]" />
-                                        </div>
-                                        <CategoryCardGrid
-                                            items={activeChildren}
-                                            activeId={activeChild?.id || null}
-                                            onHover={setActiveChildId}
-                                            onLinkClick={onLinkClick}
-                                        />
+                                <div className="max-w-[840px]">
+                                    <div className="mb-5 flex items-center gap-4">
+                                        <h3 className="font-serif text-[26px] font-semibold tracking-[-0.02em] text-[#231f1a]">
+                                            {activeCategory.label}
+                                        </h3>
+                                        <div className="h-px flex-1 bg-[#e7ddd1]" />
                                     </div>
-                                ) : null
+
+                                    {activeCategory.children.length > 0 ? (
+                                        <CategoryTextColumns
+                                            items={activeCategory.children}
+                                            activePath={activeChildPath}
+                                            setActivePath={setActiveChildPath}
+                                            onLinkClick={onLinkClick}
+                                            previewProducts={previewByHref[activePreviewCategory?.href || ""] || []}
+                                            previewLoading={previewLoadingHref === activePreviewCategory?.href}
+                                        />
+                                    ) : getSafeUrl(activeCategory.href) !== "#" ? (
+                                        <div className="space-y-5">
+                                            <Link href={activeCategory.href} onClick={onLinkClick} className="text-sm text-slate-600 hover:text-teal-700">
+                                                {activeCategory.label}
+                                            </Link>
+                                            <ProductPreviewGrid
+                                                products={previewByHref[activePreviewCategory?.href || ""] || []}
+                                                loading={previewLoadingHref === activePreviewCategory?.href}
+                                                emptyLabel="No products found in this category yet."
+                                                onLinkClick={onLinkClick}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className="flex h-32 items-center justify-center text-sm text-[#8c8070]">No subcategories found.</div>
+                                    )}
+                                </div>
                             ) : (
                                 <div className="flex h-40 items-center justify-center text-sm text-[#8c8070]">No categories found.</div>
                             )}
@@ -313,9 +293,9 @@ export function SharedMegaPanel({
             {activeTab === "information" && (
                 <div className="w-[900px] rounded-[22px] border border-[#dce3ed] bg-white p-8 shadow-[0_22px_50px_rgba(15,23,42,0.12)]">
                     {infoLoading ? (
-                        <div className="flex items-center justify-center h-40 text-slate-400 text-sm">Loading information...</div>
+                        <div className="flex h-40 items-center justify-center text-sm text-slate-400">Loading information...</div>
                     ) : infoItems.length === 0 ? (
-                        <div className="flex items-center justify-center h-40 text-slate-400 text-sm">No information pages available.</div>
+                        <div className="flex h-40 items-center justify-center text-sm text-slate-400">No information pages available.</div>
                     ) : (
                         <div className="grid grid-cols-3 gap-8">
                             {infoItems.map((col) => (
@@ -356,51 +336,146 @@ export function SharedMegaPanel({
     )
 }
 
-type CategoryCardGridProps = {
-    items: TreeCategory[]
-    activeId: string | null
-    onHover: (id: string | null) => void
+function CategoryTextColumns({
+    items,
+    activePath,
+    setActivePath,
+    onLinkClick,
+    previewProducts,
+    previewLoading,
+}: {
+    items: TextNode[]
+    activePath: string[]
+    setActivePath: React.Dispatch<React.SetStateAction<string[]>>
     onLinkClick: () => void
-    interactive?: boolean
+    previewProducts: PreviewProduct[]
+    previewLoading: boolean
+}) {
+    const activeNode = items.find((item) => item.id === activePath[0]) || items[0] || null
+
+    React.useEffect(() => {
+        if (items.length === 0) {
+            setActivePath([])
+            return
+        }
+        setActivePath((current) => {
+            if (current[0] && items.some((item) => item.id === current[0])) return current
+            return [items[0].id]
+        })
+    }, [items, setActivePath])
+
+    return (
+        <div className="grid grid-cols-[240px_minmax(0,1fr)] gap-8">
+            <ul className="space-y-2 border-r border-[#ece5dc] pr-8">
+                {items.map((item) => {
+                    const active = item.id === activeNode?.id
+                    return (
+                        <li key={item.id}>
+                            <Link
+                                href={item.href}
+                                onClick={onLinkClick}
+                                onMouseEnter={() => setActivePath([item.id])}
+                                onFocus={() => setActivePath([item.id])}
+                                className={cn(
+                                    "group flex items-center justify-between rounded-sm px-3 py-2.5 text-sm font-medium text-[#3f3a34] transition-colors",
+                                    active ? "bg-[#f7f2eb] text-[#201c17]" : "hover:bg-[#fbf8f3] hover:text-[#201c17]"
+                                )}
+                            >
+                                <span className="truncate">{item.label}</span>
+                                {item.children.length > 0 ? (
+                                    <ChevronRight className={cn("h-4 w-4 text-[#9b9389] transition-transform", active ? "translate-x-0.5" : "group-hover:translate-x-0.5")} />
+                                ) : null}
+                            </Link>
+                        </li>
+                    )
+                })}
+            </ul>
+
+            <div className="min-w-0">
+                <div className="space-y-6">
+                    {activeNode?.children.length ? (
+                        <NestedTextList
+                            items={activeNode.children}
+                            pathPrefix={[activeNode.id]}
+                            activePath={activePath}
+                            setActivePath={setActivePath}
+                            onLinkClick={onLinkClick}
+                        />
+                    ) : (
+                        <div className="pt-2 text-sm text-[#8c8070]">Select a category to view its subcategories.</div>
+                    )}
+
+                    <ProductPreviewGrid
+                        products={previewProducts}
+                        loading={previewLoading}
+                        emptyLabel="No products found in this category yet."
+                        onLinkClick={onLinkClick}
+                    />
+                </div>
+            </div>
+        </div>
+    )
 }
 
-function CategoryCardGrid({
+function NestedTextList({
     items,
-    activeId,
-    onHover,
+    pathPrefix,
+    activePath,
+    setActivePath,
     onLinkClick,
-    interactive = true,
-}: CategoryCardGridProps) {
+    depth = 0,
+}: {
+    items: TextNode[]
+    pathPrefix: string[]
+    activePath: string[]
+    setActivePath: React.Dispatch<React.SetStateAction<string[]>>
+    onLinkClick: () => void
+    depth?: number
+}) {
     return (
-        <div className="grid grid-cols-4 gap-5">
+        <ul className={cn("space-y-1", depth > 0 && "mt-2 border-l border-[#ece5dc] pl-4")}>
             {items.map((item) => {
-                const active = interactive && item.id === activeId
+                const currentPath = [...pathPrefix, item.id]
+                const isBranchOpen = currentPath.every((segment, index) => activePath[index] === segment)
                 return (
-                    <Link
-                        key={item.id}
-                        href={item.path || `/${item.slug}`}
-                        onClick={onLinkClick}
-                        onMouseEnter={() => interactive && onHover(item.id)}
-                        onFocus={() => interactive && onHover(item.id)}
-                        className={cn(
-                            "group min-w-0 max-w-[180px] overflow-hidden rounded-[2px] border border-[#e7ddd1] bg-white shadow-[0_6px_14px_rgba(43,37,30,0.05)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_10px_18px_rgba(43,37,30,0.08)]",
-                            active ? "border-[#d9c8b3] ring-1 ring-[#eadfce]" : ""
-                        )}
-                    >
-                        <div className="aspect-square overflow-hidden bg-[linear-gradient(145deg,#f7f1ea_0%,#efe5d8_55%,#e6d7c5_100%)]">
-                            <img
-                                src={normalizeMenuImage(item.image) || createMenuFallbackImage(item.title)}
-                                alt={item.title}
-                                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.035]"
+                    <li key={item.id}>
+                        <div
+                            className={cn(
+                                "flex items-start justify-between gap-3 rounded-sm px-3 py-2 transition-colors",
+                                isBranchOpen ? "bg-[#faf6f0]" : "hover:bg-[#fcf8f3]"
+                            )}
+                            onMouseEnter={() => setActivePath(currentPath)}
+                        >
+                            <Link
+                                href={item.href}
+                                onClick={onLinkClick}
+                                onFocus={() => setActivePath(currentPath)}
+                                className={cn(
+                                    "min-w-0 flex-1 text-sm transition-colors hover:text-teal-700",
+                                    depth === 0 ? "font-medium text-[#2d2a26]" : "text-[#5f584f]"
+                                )}
+                            >
+                                <span className="flex items-center gap-2">
+                                    {depth > 0 ? <span className="h-px w-3 shrink-0 bg-[#d9cec0]" /> : null}
+                                    <span className="truncate">{item.label}</span>
+                                </span>
+                            </Link>
+                            {item.children.length > 0 ? <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-[#9b9389]" /> : null}
+                        </div>
+                        {item.children.length > 0 && isBranchOpen ? (
+                            <NestedTextList
+                                items={item.children}
+                                pathPrefix={currentPath}
+                                activePath={activePath}
+                                setActivePath={setActivePath}
+                                onLinkClick={onLinkClick}
+                                depth={depth + 1}
                             />
-                        </div>
-                        <div className="border-t border-[#eee5db] bg-white px-2.5 py-2">
-                            <p className="truncate font-serif text-[13px] font-semibold leading-4 text-[#231f1a]">{item.title}</p>
-                        </div>
-                    </Link>
+                        ) : null}
+                    </li>
                 )
             })}
-        </div>
+        </ul>
     )
 }
 
@@ -413,15 +488,27 @@ function normalizeCategoryTree(items: unknown): TreeCategory[] {
             title: typeof item.title === "string" && item.title.trim().length > 0 ? item.title.trim() : "Category",
             slug: typeof item.slug === "string" ? item.slug : "",
             path: typeof item.path === "string" ? item.path : null,
-            image: typeof item.image === "string" ? item.image : null,
             children: normalizeCategoryTree(item.children),
         }))
         .filter((item) => item.slug.length > 0)
 }
 
-function normalizeMenuImage(image: string | null | undefined) {
-    if (!image || image.trim().length === 0) return ""
-    return getImageUrl(image.trim())
+function normalizeTreeNodes(items: TreeCategory[]): TextNode[] {
+    return items.map((item) => ({
+        id: item.id,
+        label: item.title,
+        href: item.path || `/${item.slug}`,
+        children: normalizeTreeNodes(item.children || []),
+    }))
+}
+
+function normalizeMenuNodes(items: MenuNode[]): TextNode[] {
+    return items.map((item) => ({
+        id: item.id,
+        label: item.label,
+        href: getSafeUrl(item.url),
+        children: normalizeMenuNodes(item.children || []),
+    }))
 }
 
 function getSafeUrl(url: string | null | undefined): string {
@@ -430,19 +517,65 @@ function getSafeUrl(url: string | null | undefined): string {
     return url
 }
 
-function createMenuFallbackImage(title: string) {
-    const encoded = encodeURIComponent(title)
-    return `data:image/svg+xml;charset=UTF-8,
-<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 900 900'>
-<defs>
-<linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>
-<stop offset='0%' stop-color='%23f3ede5'/>
-<stop offset='55%' stop-color='%23eadfd2'/>
-<stop offset='100%' stop-color='%23dfcfbc'/>
-</linearGradient>
-</defs>
-<rect width='900' height='900' fill='url(%23g)'/>
-<rect x='80' y='80' width='740' height='740' rx='18' fill='none' stroke='%23c8b7a3' stroke-width='3' opacity='0.65'/>
-<text x='450' y='470' text-anchor='middle' font-family='Georgia, serif' font-size='54' fill='%23776654'>${encoded}</text>
-</svg>`.split("\n").join("")
+function ProductPreviewGrid({
+    products,
+    loading,
+    emptyLabel,
+    onLinkClick,
+}: {
+    products: PreviewProduct[]
+    loading: boolean
+    emptyLabel: string
+    onLinkClick: () => void
+}) {
+    if (loading) {
+        return (
+            <div className="grid grid-cols-2 gap-3">
+                {[0, 1, 2, 3].map((slot) => (
+                    <div key={slot} className="overflow-hidden rounded-[18px] border border-[#ece5dc] bg-[#faf7f2]">
+                        <div className="aspect-[4/3] animate-pulse bg-[#f1ebe2]" />
+                        <div className="space-y-2 px-3 py-3">
+                            <div className="h-3 w-3/4 animate-pulse rounded bg-[#ece4d9]" />
+                            <div className="h-3 w-1/3 animate-pulse rounded bg-[#ece4d9]" />
+                        </div>
+                    </div>
+                ))}
+            </div>
+        )
+    }
+
+    if (products.length === 0) {
+        return <div className="rounded-[18px] border border-dashed border-[#ece5dc] bg-[#faf7f2] px-4 py-8 text-sm text-[#8c8070]">{emptyLabel}</div>
+    }
+
+    return (
+        <div className="grid grid-cols-2 gap-3">
+            {products.slice(0, 4).map((product) => {
+                const candidates = getPrimaryProductImageCandidates(product.images)
+                const imageAlt = buildProductImageAlt({ title: product.title })
+                return (
+                    <Link
+                        key={product.id}
+                        href={`/product/${product.slug}`}
+                        onClick={onLinkClick}
+                        className="group overflow-hidden rounded-[18px] border border-[#ece5dc] bg-[#fffdfa] shadow-[0_8px_20px_rgba(32,26,20,0.05)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(32,26,20,0.08)]"
+                    >
+                        <div className="relative aspect-[4/3] overflow-hidden bg-[linear-gradient(180deg,#f4ede3_0%,#ede3d6_100%)] p-3">
+                            <StorefrontProductImage
+                                candidates={candidates}
+                                alt={imageAlt}
+                                fill
+                                sizes="(max-width: 1280px) 220px, 260px"
+                                className="transition-transform duration-500 group-hover:scale-105"
+                            />
+                        </div>
+                        <div className="px-3 py-3">
+                            <p className="line-clamp-2 text-[13px] font-medium leading-5 text-[#2d2a26]">{product.title}</p>
+                            <p className="mt-1 text-[12px] font-semibold text-[#7c6a52]">{formatCurrency(product.price)}</p>
+                        </div>
+                    </Link>
+                )
+            })}
+        </div>
+    )
 }
