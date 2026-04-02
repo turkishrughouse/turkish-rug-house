@@ -63,6 +63,8 @@ type CollectionsResponse = {
     parentFound?: boolean
     childCount?: number
     children?: CollectionPreviewCategory[]
+    source?: string
+    parent?: { id?: string | null; slug?: string | null; title?: string | null } | null
 }
 
 export function SharedMegaPanel({
@@ -233,17 +235,13 @@ export function SharedMegaPanel({
 
         const loadCollectionsChildren = async () => {
             try {
-                const params = new URLSearchParams()
-                if (activeCategory?.categoryId) {
-                    params.set("categoryId", activeCategory.categoryId)
-                }
-                const response = await fetch(
-                    `/api/categories/collections${params.toString() ? `?${params.toString()}` : ""}`,
-                    { cache: "no-store" }
-                )
+                const response = await fetch("/api/categories/collections", { cache: "no-store" })
                 const data = await response.json().catch(() => ({ children: [] })) as CollectionsResponse
                 if (cancelled) return
-                setCollectionsItems(Array.isArray(data.children) ? data.children : [])
+                const nextItems = Array.isArray(data.children) ? data.children : []
+                console.info("[Collections Mega Menu UI] raw API response", data)
+                console.info("[Collections Mega Menu UI] parsed category array length", nextItems.length)
+                setCollectionsItems(nextItems)
             } catch {
                 if (cancelled) return
                 setCollectionsItems([])
@@ -257,7 +255,7 @@ export function SharedMegaPanel({
         return () => {
             cancelled = true
         }
-    }, [activeCategory?.categoryId, collectionsBranchActive])
+    }, [collectionsBranchActive])
 
     if (!activeTab) return null
 
@@ -648,6 +646,16 @@ function CollectionsCategoryGrid({
     loading: boolean
     onLinkClick: () => void
 }) {
+    const visibleItems = items.slice(0, 15)
+    const isEmpty = !loading && visibleItems.length === 0
+
+    console.info("[Collections Mega Menu UI] state value used by render", {
+        itemsLength: items.length,
+        visibleItemsLength: visibleItems.length,
+    })
+    console.info("[Collections Mega Menu UI] empty-state boolean condition", isEmpty)
+    console.info("[Collections Mega Menu UI] final rendered card count", visibleItems.length)
+
     if (loading) {
         return (
             <div className="grid grid-cols-5 gap-x-4 gap-y-5">
@@ -663,9 +671,7 @@ function CollectionsCategoryGrid({
         )
     }
 
-    const visibleItems = items.slice(0, 15)
-
-    if (visibleItems.length === 0) {
+    if (isEmpty) {
         return (
             <div className="rounded-[18px] border border-dashed border-[#ece5dc] bg-[#faf7f2] px-4 py-8 text-sm text-[#8c8070]">
                 No collection categories found.
