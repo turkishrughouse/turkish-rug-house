@@ -11,19 +11,46 @@ type CategoryRow = {
     parentId: string | null
 }
 
-function normalizeToken(value: string | null | undefined) {
-    return (value || "")
-        .trim()
-        .toLowerCase()
-        .replace(/&/g, "and")
-        .replace(/[^a-z0-9]+/g, "")
-}
-
 export async function GET(request: Request) {
     try {
-        const { searchParams } = new URL(request.url)
-        const requestedCategoryId = searchParams.get("categoryId")
-        const requestedSlug = searchParams.get("slug") || "collections"
+        const searchParams = new URL(request.url).searchParams
+        const requestedCategoryId = searchParams.get("categoryId")?.trim() || null
+
+        const collectionsParent = requestedCategoryId
+            ? await prisma.category.findUnique({
+                where: { id: requestedCategoryId },
+                select: {
+                    id: true,
+                    title: true,
+                    slug: true,
+                },
+            })
+            : await prisma.category.findUnique({
+                where: { slug: "collections" },
+                select: {
+                    id: true,
+                    title: true,
+                    slug: true,
+                },
+            })
+        const canonicalCollectionsParent =
+            collectionsParent ||
+            await prisma.category.findUnique({
+                where: { slug: "collections" },
+                select: {
+                    id: true,
+                    title: true,
+                    slug: true,
+                },
+            })
+
+        if (!canonicalCollectionsParent) {
+            return NextResponse.json({
+                parentFound: false,
+                childCount: 0,
+                children: [],
+            })
+        }
 
         const categories = await prisma.category.findMany({
             select: {
@@ -38,17 +65,9 @@ export async function GET(request: Request) {
         })
 
         const rows = categories as CategoryRow[]
-        const parentCategory =
-            rows.find((row) => requestedCategoryId && row.id === requestedCategoryId) ||
-            rows.find((row) => normalizeToken(row.slug) === normalizeToken(requestedSlug))
-
-        if (!parentCategory) {
-            return NextResponse.json({ children: [] })
-        }
-
         const { pathById } = buildCategoryPathMap(rows)
         const children = rows
-            .filter((row) => row.parentId === parentCategory.id)
+            .filter((row) => row.parentId === canonicalCollectionsParent.id)
             .sort((a, b) => {
                 if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
                 return a.title.localeCompare(b.title)
@@ -63,10 +82,12 @@ export async function GET(request: Request) {
             }))
 
         return NextResponse.json({
+            parentFound: true,
+            childCount: children.length,
             parent: {
-                id: parentCategory.id,
-                title: parentCategory.title,
-                slug: parentCategory.slug,
+                id: canonicalCollectionsParent.id,
+                title: canonicalCollectionsParent.title,
+                slug: canonicalCollectionsParent.slug,
             },
             children,
         })

@@ -59,6 +59,12 @@ type CollectionPreviewCategory = {
     image: string | null
 }
 
+type CollectionsResponse = {
+    parentFound?: boolean
+    childCount?: number
+    children?: CollectionPreviewCategory[]
+}
+
 export function SharedMegaPanel({
     activeTab,
     categoryItems: initialCategoryItems = [],
@@ -127,8 +133,8 @@ export function SharedMegaPanel({
         [activeCategoryId, categoryNodes]
     )
 
-    const activeCollectionsCategory = React.useMemo(
-        () => (activeCategory && isCollectionsEntry(activeCategory) ? activeCategory : null),
+    const collectionsBranchActive = React.useMemo(
+        () => Boolean(activeCategory && isCollectionsEntry(activeCategory)),
         [activeCategory]
     )
 
@@ -216,7 +222,7 @@ export function SharedMegaPanel({
     }, [activePreviewCategory, previewByHref])
 
     React.useEffect(() => {
-        if (!activeCollectionsCategory) {
+        if (!collectionsBranchActive) {
             setCollectionsItems(null)
             setCollectionsLoading(false)
             return
@@ -225,21 +231,17 @@ export function SharedMegaPanel({
         let cancelled = false
         setCollectionsLoading(true)
 
-        const params = new URLSearchParams()
-        if (activeCollectionsCategory.categoryId) {
-            params.set("categoryId", activeCollectionsCategory.categoryId)
-        }
-        const slugToken = getLastPathToken(activeCollectionsCategory.href)
-        if (slugToken) {
-            params.set("slug", slugToken)
-        } else {
-            params.set("slug", "collections")
-        }
-
         const loadCollectionsChildren = async () => {
             try {
-                const response = await fetch(`/api/categories/collections?${params.toString()}`, { cache: "no-store" })
-                const data = await response.json().catch(() => ({ children: [] })) as { children?: CollectionPreviewCategory[] }
+                const params = new URLSearchParams()
+                if (activeCategory?.categoryId) {
+                    params.set("categoryId", activeCategory.categoryId)
+                }
+                const response = await fetch(
+                    `/api/categories/collections${params.toString() ? `?${params.toString()}` : ""}`,
+                    { cache: "no-store" }
+                )
+                const data = await response.json().catch(() => ({ children: [] })) as CollectionsResponse
                 if (cancelled) return
                 setCollectionsItems(Array.isArray(data.children) ? data.children : [])
             } catch {
@@ -255,7 +257,7 @@ export function SharedMegaPanel({
         return () => {
             cancelled = true
         }
-    }, [activeCollectionsCategory])
+    }, [activeCategory?.categoryId, collectionsBranchActive])
 
     if (!activeTab) return null
 
@@ -324,7 +326,7 @@ export function SharedMegaPanel({
                                         <div className="h-px flex-1 bg-[#e7ddd1]" />
                                     </div>
 
-                                    {activeCollectionsCategory ? (
+                                    {collectionsBranchActive ? (
                                         <CollectionsCategoryGrid
                                             items={collectionsItems || []}
                                             loading={collectionsLoading}
