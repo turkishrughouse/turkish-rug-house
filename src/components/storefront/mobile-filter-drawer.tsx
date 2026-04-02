@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useMemo, useState } from "react"
+import { usePathname, useSearchParams } from "next/navigation"
+import { useEffect, useMemo, useState } from "react"
 import { SlidersHorizontal, X } from "lucide-react"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { resolveColorSwatch } from "@/lib/storefront/color-swatches"
@@ -39,6 +40,8 @@ export function MobileFilterDrawer({
   sections: FilterSection[]
   activeChips: ActiveChip[]
 }) {
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [open, setOpen] = useState(false)
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(sections.map((section) => [section.id, Boolean(section.defaultOpen)]))
@@ -46,6 +49,15 @@ export function MobileFilterDrawer({
 
   const statusSection = useMemo(() => sections.find((section) => section.id === "status"), [sections])
   const restSections = useMemo(() => sections.filter((section) => section.id !== "status"), [sections])
+  const searchKey = searchParams.toString()
+
+  useEffect(() => {
+    if (!open) return
+    const frame = window.requestAnimationFrame(() => {
+      setOpen(false)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [open, pathname, searchKey])
 
   return (
     <div className="space-y-4 lg:hidden">
@@ -71,12 +83,13 @@ export function MobileFilterDrawer({
               <Link
                 key={chip.key}
                 href={chip.href}
+                onClick={() => setOpen(false)}
                 className="inline-flex items-center rounded-full border border-[#dcc6a2] bg-[#f4ead9] px-3 py-1 text-xs font-medium text-[#3c3127]"
               >
                 {chip.label}
               </Link>
             ))}
-            <Link href={categoryPath} className="inline-flex items-center rounded-full border border-[#e7dfd4] bg-[#fffdfa] px-3 py-1 text-xs font-medium text-[#7d7468]">
+            <Link href={categoryPath} onClick={() => setOpen(false)} className="inline-flex items-center rounded-full border border-[#e7dfd4] bg-[#fffdfa] px-3 py-1 text-xs font-medium text-[#7d7468]">
               Clear
             </Link>
           </div>
@@ -108,6 +121,7 @@ export function MobileFilterDrawer({
                       <Link
                         key={item.label}
                         href={item.href}
+                        onClick={() => setOpen(false)}
                         className={`rounded-xl border px-3 py-3 text-sm font-medium ${item.active ? "border-[#dcc6a2] bg-[#f4ead9] text-[#3c3127]" : "border-[#e7dfd4] bg-[#fffdfa] text-[#70675c]"}`}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -148,6 +162,7 @@ export function MobileFilterDrawer({
                             <Link
                               key={`${section.id}-${item.label}`}
                               href={item.href}
+                              onClick={() => setOpen(false)}
                               className={
                                 section.variant === "swatch"
                                   ? `rounded-[22px] border px-2 py-2.5 text-center transition-all duration-200 ${item.active ? "border-[#caa56a] bg-[#fcf7ef] shadow-[0_0_0_2px_rgba(255,255,255,0.96),0_0_0_5px_rgba(202,165,106,0.38),0_10px_22px_rgba(202,165,106,0.16)]" : "border-[#e7dfd4] bg-[#fffdfa] shadow-[0_8px_18px_rgba(48,38,26,0.06)]"}`
@@ -203,7 +218,7 @@ export function MobileFilterDrawer({
 
             <div className="sticky bottom-0 border-t border-[#e7dfd4] bg-[#fcfaf6] px-5 py-4">
               <div className="flex gap-3">
-                <Link href={categoryPath} className="inline-flex h-11 flex-1 items-center justify-center rounded-full border border-[#e7dfd4] bg-[#fffdfa] text-sm font-semibold text-[#70675c]">
+                <Link href={categoryPath} onClick={() => setOpen(false)} className="inline-flex h-11 flex-1 items-center justify-center rounded-full border border-[#e7dfd4] bg-[#fffdfa] text-sm font-semibold text-[#70675c]">
                   Clear
                 </Link>
                 <button type="button" onClick={() => setOpen(false)} className="inline-flex h-11 flex-1 items-center justify-center rounded-full bg-[#f4ead9] text-sm font-semibold text-[#3c3127]">
