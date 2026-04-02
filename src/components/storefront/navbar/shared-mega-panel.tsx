@@ -130,6 +130,20 @@ export function SharedMegaPanel({
         return current || activeCategory
     }, [activeCategory, activeChildPath])
 
+    const isSubcategoryPreview = Boolean(
+        activePreviewCategory &&
+        activeCategory &&
+        activePreviewCategory.id !== activeCategory.id
+    )
+
+    const previewProducts = React.useMemo(() => {
+        const href = activePreviewCategory?.href || ""
+        const source = previewByHref[href] || []
+        return source.slice(0, isSubcategoryPreview ? 2 : 4)
+    }, [activePreviewCategory, isSubcategoryPreview, previewByHref])
+
+    const previewSingleColumn = isSubcategoryPreview && activeChildPath.length > 1
+
     React.useEffect(() => {
         if (categoryNodes.length === 0) {
             setActiveCategoryId(null)
@@ -263,8 +277,9 @@ export function SharedMegaPanel({
                                             activePath={activeChildPath}
                                             setActivePath={setActiveChildPath}
                                             onLinkClick={onLinkClick}
-                                            previewProducts={previewByHref[activePreviewCategory?.href || ""] || []}
+                                            previewProducts={previewProducts}
                                             previewLoading={previewLoadingHref === activePreviewCategory?.href}
+                                            previewSingleColumn={previewSingleColumn}
                                         />
                                     ) : getSafeUrl(activeCategory.href) !== "#" ? (
                                         <div className="space-y-5">
@@ -272,10 +287,11 @@ export function SharedMegaPanel({
                                                 {activeCategory.label}
                                             </Link>
                                             <ProductPreviewGrid
-                                                products={previewByHref[activePreviewCategory?.href || ""] || []}
+                                                products={previewProducts}
                                                 loading={previewLoadingHref === activePreviewCategory?.href}
                                                 emptyLabel="No products found in this category yet."
                                                 onLinkClick={onLinkClick}
+                                                singleColumn={previewSingleColumn}
                                             />
                                         </div>
                                     ) : (
@@ -343,6 +359,7 @@ function CategoryTextColumns({
     onLinkClick,
     previewProducts,
     previewLoading,
+    previewSingleColumn,
 }: {
     items: TextNode[]
     activePath: string[]
@@ -350,6 +367,7 @@ function CategoryTextColumns({
     onLinkClick: () => void
     previewProducts: PreviewProduct[]
     previewLoading: boolean
+    previewSingleColumn: boolean
 }) {
     const activeNode = items.find((item) => item.id === activePath[0]) || items[0] || null
 
@@ -410,6 +428,7 @@ function CategoryTextColumns({
                         loading={previewLoading}
                         emptyLabel="No products found in this category yet."
                         onLinkClick={onLinkClick}
+                        singleColumn={previewSingleColumn}
                     />
                 </div>
             </div>
@@ -522,16 +541,18 @@ function ProductPreviewGrid({
     loading,
     emptyLabel,
     onLinkClick,
+    singleColumn = false,
 }: {
     products: PreviewProduct[]
     loading: boolean
     emptyLabel: string
     onLinkClick: () => void
+    singleColumn?: boolean
 }) {
     if (loading) {
         return (
-            <div className="grid grid-cols-2 gap-3">
-                {[0, 1, 2, 3].map((slot) => (
+            <div className={cn("grid gap-3", singleColumn ? "max-w-[220px] grid-cols-1" : "grid-cols-2")}>
+                {(singleColumn ? [0] : [0, 1]).map((slot) => (
                     <div key={slot} className="overflow-hidden rounded-[18px] border border-[#ece5dc] bg-[#faf7f2]">
                         <div className="aspect-[4/3] animate-pulse bg-[#f1ebe2]" />
                         <div className="space-y-2 px-3 py-3">
@@ -549,7 +570,7 @@ function ProductPreviewGrid({
     }
 
     return (
-        <div className="grid grid-cols-2 gap-3">
+        <div className={cn("grid gap-3", singleColumn || products.length === 1 ? "max-w-[220px] grid-cols-1" : "grid-cols-2")}>
             {products.slice(0, 4).map((product) => {
                 const candidates = getPrimaryProductImageCandidates(product.images)
                 const imageAlt = buildProductImageAlt({ title: product.title })
