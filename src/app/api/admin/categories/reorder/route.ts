@@ -22,8 +22,7 @@ export async function PATCH(request: Request) {
 
         const { updates } = result.data
 
-        // Transactional update
-        await prisma.$transaction(
+        const updatedRows = await prisma.$transaction(
             updates.map((update) =>
                 prisma.category.update({
                     where: { id: update.id },
@@ -35,7 +34,31 @@ export async function PATCH(request: Request) {
             )
         )
 
-        return NextResponse.json({ success: true })
+        const mismatch = updates.find((update) => {
+            const persisted = updatedRows.find((row) => row.id === update.id)
+            return !persisted || persisted.parentId !== update.parentId || persisted.sortOrder !== update.sortOrder
+        })
+
+        if (mismatch) {
+            return NextResponse.json({ error: "Hierarchy change could not be persisted" }, { status: 409 })
+        }
+
+        const categories = await prisma.category.findMany({
+            include: {
+                parent: {
+                    select: { id: true, title: true }
+                },
+                _count: {
+                    select: { products: true }
+                }
+            },
+            orderBy: [
+                { sortOrder: "asc" },
+                { title: "asc" },
+            ]
+        })
+
+        return NextResponse.json({ success: true, categories })
 
     } catch (error) {
         console.error("Reorder Error:", error)

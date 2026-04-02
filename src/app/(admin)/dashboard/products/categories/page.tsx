@@ -582,7 +582,7 @@ export default function CategoriesPage() {
         }
     }
 
-    const handleReorder = async (updates: any[]) => {
+    const handleReorder = async (updates: Array<{ id: string; parentId: string | null; sortOrder: number }>) => {
         try {
             const res = await fetch("/api/admin/categories/reorder", {
                 method: "PATCH",
@@ -591,11 +591,17 @@ export default function CategoriesPage() {
             })
 
             if (!res.ok) throw new Error("Reorder failed")
+            const data = await res.json() as { success?: boolean; categories?: Category[]; error?: string }
+            if (!data.success || !Array.isArray(data.categories)) {
+                throw new Error(data.error || "Reorder failed")
+            }
+            const nextTree = buildTree(data.categories)
+            setCategories(nextTree)
+            setFlatItems(buildFlatItems(nextTree))
             toast.success("Order saved")
-            await fetchCategories() // Sync Tree state with new order
         } catch (e) {
             toast.error("Failed to save order")
-            fetchCategories() // Revert
+            await fetchCategories() // Revert
         }
     }
 

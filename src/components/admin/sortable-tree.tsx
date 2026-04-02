@@ -8,6 +8,7 @@ import {
     closestCenter,
     KeyboardSensor,
     PointerSensor,
+    useDroppable,
     useSensor,
     useSensors,
     DragOverlay,
@@ -61,7 +62,7 @@ interface SortableTreeProps {
     setItems: (items: FlatItem[]) => void
     onEdit: (item: FlatItem) => void
     onDelete: (id: string) => void
-    onReorder: (updates: { id: string, parentId: string | null, sortOrder: number }[]) => void
+    onReorder: (updates: { id: string, parentId: string | null, sortOrder: number }[]) => Promise<void> | void
 }
 
 const indentationWidth = 24
@@ -146,7 +147,7 @@ export function SortableTree({ items, setItems, onEdit, onDelete, onReorder }: S
         setOffsetLeft(delta.x)
     }
 
-    function handleDragEnd({ active, over }: DragEndEvent) {
+    async function handleDragEnd({ active, over }: DragEndEvent) {
         resetState()
 
         if (!over) return
@@ -158,11 +159,13 @@ export function SortableTree({ items, setItems, onEdit, onDelete, onReorder }: S
 
         const clone = [...items]
         const activeIndex = clone.findIndex(i => i.id === activeId)
-        const overIndex = clone.findIndex(i => i.id === overId)
-
-        if (activeIndex === -1 || overIndex === -1) return
+        if (activeIndex === -1) return
 
         const activeItem = clone[activeIndex]
+        const droppingToRoot = overId === "root-drop-top" || overId.startsWith("root-drop-after:")
+        const overIndex = droppingToRoot ? -1 : clone.findIndex(i => i.id === overId)
+
+        if (!droppingToRoot && overIndex === -1) return
 
         // Get all descendants of the dragged item (entire subtree)
         const descendants = getDescendants(clone, activeId)
@@ -174,12 +177,30 @@ export function SortableTree({ items, setItems, onEdit, onDelete, onReorder }: S
 
         // Calculate insertion index
         // Find where the overItem is in the array WITHOUT the subtree
-        const overItem = clone[overIndex]
-        let insertIndex = withoutSubtree.findIndex(i => i.id === overItem.id)
+        let insertIndex = 0
+        if (droppingToRoot) {
+            if (overId === "root-drop-top") {
+                insertIndex = 0
+            } else {
+                const targetRootId = overId.split(":")[1]
+                const rootIndex = withoutSubtree.findIndex((item) => item.id === targetRootId)
+                if (rootIndex === -1) {
+                    insertIndex = withoutSubtree.length
+                } else {
+                    insertIndex = rootIndex + 1
+                    while (insertIndex < withoutSubtree.length && withoutSubtree[insertIndex].depth > 0) {
+                        insertIndex += 1
+                    }
+                }
+            }
+        } else {
+            const overItem = clone[overIndex]
+            insertIndex = withoutSubtree.findIndex(i => i.id === overItem.id)
 
-        // If we're moving down (activeIndex < overIndex), insert after the over item
-        if (activeIndex < overIndex) {
-            insertIndex = insertIndex + 1
+            // If we're moving down (activeIndex < overIndex), insert after the over item
+            if (activeIndex < overIndex) {
+                insertIndex = insertIndex + 1
+            }
         }
 
         // Handle edge case: if insertIndex is -1 or out of bounds, place at end
@@ -195,8 +216,8 @@ export function SortableTree({ items, setItems, onEdit, onDelete, onReorder }: S
         ]
 
         // Calculate new depth for the dragged parent
-        const projectedDepth = activeItem.depth + Math.round(offsetLeft / indentationWidth)
-        const maxDepth = getMaxDepth(newItems, insertIndex)
+        const projectedDepth = droppingToRoot ? 0 : activeItem.depth + Math.round(offsetLeft / indentationWidth)
+        const maxDepth = droppingToRoot ? 0 : getMaxDepth(newItems, insertIndex)
         const minDepth = 0
 
         let newDepth = projectedDepth
@@ -208,12 +229,14 @@ export function SortableTree({ items, setItems, onEdit, onDelete, onReorder }: S
 
         // Find new parent based on new depth
         let newParentId: string | null = null
-        for (let i = insertIndex - 1; i >= 0; i--) {
-            if (newItems[i].depth === newDepth - 1) {
-                newParentId = newItems[i].id
-                break
+        if (newDepth > 0) {
+            for (let i = insertIndex - 1; i >= 0; i--) {
+                if (newItems[i].depth === newDepth - 1) {
+                    newParentId = newItems[i].id
+                    break
+                }
+                if (newItems[i].depth < newDepth - 1) break
             }
-            if (newItems[i].depth < newDepth - 1) break
         }
 
         // Update depth and parentId for entire subtree
@@ -252,7 +275,7 @@ export function SortableTree({ items, setItems, onEdit, onDelete, onReorder }: S
             })
         })
 
-        onReorder(updates)
+        await onReorder(updates)
     }
 
     function resetState() {
@@ -287,21 +310,35 @@ export function SortableTree({ items, setItems, onEdit, onDelete, onReorder }: S
                 </TableHeader>
                 <TableBody>
                     <SortableContext items={sortedIds} strategy={verticalListSortingStrategy}>
-                        {visibleItems.map((item) => (
-                            <SortableItem
-                                key={item.id}
-                                item={item}
-                                onEdit={onEdit}
-                                onDelete={onDelete}
-                                indentationWidth={indentationWidth}
-                                hasChildren={(childCountMap.get(item.id) || 0) > 0}
-                                isOpenRoot={item.depth === 0 && openRootId === item.id}
-                                onToggleRoot={() => {
-                                    if (item.depth !== 0) return
-                                    setOpenRootId((prev) => (prev === item.id ? null : item.id))
-                                }}
-                            />
-                        ))}
+                        <RootDropZone key="root-drop-top" id="root-drop-top" label="Drop here to move to top level" />
+                        {visibleItems.map((item, index) => {
+                            const rootId = rootById.get(item.id)
+                            const nextRootId = visibleItems[index + 1] ? rootById.get(visibleItems[index + 1].id) : null
+                            const shouldRenderRootZoneAfter = Boolean(rootId && rootId !== nextRootId)
+
+                            return (
+                                <React.Fragment key={item.id}>
+                                    <SortableItem
+                                        item={item}
+                                        onEdit={onEdit}
+                                        onDelete={onDelete}
+                                        indentationWidth={indentationWidth}
+                                        hasChildren={(childCountMap.get(item.id) || 0) > 0}
+                                        isOpenRoot={item.depth === 0 && openRootId === item.id}
+                                        onToggleRoot={() => {
+                                            if (item.depth !== 0) return
+                                            setOpenRootId((prev) => (prev === item.id ? null : item.id))
+                                        }}
+                                    />
+                                    {shouldRenderRootZoneAfter ? (
+                                        <RootDropZone
+                                            id={`root-drop-after:${rootId}`}
+                                            label="Drop here to make top level"
+                                        />
+                                    ) : null}
+                                </React.Fragment>
+                            )
+                        })}
                     </SortableContext>
                 </TableBody>
             </Table>
@@ -327,6 +364,27 @@ export function SortableTree({ items, setItems, onEdit, onDelete, onReorder }: S
                 document.body
             )}
         </DndContext>
+    )
+}
+
+function RootDropZone({ id, label }: { id: string; label: string }) {
+    const { isOver, setNodeRef } = useDroppable({ id })
+
+    return (
+        <TableRow ref={setNodeRef} className="bg-transparent">
+            <TableCell colSpan={5} className="p-0">
+                <div
+                    className={cn(
+                        "mx-3 my-2 rounded-lg border border-dashed px-4 py-2 text-xs font-medium transition-colors",
+                        isOver
+                            ? "border-teal-500 bg-teal-50 text-teal-700"
+                            : "border-slate-300 bg-slate-50/70 text-slate-500",
+                    )}
+                >
+                    {label}
+                </div>
+            </TableCell>
+        </TableRow>
     )
 }
 
