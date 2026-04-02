@@ -21,6 +21,8 @@ type MenuNode = {
     id: string
     label: string
     url?: string | null
+    referenceId?: string | null
+    kind?: "PAGE" | "CATEGORY" | "CUSTOM"
     children?: MenuNode[]
 }
 
@@ -37,6 +39,7 @@ type TextNode = {
     id: string
     label: string
     href: string
+    categoryId?: string | null
     children: TextNode[]
 }
 
@@ -46,6 +49,14 @@ type PreviewProduct = {
     title: string
     price: number
     images: string
+}
+
+type CollectionPreviewCategory = {
+    id: string
+    title: string
+    slug: string
+    path: string
+    image: string | null
 }
 
 export function SharedMegaPanel({
@@ -62,6 +73,8 @@ export function SharedMegaPanel({
     const [activeChildPath, setActiveChildPath] = React.useState<string[]>([])
     const [previewByHref, setPreviewByHref] = React.useState<Record<string, PreviewProduct[]>>({})
     const [previewLoadingHref, setPreviewLoadingHref] = React.useState<string | null>(null)
+    const [collectionsItems, setCollectionsItems] = React.useState<CollectionPreviewCategory[] | null>(null)
+    const [collectionsLoading, setCollectionsLoading] = React.useState(false)
     const [categoriesLoading, setCategoriesLoading] = React.useState(true)
     const [infoLoading, setInfoLoading] = React.useState(true)
     const categoriesLoadedRef = React.useRef(false)
@@ -114,16 +127,10 @@ export function SharedMegaPanel({
         [activeCategoryId, categoryNodes]
     )
 
-    const activeCollectionsCategory = React.useMemo(() => {
-        if (!activeCategory || !isCollectionsEntry(activeCategory)) return null
-        const href = getSafeUrl(activeCategory.href)
-        return (
-            findTreeCategoryByPath(categoryTree, href) ||
-            findTreeCategoryBySlug(categoryTree, getLastPathToken(href)) ||
-            findTreeCategoryBySlug(categoryTree, "collections") ||
-            findTreeCategoryByTitle(categoryTree, activeCategory.label)
-        )
-    }, [activeCategory, categoryTree])
+    const activeCollectionsCategory = React.useMemo(
+        () => (activeCategory && isCollectionsEntry(activeCategory) ? activeCategory : null),
+        [activeCategory]
+    )
 
     const activePreviewCategory = React.useMemo(() => {
         if (!activeCategory) return null
@@ -142,19 +149,11 @@ export function SharedMegaPanel({
         return current || activeCategory
     }, [activeCategory, activeChildPath])
 
-    const isSubcategoryPreview = Boolean(
-        activePreviewCategory &&
-        activeCategory &&
-        activePreviewCategory.id !== activeCategory.id
-    )
-
     const previewProducts = React.useMemo(() => {
         const href = activePreviewCategory?.href || ""
         const source = previewByHref[href] || []
-        return source.slice(0, isSubcategoryPreview ? 2 : 4)
-    }, [activePreviewCategory, isSubcategoryPreview, previewByHref])
-
-    const previewSingleColumn = isSubcategoryPreview
+        return source.slice(0, 6)
+    }, [activePreviewCategory, previewByHref])
 
     React.useEffect(() => {
         if (categoryNodes.length === 0) {
@@ -215,6 +214,48 @@ export function SharedMegaPanel({
             cancelled = true
         }
     }, [activePreviewCategory, previewByHref])
+
+    React.useEffect(() => {
+        if (!activeCollectionsCategory) {
+            setCollectionsItems(null)
+            setCollectionsLoading(false)
+            return
+        }
+
+        let cancelled = false
+        setCollectionsLoading(true)
+
+        const params = new URLSearchParams()
+        if (activeCollectionsCategory.categoryId) {
+            params.set("categoryId", activeCollectionsCategory.categoryId)
+        }
+        const slugToken = getLastPathToken(activeCollectionsCategory.href)
+        if (slugToken) {
+            params.set("slug", slugToken)
+        } else {
+            params.set("slug", "collections")
+        }
+
+        const loadCollectionsChildren = async () => {
+            try {
+                const response = await fetch(`/api/categories/collections?${params.toString()}`, { cache: "no-store" })
+                const data = await response.json().catch(() => ({ children: [] })) as { children?: CollectionPreviewCategory[] }
+                if (cancelled) return
+                setCollectionsItems(Array.isArray(data.children) ? data.children : [])
+            } catch {
+                if (cancelled) return
+                setCollectionsItems([])
+            } finally {
+                if (!cancelled) setCollectionsLoading(false)
+            }
+        }
+
+        void loadCollectionsChildren()
+
+        return () => {
+            cancelled = true
+        }
+    }, [activeCollectionsCategory])
 
     if (!activeTab) return null
 
@@ -285,7 +326,8 @@ export function SharedMegaPanel({
 
                                     {activeCollectionsCategory ? (
                                         <CollectionsCategoryGrid
-                                            items={activeCollectionsCategory.children || []}
+                                            items={collectionsItems || []}
+                                            loading={collectionsLoading}
                                             onLinkClick={onLinkClick}
                                         />
                                     ) : activeCategory.children.length > 0 ? (
@@ -296,7 +338,6 @@ export function SharedMegaPanel({
                                             onLinkClick={onLinkClick}
                                             previewProducts={previewProducts}
                                             previewLoading={previewLoadingHref === activePreviewCategory?.href}
-                                            previewSingleColumn={previewSingleColumn}
                                         />
                                     ) : getSafeUrl(activeCategory.href) !== "#" ? (
                                         <div className="space-y-5">
@@ -308,7 +349,9 @@ export function SharedMegaPanel({
                                                 loading={previewLoadingHref === activePreviewCategory?.href}
                                                 emptyLabel="No products found in this category yet."
                                                 onLinkClick={onLinkClick}
-                                                singleColumn={previewSingleColumn}
+                                                columns={3}
+                                                maxItems={6}
+                                                compact
                                             />
                                         </div>
                                     ) : (
@@ -376,7 +419,6 @@ function CategoryTextColumns({
     onLinkClick,
     previewProducts,
     previewLoading,
-    previewSingleColumn,
 }: {
     items: TextNode[]
     activePath: string[]
@@ -384,9 +426,9 @@ function CategoryTextColumns({
     onLinkClick: () => void
     previewProducts: PreviewProduct[]
     previewLoading: boolean
-    previewSingleColumn: boolean
 }) {
     const activeNode = items.find((item) => item.id === activePath[0]) || items[0] || null
+    const hasDeeperSubcategories = Boolean(activeNode?.children.length)
 
     React.useEffect(() => {
         if (items.length === 0) {
@@ -427,8 +469,8 @@ function CategoryTextColumns({
             </ul>
 
             <div className="min-w-0">
-                {previewSingleColumn ? (
-                    <div className="grid grid-cols-[minmax(0,1fr)_220px] items-start gap-5">
+                {hasDeeperSubcategories ? (
+                    <div className="grid grid-cols-[minmax(0,1fr)_320px] items-start gap-5">
                         <div className="min-w-0">
                             {activeNode?.children.length ? (
                                 <NestedTextList
@@ -444,34 +486,26 @@ function CategoryTextColumns({
                         </div>
                         <div className="min-w-0 pt-1">
                             <ProductPreviewGrid
-                                products={previewProducts.slice(0, 1)}
+                                products={previewProducts}
                                 loading={previewLoading}
                                 emptyLabel="No products found in this category yet."
                                 onLinkClick={onLinkClick}
-                                singleColumn
+                                columns={2}
+                                maxItems={4}
+                                compact
                             />
                         </div>
                     </div>
                 ) : (
-                    <div className="space-y-6">
-                        {activeNode?.children.length ? (
-                            <NestedTextList
-                                items={activeNode.children}
-                                pathPrefix={[activeNode.id]}
-                                activePath={activePath}
-                                setActivePath={setActivePath}
-                                onLinkClick={onLinkClick}
-                            />
-                        ) : (
-                            <div className="pt-2 text-sm text-[#8c8070]">Select a category to view its subcategories.</div>
-                        )}
-
+                    <div className="pt-1">
                         <ProductPreviewGrid
                             products={previewProducts}
                             loading={previewLoading}
                             emptyLabel="No products found in this category yet."
                             onLinkClick={onLinkClick}
-                            singleColumn={previewSingleColumn}
+                            columns={3}
+                            maxItems={6}
+                            compact
                         />
                     </div>
                 )}
@@ -562,6 +596,7 @@ function normalizeTreeNodes(items: TreeCategory[]): TextNode[] {
         id: item.id,
         label: item.title,
         href: item.path || `/${item.slug}`,
+        categoryId: item.id,
         children: normalizeTreeNodes(item.children || []),
     }))
 }
@@ -571,6 +606,7 @@ function normalizeMenuNodes(items: MenuNode[]): TextNode[] {
         id: item.id,
         label: item.label,
         href: getSafeUrl(item.url),
+        categoryId: item.kind === "CATEGORY" ? item.referenceId || null : null,
         children: normalizeMenuNodes(item.children || []),
     }))
 }
@@ -601,43 +637,30 @@ function isCollectionsEntry(node: TextNode): boolean {
     return normalizeCategoryToken(node.label) === "collections" || getLastPathToken(node.href) === "collections"
 }
 
-function findTreeCategoryByPath(items: TreeCategory[], href: string): TreeCategory | null {
-    for (const item of items) {
-        if (item.path === href) return item
-        const childMatch = findTreeCategoryByPath(item.children || [], href)
-        if (childMatch) return childMatch
-    }
-    return null
-}
-
-function findTreeCategoryBySlug(items: TreeCategory[], slug: string): TreeCategory | null {
-    const target = normalizeCategoryToken(slug)
-    if (!target) return null
-    for (const item of items) {
-        if (normalizeCategoryToken(item.slug) === target) return item
-        const childMatch = findTreeCategoryBySlug(item.children || [], slug)
-        if (childMatch) return childMatch
-    }
-    return null
-}
-
-function findTreeCategoryByTitle(items: TreeCategory[], title: string): TreeCategory | null {
-    const target = normalizeCategoryToken(title)
-    for (const item of items) {
-        if (normalizeCategoryToken(item.title) === target) return item
-        const childMatch = findTreeCategoryByTitle(item.children || [], title)
-        if (childMatch) return childMatch
-    }
-    return null
-}
-
 function CollectionsCategoryGrid({
     items,
+    loading,
     onLinkClick,
 }: {
-    items: TreeCategory[]
+    items: CollectionPreviewCategory[]
+    loading: boolean
     onLinkClick: () => void
 }) {
+    if (loading) {
+        return (
+            <div className="grid grid-cols-5 gap-x-4 gap-y-5">
+                {Array.from({ length: 5 }).map((_, index) => (
+                    <div key={index} className="min-w-0">
+                        <div className="overflow-hidden rounded-[16px] border border-[#ece5dc] bg-[#f8f5f0]">
+                            <div className="aspect-[4/5] animate-pulse bg-[#efe7dc]" />
+                        </div>
+                        <div className="mx-auto mt-2.5 h-4 w-3/4 animate-pulse rounded bg-[#efe7dc]" />
+                    </div>
+                ))}
+            </div>
+        )
+    }
+
     const visibleItems = items.slice(0, 15)
 
     if (visibleItems.length === 0) {
@@ -693,21 +716,31 @@ function ProductPreviewGrid({
     loading,
     emptyLabel,
     onLinkClick,
-    singleColumn = false,
+    columns = 2,
+    maxItems = 4,
+    compact = false,
 }: {
     products: PreviewProduct[]
     loading: boolean
     emptyLabel: string
     onLinkClick: () => void
-    singleColumn?: boolean
+    columns?: 1 | 2 | 3
+    maxItems?: number
+    compact?: boolean
 }) {
+    const visibleProducts = products.slice(0, maxItems)
+    const gridClass =
+        columns === 3 ? "grid-cols-3" : columns === 1 ? "grid-cols-1" : "grid-cols-2"
+    const cardRadius = compact ? "rounded-[14px]" : "rounded-[18px]"
+    const imageAspect = compact ? "aspect-[4/3]" : "aspect-[4/3]"
+
     if (loading) {
         return (
-            <div className={cn("grid gap-3", singleColumn ? "max-w-[220px] grid-cols-1" : "grid-cols-2")}>
-                {(singleColumn ? [0] : [0, 1]).map((slot) => (
-                    <div key={slot} className="overflow-hidden rounded-[18px] border border-[#ece5dc] bg-[#faf7f2]">
-                        <div className="aspect-[4/3] animate-pulse bg-[#f1ebe2]" />
-                        <div className="space-y-2 px-3 py-3">
+            <div className={cn("grid gap-3", gridClass)}>
+                {Array.from({ length: Math.min(maxItems, columns * 2) }).map((_, slot) => (
+                    <div key={slot} className={cn("overflow-hidden border border-[#ece5dc] bg-[#faf7f2]", cardRadius)}>
+                        <div className={cn("animate-pulse bg-[#f1ebe2]", imageAspect)} />
+                        <div className={cn("space-y-2", compact ? "px-2.5 py-2.5" : "px-3 py-3")}>
                             <div className="h-3 w-3/4 animate-pulse rounded bg-[#ece4d9]" />
                             <div className="h-3 w-1/3 animate-pulse rounded bg-[#ece4d9]" />
                         </div>
@@ -722,8 +755,8 @@ function ProductPreviewGrid({
     }
 
     return (
-        <div className={cn("grid gap-3", singleColumn || products.length === 1 ? "max-w-[220px] grid-cols-1" : "grid-cols-2")}>
-            {products.slice(0, 4).map((product) => {
+        <div className={cn("grid gap-3", visibleProducts.length === 1 ? "grid-cols-1" : gridClass)}>
+            {visibleProducts.map((product) => {
                 const candidates = getPrimaryProductImageCandidates(product.images)
                 const imageAlt = buildProductImageAlt({ title: product.title })
                 return (
@@ -731,20 +764,27 @@ function ProductPreviewGrid({
                         key={product.id}
                         href={`/product/${product.slug}`}
                         onClick={onLinkClick}
-                        className="group overflow-hidden rounded-[18px] border border-[#ece5dc] bg-[#fffdfa] shadow-[0_8px_20px_rgba(32,26,20,0.05)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(32,26,20,0.08)]"
+                        className={cn(
+                            "group overflow-hidden border border-[#ece5dc] bg-[#fffdfa] shadow-[0_8px_20px_rgba(32,26,20,0.05)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(32,26,20,0.08)]",
+                            cardRadius
+                        )}
                     >
-                        <div className="relative aspect-[4/3] overflow-hidden bg-[linear-gradient(180deg,#f4ede3_0%,#ede3d6_100%)] p-3">
+                        <div className={cn("relative overflow-hidden bg-[linear-gradient(180deg,#f4ede3_0%,#ede3d6_100%)]", imageAspect, compact ? "p-2.5" : "p-3")}>
                             <StorefrontProductImage
                                 candidates={candidates}
                                 alt={imageAlt}
                                 fill
-                                sizes="(max-width: 1280px) 220px, 260px"
+                                sizes={columns === 3 ? "(max-width: 1280px) 180px, 220px" : "(max-width: 1280px) 220px, 260px"}
                                 className="transition-transform duration-500 group-hover:scale-105"
                             />
                         </div>
-                        <div className="px-3 py-3">
-                            <p className="line-clamp-2 text-[13px] font-medium leading-5 text-[#2d2a26]">{product.title}</p>
-                            <p className="mt-1 text-[12px] font-semibold text-[#7c6a52]">{formatCurrency(product.price)}</p>
+                        <div className={cn(compact ? "px-2.5 py-2.5" : "px-3 py-3")}>
+                            <p className={cn("line-clamp-2 font-medium text-[#2d2a26]", compact ? "text-[12px] leading-4" : "text-[13px] leading-5")}>
+                                {product.title}
+                            </p>
+                            <p className={cn("mt-1 font-semibold text-[#7c6a52]", compact ? "text-[11px]" : "text-[12px]")}>
+                                {formatCurrency(product.price)}
+                            </p>
                         </div>
                     </Link>
                 )

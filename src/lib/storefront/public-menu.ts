@@ -5,6 +5,8 @@ export type PublicMenuNode = {
   id: string
   label: string
   url: string
+  referenceId?: string | null
+  kind?: "PAGE" | "CATEGORY" | "CUSTOM"
   children: PublicMenuNode[]
 }
 
@@ -81,6 +83,8 @@ export async function getPublicMenu(locationOrSlug: string): Promise<PublicMenuN
       parentId: item.parentId,
       label: item.label,
       url,
+      referenceId: item.referenceId,
+      kind: item.type as PublicMenuNode["kind"],
       children: [] as PublicMenuNode[],
     }
   })
@@ -97,13 +101,6 @@ export async function getPublicMenu(locationOrSlug: string): Promise<PublicMenuN
   })
 
   return roots
-}
-
-type CategoryTreeNode = {
-  id: string
-  title: string
-  slug: string
-  parentId: string | null
 }
 
 export async function getPublicCategoryTreeMenu(): Promise<PublicMenuNode[]> {
@@ -123,6 +120,8 @@ export async function getPublicCategoryTreeMenu(): Promise<PublicMenuNode[]> {
     parentId: category.parentId,
     label: category.title,
     url: pathById.get(category.id) || `/category/${category.slug}`,
+    referenceId: category.id,
+    kind: "CATEGORY" as const,
     children: [] as PublicMenuNode[],
   }))
 

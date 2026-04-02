@@ -17,6 +17,8 @@ type MobileMenuItem = {
     id: string
     label: string
     url: string
+    referenceId?: string | null
+    kind?: "PAGE" | "CATEGORY" | "CUSTOM"
     children: MobileMenuItem[]
 }
 

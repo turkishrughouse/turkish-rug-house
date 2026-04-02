@@ -21,6 +21,8 @@ type DiscoveryMenuNode = {
     id: string
     label: string
     url: string
+    referenceId?: string | null
+    kind?: "PAGE" | "CATEGORY" | "CUSTOM"
     children: DiscoveryMenuNode[]
 }
 

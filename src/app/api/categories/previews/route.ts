@@ -56,7 +56,7 @@ export async function GET(request: Request) {
         { isFeatured: "desc" },
         { updatedAt: "desc" },
       ],
-      take: 4,
+      take: 6,
       select: {
         id: true,
         slug: true,
