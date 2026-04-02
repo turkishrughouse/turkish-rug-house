@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { buildCategoryPathMap } from "@/lib/category-paths"
-import { getSiteSettings } from "@/lib/site-settings"
 
 type CategoryRow = {
     id: string
@@ -10,6 +9,34 @@ type CategoryRow = {
     sortOrder: number
     image: string | null
     parentId: string | null
+}
+
+function buildTreeOrder(rows: CategoryRow[]) {
+    const byParent = new Map<string | null, CategoryRow[]>()
+
+    for (const row of rows) {
+        const bucket = byParent.get(row.parentId) || []
+        bucket.push(row)
+        byParent.set(row.parentId, bucket)
+    }
+
+    const sortNodes = (items: CategoryRow[]) =>
+        [...items].sort((a, b) => {
+            if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
+            return a.title.localeCompare(b.title)
+        })
+
+    const ordered: CategoryRow[] = []
+
+    const walk = (parentId: string | null) => {
+        for (const row of sortNodes(byParent.get(parentId) || [])) {
+            ordered.push(row)
+            walk(row.id)
+        }
+    }
+
+    walk(null)
+    return ordered
 }
 
 export async function GET(request: Request) {
@@ -45,52 +72,6 @@ export async function GET(request: Request) {
                 },
             })
 
-        if (!canonicalCollectionsParent) {
-            const siteSettings = await getSiteSettings()
-            const configuredIds = siteSettings.collectionCategoryIds.slice(0, 15)
-            const configuredCategories = configuredIds.length > 0
-                ? await prisma.category.findMany({
-                    where: { id: { in: configuredIds } },
-                    select: {
-                        id: true,
-                        title: true,
-                        slug: true,
-                        sortOrder: true,
-                        image: true,
-                        parentId: true,
-                    },
-                })
-                : []
-
-            const configuredMap = new Map(configuredCategories.map((category) => [category.id, category]))
-            const configuredRows = configuredIds
-                .map((id) => configuredMap.get(id))
-                .filter((row): row is CategoryRow => Boolean(row))
-            const { pathById } = buildCategoryPathMap(configuredRows)
-            const children = configuredRows.map((row) => ({
-                id: row.id,
-                title: row.title,
-                slug: row.slug,
-                path: pathById.get(row.id) || `/${row.slug}`,
-                image: row.image,
-            }))
-
-            console.info("[Collections Mega Menu] source=site_settings", {
-                parent: null,
-                configuredIds,
-                childCount: children.length,
-                children: children.map((child) => ({ id: child.id, title: child.title })),
-            })
-
-            return NextResponse.json({
-                source: "site_settings",
-                parentFound: false,
-                childCount: children.length,
-                parent: null,
-                children,
-            })
-        }
-
         const categories = await prisma.category.findMany({
             select: {
                 id: true,
@@ -105,12 +86,16 @@ export async function GET(request: Request) {
 
         const rows = categories as CategoryRow[]
         const { pathById } = buildCategoryPathMap(rows)
-        const children = rows
-            .filter((row) => row.parentId === canonicalCollectionsParent.id)
-            .sort((a, b) => {
-                if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
-                return a.title.localeCompare(b.title)
-            })
+        const resolvedSource = canonicalCollectionsParent ? "category_parent" : "category_tree_virtual_root"
+        const sourceRows = canonicalCollectionsParent
+            ? rows
+                .filter((row) => row.parentId === canonicalCollectionsParent.id)
+                .sort((a, b) => {
+                    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
+                    return a.title.localeCompare(b.title)
+                })
+            : buildTreeOrder(rows)
+        const children = sourceRows
             .slice(0, 15)
             .map((row) => ({
                 id: row.id,
@@ -120,25 +105,34 @@ export async function GET(request: Request) {
                 image: row.image,
             }))
 
-        console.info("[Collections Mega Menu] source=category_parent", {
-            parent: {
-                id: canonicalCollectionsParent.id,
-                slug: canonicalCollectionsParent.slug,
-                title: canonicalCollectionsParent.title,
-            },
-            childCount: children.length,
+        console.info(`[Collections Mega Menu] source=${resolvedSource}`, {
+            parent: canonicalCollectionsParent
+                ? {
+                    id: canonicalCollectionsParent.id,
+                    slug: canonicalCollectionsParent.slug,
+                    title: canonicalCollectionsParent.title,
+                }
+                : {
+                    id: null,
+                    slug: null,
+                    title: "Virtual Collections Root",
+                },
+            totalDirectChildren: sourceRows.length,
+            first15Children: children.map((child) => ({ id: child.id, title: child.title })),
             children: children.map((child) => ({ id: child.id, title: child.title })),
         })
 
         return NextResponse.json({
-            source: "category_parent",
-            parentFound: true,
-            childCount: children.length,
-            parent: {
-                id: canonicalCollectionsParent.id,
-                title: canonicalCollectionsParent.title,
-                slug: canonicalCollectionsParent.slug,
-            },
+            source: resolvedSource,
+            parentFound: Boolean(canonicalCollectionsParent),
+            childCount: sourceRows.length,
+            parent: canonicalCollectionsParent
+                ? {
+                    id: canonicalCollectionsParent.id,
+                    title: canonicalCollectionsParent.title,
+                    slug: canonicalCollectionsParent.slug,
+                }
+                : null,
             children,
         })
     } catch (error) {
