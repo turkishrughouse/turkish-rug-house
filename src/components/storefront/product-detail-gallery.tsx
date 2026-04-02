@@ -123,14 +123,14 @@ function GalleryState({
 
   return (
     <>
-      <div className="grid grid-cols-[72px_minmax(0,1fr)] sm:grid-cols-[92px_minmax(0,1fr)] gap-3 sm:gap-4 items-start">
-        <div className="space-y-3">
+      <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 items-start sm:grid-cols-[92px_minmax(0,1fr)] sm:gap-4 lg:grid-cols-[110px_minmax(0,1fr)] lg:gap-5 xl:grid-cols-[112px_minmax(0,1fr)]">
+        <div className="space-y-3 lg:space-y-4">
           {gallery.map((img, i) => (
             <button
               key={`${img.src}-${i}`}
               type="button"
               onClick={() => selectImage(i)}
-              className={`block h-14 w-14 sm:h-20 sm:w-20 rounded-md overflow-hidden border ${activeImageIndex === i ? "border-slate-900" : "border-[#dce3ed]"}`}
+              className={`block h-14 w-14 overflow-hidden rounded-md border sm:h-20 sm:w-20 lg:h-[5.9rem] lg:w-[5.9rem] xl:h-24 xl:w-24 ${activeImageIndex === i ? "border-slate-900" : "border-[#dce3ed]"}`}
             >
               <GalleryImageWithFallback
                 key={`${img.src}-${img.thumbSrc}-${img.thumbSrcCandidates.join("|")}`}
@@ -146,10 +146,10 @@ function GalleryState({
           ))}
         </div>
 
-        <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-2">
+        <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-2 lg:p-1.5 xl:p-2">
           <button
             type="button"
-            className="group relative flex w-full items-center justify-center rounded-lg bg-slate-50 p-3"
+            className="group relative flex w-full items-center justify-center rounded-lg bg-slate-50 p-3 lg:mx-auto lg:max-w-[38rem] lg:p-4 xl:max-w-[40rem]"
             style={{ height: "auto", maxHeight: "none", aspectRatio: "auto" }}
             onMouseMove={(event) => {
               if (!hoverZoomEnabled) return
