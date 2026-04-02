@@ -1,8 +1,8 @@
 "use client"
 
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Category, Product } from "@prisma/client"
 import {
     Table,
@@ -89,6 +89,7 @@ interface ProductListProps {
 
 type BulkAction = "" | "publish" | "draft" | "delete" | "restore" | "delete_permanently"
 type ColumnKey = "image" | "sku" | "status" | "stock" | "price" | "featured" | "actions"
+const ADMIN_PRODUCTS_SCROLL_KEY_PREFIX = "admin-products:return-scroll:"
 
 function AdminProductThumbnail({
     title,
@@ -133,6 +134,8 @@ export function ProductList({
     const isTr = lang === "tr"
     const tx = (en: string, tr: string) => (isTr ? tr : en)
     const router = useRouter()
+    const pathname = usePathname()
+    const searchParams = useSearchParams()
     const importInputRef = useRef<HTMLInputElement | null>(null)
     const [selectedIds, setSelectedIds] = useState<string[]>([])
     const [isLoading, setIsLoading] = useState(false)
@@ -161,6 +164,38 @@ export function ProductList({
     const visibleDataColumnCount = Object.values(visibleColumns).filter(Boolean).length + 2
     const inTrashView = (filters.status || "all") === "trash"
     const formattedSizeFilter = formatCmSizeWithFeet(sizeFilter)
+    const currentListUrl = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`
+
+    useEffect(() => {
+        if (typeof window === "undefined") return
+        const storageKey = `${ADMIN_PRODUCTS_SCROLL_KEY_PREFIX}${currentListUrl}`
+        const raw = window.sessionStorage.getItem(storageKey)
+        if (!raw) return
+
+        const nextScrollY = Number(raw)
+        if (!Number.isFinite(nextScrollY)) {
+            window.sessionStorage.removeItem(storageKey)
+            return
+        }
+
+        const frame = window.requestAnimationFrame(() => {
+            window.scrollTo({ top: nextScrollY, behavior: "auto" })
+            window.sessionStorage.removeItem(storageKey)
+        })
+
+        return () => window.cancelAnimationFrame(frame)
+    }, [currentListUrl])
+
+    const buildEditHref = (productId: string) =>
+        `/dashboard/products/${productId}?returnTo=${encodeURIComponent(currentListUrl)}`
+
+    const rememberListPosition = () => {
+        if (typeof window === "undefined") return
+        window.sessionStorage.setItem(
+            `${ADMIN_PRODUCTS_SCROLL_KEY_PREFIX}${currentListUrl}`,
+            String(window.scrollY)
+        )
+    }
 
     const stockLabel = (product: ProductWithRelations) => {
         if (!product.isStock || product.stockCount <= 0) return tx("Out of stock", "Stokta yok")
@@ -735,7 +770,8 @@ export function ProductList({
                                         <TableCell>
                                             <div className="space-y-1.5">
                                                 <Link
-                                                    href={`/dashboard/products/${product.id}`}
+                                                    href={buildEditHref(product.id)}
+                                                    onClick={rememberListPosition}
                                                     className="inline-flex font-semibold text-slate-900 transition-colors hover:text-[#135e96] hover:underline hover:underline-offset-2"
                                                 >
                                                     {product.title}
@@ -750,7 +786,8 @@ export function ProductList({
                                                     <div className="min-h-[20px] pt-1 text-xs leading-5 text-slate-500 opacity-0 transition-opacity group-hover:opacity-100">
                                                         <div className="flex flex-wrap items-center gap-x-4">
                                                             <Link
-                                                                href={`/dashboard/products/${product.id}`}
+                                                                href={buildEditHref(product.id)}
+                                                                onClick={rememberListPosition}
                                                                 className="font-medium text-[#2271b1] hover:text-[#135e96]"
                                                             >
                                                                 {tx("Edit", "Düzenle")}

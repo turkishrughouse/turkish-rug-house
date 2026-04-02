@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, type ComponentType, type ReactNode } from "react"
 import { createPortal } from "react-dom"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { ProductFormInput, ProductFormValues, productFormSchema } from "@/lib/validations/product"
@@ -781,9 +781,15 @@ function RichTextEditor({
 }
 
 export function ProductForm({ lang = "en", initialData, options }: ProductFormProps) {
+    const searchParams = useSearchParams()
     const isTr = lang === "tr"
     const tx = (en: string, tr: string) => (isTr ? tr : en)
     const router = useRouter()
+    const returnToParam = searchParams.get("returnTo") || ""
+    const resolvedReturnTo =
+        returnToParam.startsWith("/dashboard/products")
+            ? returnToParam
+            : "/dashboard/products"
     const [isLoading, setIsLoading] = useState(false)
     const [categories, setCategories] = useState(options.categories || [])
     const initialImages = parseImageList(initialData?.images)
@@ -1248,7 +1254,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                         window.dispatchEvent(new Event("admin-products-updated"))
                     }
                     toast.success(tx("Product updated", "Ürün güncellendi"))
-                    router.push("/dashboard/products")
+                    router.push(resolvedReturnTo)
                 } else {
                     toast.error(res.error)
                 }
@@ -1356,7 +1362,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                 variant="outline"
                                 size="icon"
                                 className="h-10 w-10 rounded-sm border-[#c3c4c7] bg-white text-slate-700 hover:bg-[#f6f7f7]"
-                                onClick={() => router.back()}
+                                onClick={() => router.push(initialData ? resolvedReturnTo : "/dashboard/products")}
                             >
                                 <ChevronLeft className="h-4 w-4" />
                             </Button>
@@ -1372,7 +1378,7 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                 type="button"
                                 variant="outline"
                                 className="rounded-sm border-[#c3c4c7] bg-[#f6f7f7] text-slate-700"
-                                onClick={() => router.push("/dashboard/products")}
+                                onClick={() => router.push(initialData ? resolvedReturnTo : "/dashboard/products")}
                             >
                                 {tx("Cancel", "İptal")}
                             </Button>
