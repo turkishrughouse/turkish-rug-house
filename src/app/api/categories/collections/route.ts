@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { buildCategoryPathMap } from "@/lib/category-paths"
+import { getSiteSettings } from "@/lib/site-settings"
 
 type CategoryRow = {
     id: string
@@ -45,10 +46,48 @@ export async function GET(request: Request) {
             })
 
         if (!canonicalCollectionsParent) {
+            const siteSettings = await getSiteSettings()
+            const configuredIds = siteSettings.collectionCategoryIds.slice(0, 15)
+            const configuredCategories = configuredIds.length > 0
+                ? await prisma.category.findMany({
+                    where: { id: { in: configuredIds } },
+                    select: {
+                        id: true,
+                        title: true,
+                        slug: true,
+                        sortOrder: true,
+                        image: true,
+                        parentId: true,
+                    },
+                })
+                : []
+
+            const configuredMap = new Map(configuredCategories.map((category) => [category.id, category]))
+            const configuredRows = configuredIds
+                .map((id) => configuredMap.get(id))
+                .filter((row): row is CategoryRow => Boolean(row))
+            const { pathById } = buildCategoryPathMap(configuredRows)
+            const children = configuredRows.map((row) => ({
+                id: row.id,
+                title: row.title,
+                slug: row.slug,
+                path: pathById.get(row.id) || `/${row.slug}`,
+                image: row.image,
+            }))
+
+            console.info("[Collections Mega Menu] source=site_settings", {
+                parent: null,
+                configuredIds,
+                childCount: children.length,
+                children: children.map((child) => ({ id: child.id, title: child.title })),
+            })
+
             return NextResponse.json({
+                source: "site_settings",
                 parentFound: false,
-                childCount: 0,
-                children: [],
+                childCount: children.length,
+                parent: null,
+                children,
             })
         }
 
@@ -81,7 +120,18 @@ export async function GET(request: Request) {
                 image: row.image,
             }))
 
+        console.info("[Collections Mega Menu] source=category_parent", {
+            parent: {
+                id: canonicalCollectionsParent.id,
+                slug: canonicalCollectionsParent.slug,
+                title: canonicalCollectionsParent.title,
+            },
+            childCount: children.length,
+            children: children.map((child) => ({ id: child.id, title: child.title })),
+        })
+
         return NextResponse.json({
+            source: "category_parent",
             parentFound: true,
             childCount: children.length,
             parent: {
