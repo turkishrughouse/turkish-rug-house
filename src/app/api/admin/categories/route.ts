@@ -66,7 +66,10 @@ export async function GET(request: Request) {
                         select: { products: true }
                     }
                 },
-                orderBy: { title: 'asc' }
+                orderBy: [
+                    { sortOrder: 'asc' },
+                    { title: 'asc' },
+                ]
             }),
             prisma.product.findMany({
                 where: { isFeatured: true },
@@ -132,6 +135,7 @@ export async function POST(request: Request) {
 
         const { title, parentId, description } = result.data
         let { slug } = result.data
+        const normalizedParentId = parentId || null
 
         // --- Slug Collision Handling ---
         let uniqueSlug = slug
@@ -150,13 +154,19 @@ export async function POST(request: Request) {
         slug = uniqueSlug
         // -------------------------------
 
+        const siblingMax = await prisma.category.aggregate({
+            where: { parentId: normalizedParentId },
+            _max: { sortOrder: true },
+        })
+
         const category = await prisma.category.create({
             data: {
                 title,
                 slug,
                 description,
-                parentId: parentId || null,
-                image: result.data.image || null
+                parentId: normalizedParentId,
+                image: result.data.image || null,
+                sortOrder: (siblingMax._max.sortOrder ?? -1) + 1,
             }
         })
         await notifyNewCategory({
@@ -166,8 +176,23 @@ export async function POST(request: Request) {
         })
         await ensureCategoryMediaFolders()
 
+        const categories = await prisma.category.findMany({
+            include: {
+                parent: {
+                    select: { id: true, title: true }
+                },
+                _count: {
+                    select: { products: true }
+                }
+            },
+            orderBy: [
+                { sortOrder: 'asc' },
+                { title: 'asc' },
+            ]
+        })
+
         console.log(`[ADMIN] Category Created: ${category.title} (${category.slug})`)
-        return NextResponse.json(category, { status: 201 })
+        return NextResponse.json({ category, categories }, { status: 201 })
 
     } catch (error: unknown) {
         console.error("POST /api/admin/categories ERROR:", error)
