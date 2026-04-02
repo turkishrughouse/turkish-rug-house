@@ -68,16 +68,16 @@ export function SharedMegaPanel({
 
     React.useEffect(() => {
         const fetchCategoryTree = async () => {
-            if (Array.isArray(initialCategoryItems) && initialCategoryItems.length > 0) {
-                setCategoriesLoading(false)
-                categoriesLoadedRef.current = true
-                return
-            }
             if (categoriesLoadedRef.current) {
                 setCategoriesLoading(false)
                 return
             }
-            setCategoriesLoading(true)
+            const shouldShowLoading = !Array.isArray(initialCategoryItems) || initialCategoryItems.length === 0
+            if (shouldShowLoading) {
+                setCategoriesLoading(true)
+            } else {
+                setCategoriesLoading(false)
+            }
             try {
                 const response = await fetch("/api/categories?tree=true", { cache: "no-store" })
                 if (!response.ok) {
@@ -115,9 +115,12 @@ export function SharedMegaPanel({
     )
 
     const activeCollectionsCategory = React.useMemo(() => {
-        if (!activeCategory || !isCollectionsNode(activeCategory.label)) return null
+        if (!activeCategory || !isCollectionsEntry(activeCategory)) return null
+        const href = getSafeUrl(activeCategory.href)
         return (
-            findTreeCategoryByPath(categoryTree, activeCategory.href) ||
+            findTreeCategoryByPath(categoryTree, href) ||
+            findTreeCategoryBySlug(categoryTree, getLastPathToken(href)) ||
+            findTreeCategoryBySlug(categoryTree, "collections") ||
             findTreeCategoryByTitle(categoryTree, activeCategory.label)
         )
     }, [activeCategory, categoryTree])
@@ -586,14 +589,33 @@ function normalizeCategoryToken(value: string | null | undefined): string {
         .replace(/[^a-z0-9]+/g, "")
 }
 
-function isCollectionsNode(label: string): boolean {
-    return normalizeCategoryToken(label) === "collections"
+function getLastPathToken(path: string | null | undefined): string {
+    const safePath = getSafeUrl(path)
+    if (safePath === "#") return ""
+    const trimmed = safePath.replace(/[?#].*$/, "").replace(/\/+$/, "")
+    const segments = trimmed.split("/").filter(Boolean)
+    return normalizeCategoryToken(segments[segments.length - 1] || "")
+}
+
+function isCollectionsEntry(node: TextNode): boolean {
+    return normalizeCategoryToken(node.label) === "collections" || getLastPathToken(node.href) === "collections"
 }
 
 function findTreeCategoryByPath(items: TreeCategory[], href: string): TreeCategory | null {
     for (const item of items) {
         if (item.path === href) return item
         const childMatch = findTreeCategoryByPath(item.children || [], href)
+        if (childMatch) return childMatch
+    }
+    return null
+}
+
+function findTreeCategoryBySlug(items: TreeCategory[], slug: string): TreeCategory | null {
+    const target = normalizeCategoryToken(slug)
+    if (!target) return null
+    for (const item of items) {
+        if (normalizeCategoryToken(item.slug) === target) return item
+        const childMatch = findTreeCategoryBySlug(item.children || [], slug)
         if (childMatch) return childMatch
     }
     return null
