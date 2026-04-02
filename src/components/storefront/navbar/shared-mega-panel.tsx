@@ -29,6 +29,7 @@ type TreeCategory = {
     title: string
     slug: string
     path?: string | null
+    image?: string | null
     children?: TreeCategory[]
 }
 
@@ -112,6 +113,14 @@ export function SharedMegaPanel({
         () => categoryNodes.find((item) => item.id === activeCategoryId) || categoryNodes[0] || null,
         [activeCategoryId, categoryNodes]
     )
+
+    const activeCollectionsCategory = React.useMemo(() => {
+        if (!activeCategory || !isCollectionsNode(activeCategory.label)) return null
+        return (
+            findTreeCategoryByPath(categoryTree, activeCategory.href) ||
+            findTreeCategoryByTitle(categoryTree, activeCategory.label)
+        )
+    }, [activeCategory, categoryTree])
 
     const activePreviewCategory = React.useMemo(() => {
         if (!activeCategory) return null
@@ -271,7 +280,12 @@ export function SharedMegaPanel({
                                         <div className="h-px flex-1 bg-[#e7ddd1]" />
                                     </div>
 
-                                    {activeCategory.children.length > 0 ? (
+                                    {activeCollectionsCategory ? (
+                                        <CollectionsCategoryGrid
+                                            items={activeCollectionsCategory.children || []}
+                                            onLinkClick={onLinkClick}
+                                        />
+                                    ) : activeCategory.children.length > 0 ? (
                                         <CategoryTextColumns
                                             items={activeCategory.children}
                                             activePath={activeChildPath}
@@ -534,6 +548,7 @@ function normalizeCategoryTree(items: unknown): TreeCategory[] {
             title: typeof item.title === "string" && item.title.trim().length > 0 ? item.title.trim() : "Category",
             slug: typeof item.slug === "string" ? item.slug : "",
             path: typeof item.path === "string" ? item.path : null,
+            image: typeof item.image === "string" ? item.image : null,
             children: normalizeCategoryTree(item.children),
         }))
         .filter((item) => item.slug.length > 0)
@@ -561,6 +576,94 @@ function getSafeUrl(url: string | null | undefined): string {
     if (!url) return "#"
     if (url === "https://" || url === "http://") return "#"
     return url
+}
+
+function normalizeCategoryToken(value: string | null | undefined): string {
+    return (value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/&/g, "and")
+        .replace(/[^a-z0-9]+/g, "")
+}
+
+function isCollectionsNode(label: string): boolean {
+    return normalizeCategoryToken(label) === "collections"
+}
+
+function findTreeCategoryByPath(items: TreeCategory[], href: string): TreeCategory | null {
+    for (const item of items) {
+        if (item.path === href) return item
+        const childMatch = findTreeCategoryByPath(item.children || [], href)
+        if (childMatch) return childMatch
+    }
+    return null
+}
+
+function findTreeCategoryByTitle(items: TreeCategory[], title: string): TreeCategory | null {
+    const target = normalizeCategoryToken(title)
+    for (const item of items) {
+        if (normalizeCategoryToken(item.title) === target) return item
+        const childMatch = findTreeCategoryByTitle(item.children || [], title)
+        if (childMatch) return childMatch
+    }
+    return null
+}
+
+function CollectionsCategoryGrid({
+    items,
+    onLinkClick,
+}: {
+    items: TreeCategory[]
+    onLinkClick: () => void
+}) {
+    const visibleItems = items.slice(0, 15)
+
+    if (visibleItems.length === 0) {
+        return (
+            <div className="rounded-[18px] border border-dashed border-[#ece5dc] bg-[#faf7f2] px-4 py-8 text-sm text-[#8c8070]">
+                No collection categories found.
+            </div>
+        )
+    }
+
+    return (
+        <div className="grid grid-cols-5 gap-x-4 gap-y-5">
+            {visibleItems.map((item) => {
+                const href = getSafeUrl(item.path || `/${item.slug}`)
+                return (
+                    <Link
+                        key={item.id}
+                        href={href}
+                        onClick={onLinkClick}
+                        className="group min-w-0"
+                    >
+                        <div className="overflow-hidden rounded-[16px] border border-[#ece5dc] bg-[#f8f5f0] shadow-[0_8px_20px_rgba(32,26,20,0.04)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(32,26,20,0.08)]">
+                            <div className="relative aspect-[4/5] overflow-hidden bg-[linear-gradient(180deg,#f5efe6_0%,#ece2d5_100%)]">
+                                {item.image ? (
+                                    <img
+                                        src={item.image}
+                                        alt={item.title}
+                                        loading="lazy"
+                                        decoding="async"
+                                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                                    />
+                                ) : (
+                                    <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,#f7f2eb_0%,#e8ddd1_100%)] px-4 text-center">
+                                        <span className="font-serif text-lg font-semibold tracking-[-0.02em] text-[#7b6b58]">
+                                            {item.title}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <p className="mt-2.5 line-clamp-2 text-center text-[13px] font-medium leading-5 text-[#312b25] transition-colors group-hover:text-[#7c6a52]">
+                            {item.title}
+                        </p>
+                    </Link>
+                )
+            })}
+        </div>
+    )
 }
 
 function ProductPreviewGrid({
