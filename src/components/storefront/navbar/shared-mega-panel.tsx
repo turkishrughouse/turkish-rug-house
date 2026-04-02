@@ -142,7 +142,7 @@ export function SharedMegaPanel({
         return source.slice(0, isSubcategoryPreview ? 2 : 4)
     }, [activePreviewCategory, isSubcategoryPreview, previewByHref])
 
-    const previewSingleColumn = isSubcategoryPreview && activeChildPath.length > 1
+    const previewSingleColumn = isSubcategoryPreview
 
     React.useEffect(() => {
         if (categoryNodes.length === 0) {
@@ -410,27 +410,54 @@ function CategoryTextColumns({
             </ul>
 
             <div className="min-w-0">
-                <div className="space-y-6">
-                    {activeNode?.children.length ? (
-                        <NestedTextList
-                            items={activeNode.children}
-                            pathPrefix={[activeNode.id]}
-                            activePath={activePath}
-                            setActivePath={setActivePath}
-                            onLinkClick={onLinkClick}
-                        />
-                    ) : (
-                        <div className="pt-2 text-sm text-[#8c8070]">Select a category to view its subcategories.</div>
-                    )}
+                {previewSingleColumn ? (
+                    <div className="grid grid-cols-[minmax(0,1fr)_220px] items-start gap-5">
+                        <div className="min-w-0">
+                            {activeNode?.children.length ? (
+                                <NestedTextList
+                                    items={activeNode.children}
+                                    pathPrefix={[activeNode.id]}
+                                    activePath={activePath}
+                                    setActivePath={setActivePath}
+                                    onLinkClick={onLinkClick}
+                                />
+                            ) : (
+                                <div className="pt-2 text-sm text-[#8c8070]">No deeper subcategories found.</div>
+                            )}
+                        </div>
+                        <div className="min-w-0 pt-1">
+                            <ProductPreviewGrid
+                                products={previewProducts.slice(0, 1)}
+                                loading={previewLoading}
+                                emptyLabel="No products found in this category yet."
+                                onLinkClick={onLinkClick}
+                                singleColumn
+                            />
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-6">
+                        {activeNode?.children.length ? (
+                            <NestedTextList
+                                items={activeNode.children}
+                                pathPrefix={[activeNode.id]}
+                                activePath={activePath}
+                                setActivePath={setActivePath}
+                                onLinkClick={onLinkClick}
+                            />
+                        ) : (
+                            <div className="pt-2 text-sm text-[#8c8070]">Select a category to view its subcategories.</div>
+                        )}
 
-                    <ProductPreviewGrid
-                        products={previewProducts}
-                        loading={previewLoading}
-                        emptyLabel="No products found in this category yet."
-                        onLinkClick={onLinkClick}
-                        singleColumn={previewSingleColumn}
-                    />
-                </div>
+                        <ProductPreviewGrid
+                            products={previewProducts}
+                            loading={previewLoading}
+                            emptyLabel="No products found in this category yet."
+                            onLinkClick={onLinkClick}
+                            singleColumn={previewSingleColumn}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     )
