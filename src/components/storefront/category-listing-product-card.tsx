@@ -40,6 +40,33 @@ function relationLabel(item: ProductRelation | undefined) {
   return (item?.name || item?.title || "").trim()
 }
 
+function buildCardTags(product: CategoryListingProduct) {
+  const tags: string[] = []
+  const seen = new Set<string>()
+
+  const pushTag = (value: string | undefined) => {
+    const normalized = (value || "").trim()
+    if (!normalized) return
+    const key = normalized.toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    tags.push(normalized)
+  }
+
+  // Use the product's own structured relations only; avoid broad/fuzzy fallbacks.
+  pushTag(product.categories?.[0]?.title)
+  pushTag(relationLabel(product.types?.[0]))
+  pushTag(relationLabel(product.styles?.[0]))
+  pushTag(relationLabel(product.materials?.[0]))
+
+  // Only show a color tag when the product has a single explicit color relation.
+  if ((product.colors || []).length === 1) {
+    pushTag(relationLabel(product.colors?.[0]))
+  }
+
+  return tags.slice(0, 4)
+}
+
 export function CategoryListingProductCard({
   product,
   currencySettings,
@@ -69,20 +96,7 @@ export function CategoryListingProductCard({
   const sizeLabel = relationLabel(product.sizes?.[0]) || "One of a kind"
   const shortDescription = stripHtml(product.description).slice(0, 110)
 
-  const attributeTags = Array.from(
-    new Set(
-      [
-        ...((product.categories || []).map((item) => item.title)),
-        ...((product.types || []).map(relationLabel)),
-        ...((product.styles || []).map(relationLabel)),
-        ...((product.colors || []).map(relationLabel)),
-        ...((product.materials || []).map(relationLabel)),
-      ]
-        .map((value) => value.trim())
-        .filter(Boolean)
-        .map((value) => value.toLowerCase())
-    )
-  ).slice(0, 4)
+  const attributeTags = buildCardTags(product)
 
   return (
     <article className="group/card relative flex h-full flex-col overflow-hidden rounded-[22px] border border-[#e5ddd2] bg-[#fffdfa] text-[#2c261f] shadow-[0_14px_36px_rgba(28,22,17,0.08)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#d8cabb] hover:shadow-[0_18px_42px_rgba(28,22,17,0.12)]">
