@@ -126,9 +126,40 @@ function getDescendantCategoryIds(rows: CategoryPathRow[], rootId: string) {
   return Array.from(ids)
 }
 
+function buildRecommendationScopes(
+  productCategories: Array<{ id: string; title: string; slug: string }>,
+  rows: CategoryPathRow[]
+) {
+  const chains = productCategories
+    .map((category) => getCategoryAncestors(rows, category.id))
+    .filter((chain) => chain.length > 0)
+
+  const deepestDepth = chains.reduce((max, chain) => Math.max(max, chain.length), 0)
+  const deepestChains = chains.filter((chain) => chain.length === deepestDepth)
+  const exactCategoryIds = Array.from(new Set(deepestChains.map((chain) => chain[chain.length - 1]?.id).filter(Boolean))) as string[]
+
+  const parentGroupIds = Array.from(
+    new Set(
+      deepestChains
+        .map((chain) => (chain.length > 1 ? chain[chain.length - 2]?.id : null))
+        .filter(Boolean)
+    )
+  ) as string[]
+
+  const parentFamilyIds = Array.from(
+    new Set(parentGroupIds.flatMap((parentId) => getDescendantCategoryIds(rows, parentId)))
+  )
+
+  return {
+    exactCategoryIds,
+    parentFamilyIds,
+  }
+}
+
 async function fetchRelatedProducts(input: {
   productId: string
-  categoryFamilyIds: string[]
+  exactCategoryIds: string[]
+  parentFamilyIds: string[]
   colorIds: string[]
   sizeIds: string[]
 }) {
@@ -184,17 +215,30 @@ async function fetchRelatedProducts(input: {
     }
   }
 
-  if (input.categoryFamilyIds.length > 0) {
-    const sameCategory = await prisma.product.findMany({
+  if (input.exactCategoryIds.length > 0) {
+    const exactCategoryMatches = await prisma.product.findMany({
       where: {
         id: { not: input.productId },
         isPublished: true,
-        categories: { some: { id: { in: input.categoryFamilyIds } } },
+        categories: { some: { id: { in: input.exactCategoryIds } } },
       },
       take: 8,
       select: baseSelect,
     })
-    appendBatch(sameCategory)
+    appendBatch(exactCategoryMatches)
+  }
+
+  if (collected.size < 8 && input.parentFamilyIds.length > 0) {
+    const parentFamilyMatches = await prisma.product.findMany({
+      where: {
+        id: { notIn: [input.productId, ...collected.keys()] },
+        isPublished: true,
+        categories: { some: { id: { in: input.parentFamilyIds } } },
+      },
+      take: 8 - collected.size,
+      select: baseSelect,
+    })
+    appendBatch(parentFamilyMatches)
   }
 
   if (collected.size < 8 && input.colorIds.length > 0) {
@@ -328,14 +372,11 @@ export default async function ProductPage({ params }: Props) {
 
   if (!product) notFound()
   const categoryRows = await fetchCategoryPathRows()
-
-  const primaryCategory = product.categories[0] || null
-  const primaryChain = primaryCategory ? getCategoryAncestors(categoryRows, primaryCategory.id) : []
-  const mainCategory = primaryChain[0] || null
-  const categoryFamilyIds = mainCategory ? getDescendantCategoryIds(categoryRows, mainCategory.id) : []
+  const recommendationScopes = buildRecommendationScopes(product.categories, categoryRows)
   const relatedProducts = await fetchRelatedProducts({
     productId: product.id,
-    categoryFamilyIds,
+    exactCategoryIds: recommendationScopes.exactCategoryIds,
+    parentFamilyIds: recommendationScopes.parentFamilyIds,
     colorIds: product.colors.map((item) => item.id),
     sizeIds: product.sizes.map((item) => item.id),
   })
