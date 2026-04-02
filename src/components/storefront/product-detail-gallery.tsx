@@ -16,6 +16,7 @@ function GalleryImageWithFallback({
   className,
   priority = false,
   quality = 85,
+  containWithinBox = false,
 }: {
   src: string
   candidates: string[]
@@ -26,6 +27,7 @@ function GalleryImageWithFallback({
   className?: string
   priority?: boolean
   quality?: number
+  containWithinBox?: boolean
 }) {
   const normalizedCandidates = Array.from(new Set([src, ...candidates].filter(Boolean)))
   const [candidateIndex, setCandidateIndex] = useState(0)
@@ -42,7 +44,7 @@ function GalleryImageWithFallback({
       className={className}
       priority={priority}
       quality={quality}
-      style={{ width: "100%", height: "auto" }}
+      style={containWithinBox ? { width: "auto", height: "auto", maxWidth: "100%", maxHeight: "100%" } : { width: "100%", height: "auto" }}
       unoptimized={currentSrc.startsWith("/uploads/") || /^https?:\/\//i.test(currentSrc)}
       onError={() => {
         setCandidateIndex((prev) => (prev + 1 < normalizedCandidates.length ? prev + 1 : prev))
@@ -73,14 +75,6 @@ function GalleryState({
   const activeImageIndex = selectedImage >= 0 && selectedImage < gallery.length ? selectedImage : 0
   const selectedGalleryImage = gallery[activeImageIndex] || gallery[0]
   const zoomSrc = selectedGalleryImage.zoomSrc
-  const selectedImageAspectRatio =
-    selectedGalleryImage.width > 0 && selectedGalleryImage.height > 0
-      ? selectedGalleryImage.height / selectedGalleryImage.width
-      : 1
-  const desktopStageHeightClass =
-    selectedImageAspectRatio >= 1.45
-      ? "lg:h-[34rem] xl:h-[35rem]"
-      : "lg:h-[38rem] xl:h-[40rem]"
 
   const resetZoomState = useCallback(() => {
     setMainImageZoomActive(false)
@@ -157,7 +151,7 @@ function GalleryState({
         <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-2 lg:p-1.5 xl:p-2">
           <button
             type="button"
-            className={`group relative flex w-full items-center justify-center rounded-lg bg-slate-50 p-3 lg:mx-auto lg:max-w-[35.5rem] lg:p-4 xl:max-w-[37rem] ${desktopStageHeightClass}`}
+            className="group relative flex w-full items-center justify-center overflow-hidden rounded-lg bg-slate-50 p-3 lg:mx-auto lg:h-[34rem] lg:max-w-[35.5rem] lg:p-4 xl:h-[36rem] xl:max-w-[37rem]"
             style={{ aspectRatio: "auto" }}
             onMouseMove={(event) => {
               if (!hoverZoomEnabled) return
@@ -200,7 +194,8 @@ function GalleryState({
               priority
               sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 40vw"
               quality={85}
-              className={`h-full w-full object-contain transition-transform duration-300 ${hoverZoomEnabled ? "cursor-zoom-in" : "group-hover:scale-105"}`}
+              containWithinBox
+              className={`max-h-full max-w-full object-contain transition-transform duration-300 ${hoverZoomEnabled ? "cursor-zoom-in" : "group-hover:scale-105"}`}
             />
             {hoverZoomEnabled ? (
               <div
