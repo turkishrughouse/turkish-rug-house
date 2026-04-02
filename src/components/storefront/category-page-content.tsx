@@ -519,7 +519,7 @@ export async function renderCategoryPage({
       <div className="container mx-auto px-4 py-6 sm:px-6 lg:py-8">
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[268px_minmax(0,1fr)] lg:gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
           <aside className="hidden lg:block">
-            <div className="sticky top-24 overflow-hidden rounded-[28px] border border-[#e7dfd4] bg-[#f7f3ed] text-[#2f2922] shadow-[0_18px_46px_rgba(31,22,16,0.08)]">
+            <div className="overflow-hidden rounded-[28px] border border-[#e7dfd4] bg-[#f7f3ed] text-[#2f2922] shadow-[0_18px_46px_rgba(31,22,16,0.08)]">
               <div className="border-b border-[#e7dfd4] px-5 py-5">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#b08a55]">Filter rail</p>
                 <p className="mt-2 text-xl font-semibold text-[#2c261f]">{metadata.total} rugs found</p>

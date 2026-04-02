@@ -84,9 +84,9 @@ export function MobileFilterDrawer({
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="left-0 top-auto bottom-0 h-[88vh] max-w-none translate-x-0 translate-y-0 rounded-t-[28px] border-0 bg-[#fcfaf6] p-0 text-[#4d453b] shadow-2xl sm:h-[82vh]">
+        <DialogContent className="left-0 top-auto bottom-0 h-[88vh] max-h-[88dvh] max-w-none translate-x-0 translate-y-0 overflow-hidden rounded-t-[28px] border-0 bg-[#fcfaf6] p-0 text-[#4d453b] shadow-2xl sm:h-[82vh] sm:max-h-[82dvh]">
           <DialogTitle className="sr-only">Product filters</DialogTitle>
-          <div className="flex h-full flex-col">
+          <div className="flex h-full min-h-0 flex-col">
             <div className="sticky top-0 z-10 border-b border-[#e7dfd4] bg-[#fcfaf6] px-5 py-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -99,7 +99,7 @@ export function MobileFilterDrawer({
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-5 py-5">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 [WebkitOverflowScrolling:touch]">
               {statusSection ? (
                 <div className="rounded-2xl border border-[#e7dfd4] bg-[#fffdfa] p-4">
                   <p className="text-sm font-semibold text-[#2c261f]">{statusSection.title}</p>
