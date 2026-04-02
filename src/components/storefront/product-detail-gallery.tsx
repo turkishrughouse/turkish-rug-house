@@ -73,6 +73,14 @@ function GalleryState({
   const activeImageIndex = selectedImage >= 0 && selectedImage < gallery.length ? selectedImage : 0
   const selectedGalleryImage = gallery[activeImageIndex] || gallery[0]
   const zoomSrc = selectedGalleryImage.zoomSrc
+  const selectedImageAspectRatio =
+    selectedGalleryImage.width > 0 && selectedGalleryImage.height > 0
+      ? selectedGalleryImage.height / selectedGalleryImage.width
+      : 1
+  const desktopStageHeightClass =
+    selectedImageAspectRatio >= 1.45
+      ? "lg:h-[34rem] xl:h-[35rem]"
+      : "lg:h-[38rem] xl:h-[40rem]"
 
   const resetZoomState = useCallback(() => {
     setMainImageZoomActive(false)
@@ -149,8 +157,8 @@ function GalleryState({
         <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-2 lg:p-1.5 xl:p-2">
           <button
             type="button"
-            className="group relative flex w-full items-center justify-center rounded-lg bg-slate-50 p-3 lg:mx-auto lg:max-w-[35.5rem] lg:p-4 xl:max-w-[37rem]"
-            style={{ height: "auto", maxHeight: "none", aspectRatio: "auto" }}
+            className={`group relative flex w-full items-center justify-center rounded-lg bg-slate-50 p-3 lg:mx-auto lg:max-w-[35.5rem] lg:p-4 xl:max-w-[37rem] ${desktopStageHeightClass}`}
+            style={{ aspectRatio: "auto" }}
             onMouseMove={(event) => {
               if (!hoverZoomEnabled) return
               const bounds = event.currentTarget.getBoundingClientRect()
@@ -192,7 +200,7 @@ function GalleryState({
               priority
               sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 40vw"
               quality={85}
-              className={`w-full transition-transform duration-300 ${hoverZoomEnabled ? "cursor-zoom-in" : "group-hover:scale-105"}`}
+              className={`h-full w-full object-contain transition-transform duration-300 ${hoverZoomEnabled ? "cursor-zoom-in" : "group-hover:scale-105"}`}
             />
             {hoverZoomEnabled ? (
               <div
