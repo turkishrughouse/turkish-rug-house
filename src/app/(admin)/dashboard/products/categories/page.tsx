@@ -468,7 +468,7 @@ export default function CategoriesPage() {
             })
 
             if (!res.ok) throw new Error("Failed")
-            const savedCategory = await res.json()
+            const responseData = await res.json() as Category | { category?: Category; categories?: Category[] }
 
             if (editingId) {
                 toast.success("Category updated successfully!")
@@ -478,12 +478,13 @@ export default function CategoriesPage() {
 
             cancelEdit() // Reset form and mode
 
-            // Optimistic / Immediate Update
-            // For simplicity and correctness with tree structure, we trigger a refetch
-            // But to ensure UI responsiveness, we could manually insert into tree. 
-            // Given the complexity of rebuilding tree state manually, refetch is safest IF reliable.
-            // With cache: no-store, it should be reliable.
-            await fetchCategories()
+            if (!editingId && "categories" in responseData && Array.isArray(responseData.categories)) {
+                const nextTree = buildTree(responseData.categories)
+                setCategories(nextTree)
+                setFlatItems(buildFlatItems(nextTree))
+            } else {
+                await fetchCategories()
+            }
 
         } catch (error) {
             toast.error(editingId ? "Failed to update" : "Failed to create")
