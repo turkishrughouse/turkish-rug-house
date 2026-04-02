@@ -51,7 +51,7 @@ export async function GET(request: Request) {
 
         const resolvedSource = "virtual_collections_branches"
         const children = groupedChildren
-            .slice(0, 15)
+            .slice(0, 10)
             .map((row) => ({
                 id: row.id,
                 title: row.title,
