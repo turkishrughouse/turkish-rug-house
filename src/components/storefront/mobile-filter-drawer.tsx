@@ -1,8 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname, useSearchParams } from "next/navigation"
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { SlidersHorizontal, X } from "lucide-react"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { resolveColorSwatch } from "@/lib/storefront/color-swatches"
@@ -40,8 +39,6 @@ export function MobileFilterDrawer({
   sections: FilterSection[]
   activeChips: ActiveChip[]
 }) {
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
   const [open, setOpen] = useState(false)
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(sections.map((section) => [section.id, Boolean(section.defaultOpen)]))
@@ -49,15 +46,6 @@ export function MobileFilterDrawer({
 
   const statusSection = useMemo(() => sections.find((section) => section.id === "status"), [sections])
   const restSections = useMemo(() => sections.filter((section) => section.id !== "status"), [sections])
-  const searchKey = searchParams.toString()
-
-  useEffect(() => {
-    if (!open) return
-    const frame = window.requestAnimationFrame(() => {
-      setOpen(false)
-    })
-    return () => window.cancelAnimationFrame(frame)
-  }, [open, pathname, searchKey])
 
   return (
     <div className="space-y-4 lg:hidden">
