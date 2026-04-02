@@ -149,7 +149,7 @@ function GalleryState({
         <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-2 lg:p-1.5 xl:p-2">
           <button
             type="button"
-            className="group relative flex w-full items-center justify-center rounded-lg bg-slate-50 p-3 lg:mx-auto lg:max-w-[38rem] lg:p-4 xl:max-w-[40rem]"
+            className="group relative flex w-full items-center justify-center rounded-lg bg-slate-50 p-3 lg:mx-auto lg:max-w-[35.5rem] lg:p-4 xl:max-w-[37rem]"
             style={{ height: "auto", maxHeight: "none", aspectRatio: "auto" }}
             onMouseMove={(event) => {
               if (!hoverZoomEnabled) return
