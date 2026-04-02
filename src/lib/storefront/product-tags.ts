@@ -20,7 +20,14 @@ type StorefrontTagProduct = {
 }
 
 function relationLabel(item: ProductRelation | ProductCategoryRelation | undefined) {
-  return (item?.name || item?.title || "").trim()
+  if (!item) return ""
+  if ("name" in item && typeof item.name === "string") {
+    return item.name.trim()
+  }
+  if ("title" in item && typeof item.title === "string") {
+    return item.title.trim()
+  }
+  return ""
 }
 
 export function buildStorefrontProductTags(product: StorefrontTagProduct) {
