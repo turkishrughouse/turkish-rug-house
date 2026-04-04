@@ -1,4 +1,4 @@
-import { buildProductImageAlt, getProductImageUrl, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
+import { PLACEHOLDER_IMAGE_URL, buildProductImageAlt, getProductImageUrl, getProductImageUrlCandidates, parseProductImageRecords } from "@/lib/product-images"
 import { normalizeRichTextHtml } from "@/lib/rich-text"
 
 export type ProductCategory = {
@@ -85,6 +85,14 @@ export function parseImages(images: string): string[] {
   return parseProductImageRecords(images).map((image) => getProductImageUrl(image, "thumb"))
 }
 
+function withoutPlaceholder(candidates: string[]) {
+  return candidates.filter((candidate) => candidate && candidate !== PLACEHOLDER_IMAGE_URL)
+}
+
+function uniqueCandidates(candidates: string[]) {
+  return Array.from(new Set(candidates.filter(Boolean)))
+}
+
 export function buildProductGallery(product: ProductDetailData): ProductGalleryImage[] {
   const records = parseProductImageRecords(product.images)
   if (records.length === 0) {
@@ -107,54 +115,87 @@ export function buildProductGallery(product: ProductDetailData): ProductGalleryI
     ]
   }
 
-  return records.map((image, index) => {
-    const zoomSrcCandidates = getProductImageUrlCandidates(image, "master")
-    const srcCandidates = getProductImageUrlCandidates(image, "large")
-    const thumbSrcCandidates = getProductImageUrlCandidates(image, "thumb")
-    const masterImage =
-      zoomSrcCandidates.find((src) => src.toLowerCase().includes("master")) || null
-    const selectedImageSrc = masterImage || "/placeholder.jpg"
+  const galleryItems = records
+    .map((image, index) => {
+      const largeCandidates = withoutPlaceholder(getProductImageUrlCandidates(image, "large"))
+      const masterCandidates = withoutPlaceholder(getProductImageUrlCandidates(image, "master"))
+      const thumbCandidates = withoutPlaceholder(getProductImageUrlCandidates(image, "thumb"))
+      const srcCandidates = uniqueCandidates([...largeCandidates, ...masterCandidates, ...thumbCandidates])
+      const zoomSrcCandidates = uniqueCandidates([...masterCandidates, ...largeCandidates, ...thumbCandidates])
+      const thumbSrcCandidates = uniqueCandidates([...thumbCandidates, ...largeCandidates, ...masterCandidates])
 
-    if (masterImage && typeof image.width === "number" && image.width < 1800) {
-      console.warn(
-        "[PRODUCT_IMAGE_WARN]",
+      if (srcCandidates.length === 0 && zoomSrcCandidates.length === 0 && thumbSrcCandidates.length === 0) {
+        return null
+      }
+
+      const selectedImageSrc = srcCandidates[0] || zoomSrcCandidates[0] || thumbSrcCandidates[0] || PLACEHOLDER_IMAGE_URL
+      const zoomSrc = zoomSrcCandidates[0] || selectedImageSrc
+      const thumbSrc = thumbSrcCandidates[0] || selectedImageSrc
+      const masterImage = masterCandidates[0] || null
+
+      if (masterImage && typeof image.width === "number" && image.width < 1800) {
+        console.warn(
+          "[PRODUCT_IMAGE_WARN]",
+          JSON.stringify({
+            productSlug: product.slug,
+            imageSrc: masterImage,
+            width: image.width,
+            height: image.height ?? null,
+          })
+        )
+      }
+
+      console.info(
+        "[ZOOM_DEBUG]",
         JSON.stringify({
           productSlug: product.slug,
-          imageSrc: masterImage,
-          width: image.width,
-          height: image.height ?? null,
+          selectedImageSrc,
+          candidateList: zoomSrcCandidates,
+          finalZoomSrc: zoomSrc,
         })
       )
-    }
 
-    console.info(
-      "[ZOOM_DEBUG]",
-      JSON.stringify({
-        productSlug: product.slug,
-        selectedImageSrc,
-        candidateList: zoomSrcCandidates,
-        finalZoomSrc: masterImage || "/placeholder.jpg",
-      })
-    )
+      return {
+        src: selectedImageSrc,
+        srcCandidates: srcCandidates.length > 0 ? srcCandidates : [PLACEHOLDER_IMAGE_URL],
+        zoomSrc,
+        zoomSrcCandidates: zoomSrcCandidates.length > 0 ? zoomSrcCandidates : [selectedImageSrc],
+        thumbSrc,
+        thumbSrcCandidates: thumbSrcCandidates.length > 0 ? thumbSrcCandidates : [selectedImageSrc],
+        alt: buildProductImageAlt({
+          title: product.title,
+          fallbackAlt: image.alt,
+          categories: product.categories,
+          customAttributes: product.customAttributes,
+          index,
+        }),
+        width: image.width ?? 1200,
+        height: image.height ?? 1200,
+      }
+    })
+    .filter((item): item is ProductGalleryImage => Boolean(item))
 
-    return {
-      src: selectedImageSrc,
-      srcCandidates: masterImage ? [masterImage] : ["/placeholder.jpg"],
-      zoomSrc: masterImage || "/placeholder.jpg",
-      zoomSrcCandidates,
-      thumbSrc: thumbSrcCandidates[0] || srcCandidates[0] || "/placeholder.jpg",
-      thumbSrcCandidates,
-      alt: buildProductImageAlt({
-        title: product.title,
-        fallbackAlt: image.alt,
-        categories: product.categories,
-        customAttributes: product.customAttributes,
-        index,
-      }),
-      width: image.width ?? 1200,
-      height: image.height ?? 1200,
-    }
-  })
+  if (galleryItems.length === 0) {
+    return [
+      {
+        src: "/placeholder.jpg",
+        srcCandidates: ["/placeholder.jpg"],
+        zoomSrc: "/placeholder.jpg",
+        zoomSrcCandidates: ["/placeholder.jpg"],
+        thumbSrc: "/placeholder.jpg",
+        thumbSrcCandidates: ["/placeholder.jpg"],
+        alt: buildProductImageAlt({
+          title: product.title,
+          categories: product.categories,
+          customAttributes: product.customAttributes,
+        }),
+        width: 1200,
+        height: 1200,
+      },
+    ]
+  }
+
+  return galleryItems
 }
 
 export function getProductDescriptionState(product: ProductDetailData, shippingContent?: string | null) {

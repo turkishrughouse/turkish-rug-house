@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChevronLeft, ChevronRight, X } from "lucide-react"
 import Image from "next/image"
 
@@ -17,6 +17,7 @@ function GalleryImageWithFallback({
   priority = false,
   quality = 85,
   containWithinBox = false,
+  onExhausted,
 }: {
   src: string
   candidates: string[]
@@ -28,6 +29,7 @@ function GalleryImageWithFallback({
   priority?: boolean
   quality?: number
   containWithinBox?: boolean
+  onExhausted?: () => void
 }) {
   const normalizedCandidates = Array.from(new Set([src, ...candidates].filter(Boolean)))
   const [candidateIndex, setCandidateIndex] = useState(0)
@@ -47,7 +49,11 @@ function GalleryImageWithFallback({
       style={containWithinBox ? { width: "auto", height: "auto", maxWidth: "100%", maxHeight: "100%" } : { width: "100%", height: "auto" }}
       unoptimized={currentSrc.startsWith("/uploads/") || /^https?:\/\//i.test(currentSrc)}
       onError={() => {
-        setCandidateIndex((prev) => (prev + 1 < normalizedCandidates.length ? prev + 1 : prev))
+        setCandidateIndex((prev) => {
+          if (prev + 1 < normalizedCandidates.length) return prev + 1
+          onExhausted?.()
+          return prev
+        })
       }}
     />
   )
@@ -71,10 +77,22 @@ function GalleryState({
   const [mainImageZoomActive, setMainImageZoomActive] = useState(false)
   const [lightboxZoom, setLightboxZoom] = useState(1)
   const [lightboxZoomOrigin, setLightboxZoomOrigin] = useState("50% 50%")
+  const [brokenImageIndexes, setBrokenImageIndexes] = useState<number[]>([])
 
-  const activeImageIndex = selectedImage >= 0 && selectedImage < gallery.length ? selectedImage : 0
+  const visibleImageIndexes = useMemo(
+    () => gallery.map((_, index) => index).filter((index) => !brokenImageIndexes.includes(index)),
+    [brokenImageIndexes, gallery]
+  )
+
+  const activeImageIndex = visibleImageIndexes.includes(selectedImage)
+    ? selectedImage
+    : visibleImageIndexes[0] ?? 0
   const selectedGalleryImage = gallery[activeImageIndex] || gallery[0]
   const zoomSrc = selectedGalleryImage.zoomSrc
+
+  const markImageBroken = useCallback((index: number) => {
+    setBrokenImageIndexes((prev) => (prev.includes(index) ? prev : [...prev, index]))
+  }, [])
 
   const resetZoomState = useCallback(() => {
     setMainImageZoomActive(false)
@@ -95,13 +113,13 @@ function GalleryState({
   }, [resetZoomState])
 
   const moveSelection = useCallback((delta: number) => {
-    if (gallery.length === 0) return
+    if (visibleImageIndexes.length === 0) return
     setSelectedImage((prev) => {
-      const safePrev = prev >= 0 && prev < gallery.length ? prev : 0
-      return (safePrev + delta + gallery.length) % gallery.length
+      const currentListIndex = visibleImageIndexes.includes(prev) ? visibleImageIndexes.indexOf(prev) : 0
+      return visibleImageIndexes[(currentListIndex + delta + visibleImageIndexes.length) % visibleImageIndexes.length] ?? visibleImageIndexes[0] ?? 0
     })
     resetZoomState()
-  }, [gallery.length, resetZoomState])
+  }, [resetZoomState, visibleImageIndexes])
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return
@@ -127,7 +145,9 @@ function GalleryState({
     <>
       <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 items-start sm:grid-cols-[92px_minmax(0,1fr)] sm:gap-4 lg:grid-cols-[110px_minmax(0,1fr)] lg:gap-5 xl:grid-cols-[112px_minmax(0,1fr)]">
         <div className="space-y-3 lg:space-y-4">
-          {gallery.map((img, i) => (
+          {visibleImageIndexes.map((i) => {
+            const img = gallery[i]
+            return (
             <button
               key={`${img.src}-${i}`}
               type="button"
@@ -138,14 +158,15 @@ function GalleryState({
                 key={`${img.src}-${img.thumbSrc}-${img.thumbSrcCandidates.join("|")}`}
                 src={img.thumbSrc}
                 candidates={img.thumbSrcCandidates}
-              alt={img.alt}
+                alt={img.alt}
               width={80}
               height={80}
               sizes="80px"
                 className="h-full w-full object-cover"
+                onExhausted={() => markImageBroken(i)}
               />
             </button>
-          ))}
+          )})}
         </div>
 
         <div className="rounded-xl border border-[#dce3ed] bg-slate-50 p-2 lg:p-1.5 xl:p-2">
@@ -196,6 +217,7 @@ function GalleryState({
               quality={85}
               containWithinBox
               className={`max-h-full max-w-full object-contain transition-transform duration-300 ${hoverZoomEnabled ? "cursor-zoom-in" : "group-hover:scale-105"}`}
+              onExhausted={() => markImageBroken(activeImageIndex)}
             />
             {hoverZoomEnabled ? (
               <div

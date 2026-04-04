@@ -71,12 +71,65 @@ import { normalizeRichTextHtml } from "@/lib/rich-text"
 import { cn } from "@/lib/utils"
 import { MediaPickerDialog } from "@/components/admin/media/media-picker-dialog"
 import type { AdminLanguage } from "@/lib/admin/i18n"
-import { parseProductImages } from "@/lib/product-images"
+import { PLACEHOLDER_IMAGE_URL, getProductImageUrlCandidates, parseProductImageRecords, parseProductImages } from "@/lib/product-images"
 import type { AttributeGroupRecord } from "@/lib/product-attributes"
 import { matchSupplierBySkuPrefix, type SupplierRecord } from "@/lib/supplier-prefix"
 import { formatCmSizeWithFeet, parseCmSizeInput, resolveClosestSizeOptionFromCmInput } from "@/lib/size-filter"
 
 type SelectOption = { id: string, name?: string, title?: string }
+
+type AdminPreviewImageEntry = {
+    src: string
+    candidates: string[]
+}
+
+function buildAdminPreviewEntry(image: string | null | undefined): AdminPreviewImageEntry | null {
+    if (!image) return null
+    const record = parseProductImageRecords(image)[0]
+    if (!record) return null
+    const candidates = Array.from(new Set([
+        ...getProductImageUrlCandidates(record, "large"),
+        ...getProductImageUrlCandidates(record, "master"),
+        ...getProductImageUrlCandidates(record, "thumb"),
+    ].filter((candidate) => candidate && candidate !== PLACEHOLDER_IMAGE_URL)))
+    if (candidates.length === 0) return null
+    return {
+        src: candidates[0],
+        candidates,
+    }
+}
+
+function AdminPreviewImage({
+    entry,
+    alt,
+    className,
+    fallbackEntry,
+}: {
+    entry: AdminPreviewImageEntry
+    alt: string
+    className: string
+    fallbackEntry?: AdminPreviewImageEntry | null
+}) {
+    const mergedCandidates = useMemo(() => {
+        const ownCandidates = [entry.src, ...entry.candidates]
+        const fallbackCandidates = fallbackEntry ? [fallbackEntry.src, ...fallbackEntry.candidates] : []
+        return Array.from(new Set([...ownCandidates, ...fallbackCandidates].filter(Boolean)))
+    }, [entry, fallbackEntry])
+    const [candidateIndex, setCandidateIndex] = useState(0)
+
+    const currentSrc = mergedCandidates[candidateIndex] || PLACEHOLDER_IMAGE_URL
+
+    return (
+        <img
+            src={currentSrc}
+            alt={alt}
+            className={className}
+            onError={() => {
+                setCandidateIndex((prev) => (prev + 1 < mergedCandidates.length ? prev + 1 : prev))
+            }}
+        />
+    )
+}
 
 function DropdownMultiSelect({
     label,
@@ -1286,7 +1339,16 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
     const stockManaged = watch("isStock")
     const primaryImage = featuredImage
     const galleryImages = galleryImagesState
-    const previewImages = [featuredImage, ...galleryImages].filter((image): image is string => Boolean(image))
+    const previewImages = useMemo(
+        () => [featuredImage, ...galleryImages]
+            .map((image) => buildAdminPreviewEntry(image))
+            .filter((image): image is AdminPreviewImageEntry => Boolean(image)),
+        [featuredImage, galleryImages]
+    )
+    const primaryPreviewImage = useMemo(
+        () => buildAdminPreviewEntry(primaryImage) || previewImages[0] || null,
+        [primaryImage, previewImages]
+    )
 
     const openImagePreview = (index: number) => {
         if (!previewImages[index]) return
@@ -1954,14 +2016,20 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                     </div>
                                     <div className="w-[88px] shrink-0">
                                         <div className="relative rounded-sm border border-[#dcdcde] bg-[#f6f7f7] p-1">
-                                            {primaryImage ? (
+                                            {primaryPreviewImage ? (
                                                 <>
                                                     <button
                                                         type="button"
                                                         onClick={() => openImagePreview(0)}
                                                         className="block w-full overflow-hidden rounded-sm"
                                                     >
-                                                        <img src={primaryImage} alt={tx("Product image thumb", "Ürün görsel önizleme")} className="h-20 w-full rounded-sm object-cover" />
+                                                        <AdminPreviewImage
+                                                            key={primaryPreviewImage.src}
+                                                            entry={primaryPreviewImage}
+                                                            fallbackEntry={previewImages[0] || null}
+                                                            alt={tx("Product image thumb", "Ürün görsel önizleme")}
+                                                            className="h-20 w-full rounded-sm object-cover"
+                                                        />
                                                     </button>
                                                     <button
                                                         type="button"
@@ -2240,8 +2308,10 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
             <DialogContent className="!left-1/2 !top-1/2 !translate-x-[-50%] !translate-y-[-50%] w-[90vw] max-w-5xl border-none bg-black/95 p-0 text-white">
                 <div className="relative flex min-h-[70vh] items-center justify-center px-16 py-10">
                     {previewImages[imagePreviewIndex] ? (
-                        <img
-                            src={previewImages[imagePreviewIndex]}
+                        <AdminPreviewImage
+                            key={previewImages[imagePreviewIndex].src}
+                            entry={previewImages[imagePreviewIndex]}
+                            fallbackEntry={previewImages.find((_, index) => index !== imagePreviewIndex) || null}
                             alt={tx("Product preview image", "Ürün önizleme görseli")}
                             className="max-h-[70vh] w-auto max-w-full rounded-md object-contain"
                         />
