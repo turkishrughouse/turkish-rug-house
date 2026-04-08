@@ -557,14 +557,22 @@ export function MediaPickerDialog({
   }, [activeSubfolder, canonicalFolders])
 
   const currentLevelFolders = useMemo(() => {
+    if (activeFolder === "all") return topFolders.filter((folder) => folder.name !== "all").map((folder) => folder.name)
     if (isPromotedSubfolderView) return childFolders
     if (selectedChildFolder) return [] as string[]
     if (activeSubfolder !== "all") return childFolders
     return directSubfolders
-  }, [activeSubfolder, childFolders, directSubfolders, isPromotedSubfolderView, selectedChildFolder])
+  }, [activeFolder, activeSubfolder, childFolders, directSubfolders, isPromotedSubfolderView, selectedChildFolder, topFolders])
 
   const searchableFolders = useMemo(() => {
     const allFolderNames = canonicalFolders.map((folder) => folder.name)
+
+    if (activeFolder === "all") {
+      return topFolders
+        .filter((folder) => folder.name !== "all")
+        .map((folder) => folder.name)
+        .sort((a, b) => a.localeCompare(b))
+    }
 
     if (isPromotedSubfolderView) {
       const prefix = `${selectedChildFolder}/`
@@ -595,7 +603,7 @@ export function MediaPickerDialog({
     }
 
     return allFolderNames.sort((a, b) => a.localeCompare(b))
-  }, [activeFolder, activeSubfolder, canonicalFolders, isPromotedSubfolderView, selectedChildFolder])
+  }, [activeFolder, activeSubfolder, canonicalFolders, isPromotedSubfolderView, selectedChildFolder, topFolders])
 
   const visibleCurrentLevelFolders = useMemo(() => {
     if (!normalizedSearchTerm) return currentLevelFolders
@@ -1385,6 +1393,19 @@ export function MediaPickerDialog({
                                 })
                                 setSelectedFolder(folder)
                                 setSelectedRightFolders([folder])
+                                if (activeFolder === "all") {
+                                  resetSelectionState({
+                                    topFolder: canonicalValue,
+                                    subfolder: "all",
+                                    childFolder: "",
+                                    resetSearch: false,
+                                    resetSelection: false,
+                                    resetFolderSelection: false,
+                                    resetPagination: true,
+                                    uploadFolderValue: canonicalValue,
+                                  })
+                                  return
+                                }
                                 if (isTopLevelFolderView) {
                                   resetSelectionState({
                                     topFolder: activeFolder,
@@ -1415,6 +1436,19 @@ export function MediaPickerDialog({
                                   const canonicalValue = canonicalizeFolderPath(folder)
                                   setSelectedFolder(folder)
                                   setSelectedRightFolders([folder])
+                                  if (activeFolder === "all") {
+                                    resetSelectionState({
+                                      topFolder: canonicalValue,
+                                      subfolder: "all",
+                                      childFolder: "",
+                                      resetSearch: false,
+                                      resetSelection: false,
+                                      resetFolderSelection: false,
+                                      resetPagination: true,
+                                      uploadFolderValue: canonicalValue,
+                                    })
+                                    return
+                                  }
                                   if (isTopLevelFolderView) {
                                     resetSelectionState({
                                       topFolder: activeFolder,

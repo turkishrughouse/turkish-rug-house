@@ -333,14 +333,21 @@ export function MediaBrowser() {
   }, [searchTerm, selectedTopFolder, selectedSubfolder, selectedChildFolder])
 
   const currentLevelFolders = useMemo(() => {
+    if (selectedTopFolder === ALL_TOP) return topFolders
     if (isPromotedSubfolderView) return childFolders
     if (selectedChildFolder) return [] as string[]
     if (selectedSubfolder !== ALL_SUB) return childFolders
     return subfolders
-  }, [childFolders, isPromotedSubfolderView, selectedChildFolder, selectedSubfolder, subfolders])
+  }, [childFolders, isPromotedSubfolderView, selectedChildFolder, selectedSubfolder, selectedTopFolder, subfolders, topFolders])
 
   const searchableFolders = useMemo(() => {
     const allFolderNames = canonicalFolders.map((folder) => folder.name)
+
+    if (selectedTopFolder === ALL_TOP) {
+      return topFolders
+        .slice()
+        .sort((a, b) => folderLabel(a).localeCompare(folderLabel(b)))
+    }
 
     if (isPromotedSubfolderView) {
       const prefix = `${selectedChildFolder}/`
@@ -371,7 +378,7 @@ export function MediaBrowser() {
     }
 
     return allFolderNames.sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
-  }, [canonicalFolders, isPromotedSubfolderView, selectedChildFolder, selectedSubfolder, selectedTopFolder])
+  }, [canonicalFolders, isPromotedSubfolderView, selectedChildFolder, selectedSubfolder, selectedTopFolder, topFolders])
 
   const visibleCurrentLevelFolders = useMemo(() => {
     if (!normalizedSearchTerm) return currentLevelFolders
@@ -716,6 +723,18 @@ export function MediaBrowser() {
                       canonicalResolvedValue: canonicalValue,
                     })
                     setSelectedFolderCard(folderPath)
+                    if (selectedTopFolder === ALL_TOP) {
+                      resetSelectionState({
+                        topFolder: canonicalValue,
+                        subfolder: ALL_SUB,
+                        childFolder: "",
+                        resetSearch: false,
+                        resetSelection: false,
+                        resetFolderCard: false,
+                        resetPagination: true,
+                      })
+                      return
+                    }
                     if (isTopLevelFolderView) {
                       resetSelectionState({
                         topFolder: selectedTopFolder,
