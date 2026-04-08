@@ -530,17 +530,6 @@ export function MediaPickerDialog({
       setLoading(false)
       return
     }
-    if (activeFolder === "all" && !selectedChildFolder) {
-      setAssets([])
-      setPagination({
-        page: 1,
-        limit: MEDIA_PAGE_SIZE,
-        totalItems: 0,
-        totalPages: 1,
-      })
-      setLoading(false)
-      return
-    }
     void loadAssets()
   }, [activeFolder, activeSubfolder, foldersLoaded, isPromotedSubfolderView, loadAssets, open, selectedChildFolder])
 
@@ -557,22 +546,14 @@ export function MediaPickerDialog({
   }, [activeSubfolder, canonicalFolders])
 
   const currentLevelFolders = useMemo(() => {
-    if (activeFolder === "all") return topFolders.filter((folder) => folder.name !== "all").map((folder) => folder.name)
     if (isPromotedSubfolderView) return childFolders
     if (selectedChildFolder) return [] as string[]
     if (activeSubfolder !== "all") return childFolders
     return directSubfolders
-  }, [activeFolder, activeSubfolder, childFolders, directSubfolders, isPromotedSubfolderView, selectedChildFolder, topFolders])
+  }, [activeSubfolder, childFolders, directSubfolders, isPromotedSubfolderView, selectedChildFolder])
 
   const searchableFolders = useMemo(() => {
     const allFolderNames = canonicalFolders.map((folder) => folder.name)
-
-    if (activeFolder === "all") {
-      return topFolders
-        .filter((folder) => folder.name !== "all")
-        .map((folder) => folder.name)
-        .sort((a, b) => a.localeCompare(b))
-    }
 
     if (isPromotedSubfolderView) {
       const prefix = `${selectedChildFolder}/`
@@ -603,7 +584,7 @@ export function MediaPickerDialog({
     }
 
     return allFolderNames.sort((a, b) => a.localeCompare(b))
-  }, [activeFolder, activeSubfolder, canonicalFolders, isPromotedSubfolderView, selectedChildFolder, topFolders])
+  }, [activeFolder, activeSubfolder, canonicalFolders, isPromotedSubfolderView, selectedChildFolder])
 
   const visibleCurrentLevelFolders = useMemo(() => {
     if (!normalizedSearchTerm) return currentLevelFolders
@@ -1393,19 +1374,6 @@ export function MediaPickerDialog({
                                 })
                                 setSelectedFolder(folder)
                                 setSelectedRightFolders([folder])
-                                if (activeFolder === "all") {
-                                  resetSelectionState({
-                                    topFolder: canonicalValue,
-                                    subfolder: "all",
-                                    childFolder: "",
-                                    resetSearch: false,
-                                    resetSelection: false,
-                                    resetFolderSelection: false,
-                                    resetPagination: true,
-                                    uploadFolderValue: canonicalValue,
-                                  })
-                                  return
-                                }
                                 if (isTopLevelFolderView) {
                                   resetSelectionState({
                                     topFolder: activeFolder,
@@ -1436,19 +1404,6 @@ export function MediaPickerDialog({
                                   const canonicalValue = canonicalizeFolderPath(folder)
                                   setSelectedFolder(folder)
                                   setSelectedRightFolders([folder])
-                                  if (activeFolder === "all") {
-                                    resetSelectionState({
-                                      topFolder: canonicalValue,
-                                      subfolder: "all",
-                                      childFolder: "",
-                                      resetSearch: false,
-                                      resetSelection: false,
-                                      resetFolderSelection: false,
-                                      resetPagination: true,
-                                      uploadFolderValue: canonicalValue,
-                                    })
-                                    return
-                                  }
                                   if (isTopLevelFolderView) {
                                     resetSelectionState({
                                       topFolder: activeFolder,
