@@ -139,7 +139,6 @@ export function MediaPickerDialog({
   const [folders, setFolders] = useState<Folder[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
   const [selectedUrls, setSelectedUrls] = useState<string[]>([])
-  const [didAutoPickFolder, setDidAutoPickFolder] = useState(false)
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [moving, setMoving] = useState(false)
   const [folderMenu, setFolderMenu] = useState<{ folder: string; x: number; y: number } | null>(null)
@@ -309,7 +308,6 @@ export function MediaPickerDialog({
       setActiveSubfolder("all")
       setSelectedChildFolder("")
       setSearchTerm("")
-      setDidAutoPickFolder(false)
       setFolderMenu(null)
       setShowColorPicker(false)
       setSelectedFolder(null)
@@ -375,18 +373,6 @@ export function MediaPickerDialog({
     const normalFolders = Array.from(names).map((name) => ({ name, count: 0 })).sort((a, b) => a.name.localeCompare(b.name))
     return [{ name: "all", count: pagination.totalItems }, ...normalFolders]
   }, [folders, pagination.totalItems])
-
-  useEffect(() => {
-    if (!open) return
-    if (!foldersLoaded) return
-    if (activeFolder !== "all") return
-    if (didAutoPickFolder) return
-    if (topFolders.length <= 1) return
-    setActiveFolder(topFolders[1]?.name || "all")
-    setActiveSubfolder("all")
-    setUploadFolder(topFolders[1]?.name || "categories")
-    setDidAutoPickFolder(true)
-  }, [open, foldersLoaded, activeFolder, didAutoPickFolder, topFolders])
 
   useEffect(() => {
     if (!open || !foldersLoaded) return
