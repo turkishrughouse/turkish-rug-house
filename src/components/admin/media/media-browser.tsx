@@ -335,19 +335,24 @@ export function MediaBrowser() {
     })
   }, [currentLevelFolders, normalizedSearchTerm, searchableFolders])
 
+  const isTopLevelFolderView = selectedTopFolder !== ALL_TOP && selectedSubfolder === ALL_SUB && !selectedChildFolder
+
   const filteredAssets = assets
 
   useEffect(() => {
     console.info("[admin-media-browser] rendered assets", {
+      topFolder: selectedTopFolder,
+      selectedSubfolder,
+      selectedChildFolder,
       assetsCountAfterSetAssets: assets.length,
       finalRenderedAssetCount: filteredAssets.length,
       emptyStateInputs: {
         loading,
-        visibleCurrentLevelFolderCount: visibleCurrentLevelFolders.length,
+        renderedFolderCount: visibleCurrentLevelFolders.length,
         filteredAssetCount: filteredAssets.length,
       },
     })
-  }, [assets.length, filteredAssets.length, loading, visibleCurrentLevelFolders.length])
+  }, [assets.length, filteredAssets.length, loading, selectedChildFolder, selectedSubfolder, selectedTopFolder, visibleCurrentLevelFolders.length])
 
   const renameSelectedFolder = async () => {
     if (!selectedFolderCard) return
@@ -656,11 +661,26 @@ export function MediaBrowser() {
                   onDoubleClick={() => {
                     const canonicalValue = canonicalizeFolderPath(folderPath)
                     console.info("[admin-media-browser] child folder selected", {
+                      topFolder: selectedTopFolder,
+                      selectedSubfolder,
+                      selectedChildFolder,
                       selectedUiLabel: folderLabel(folderPath.split("/").pop() || folderPath),
                       selectedRawValue: folderPath,
                       canonicalResolvedValue: canonicalValue,
                     })
                     setSelectedFolderCard(folderPath)
+                    if (isTopLevelFolderView) {
+                      resetSelectionState({
+                        topFolder: selectedTopFolder,
+                        subfolder: canonicalValue,
+                        childFolder: "",
+                        resetSearch: false,
+                        resetSelection: false,
+                        resetFolderCard: false,
+                        resetPagination: true,
+                      })
+                      return
+                    }
                     resetSelectionState({
                       topFolder: selectedTopFolder,
                       subfolder: selectedSubfolder,
