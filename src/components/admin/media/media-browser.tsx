@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Folder, FolderPlus, Image as ImageIcon, Loader2, Trash2 } from "lucide-react"
+import { Folder, FolderPlus, Image as ImageIcon, Loader2, Trash2, ChevronLeft, ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -23,8 +23,16 @@ type Asset = {
   usedIn: string
 }
 
+type PaginationState = {
+  page: number
+  limit: number
+  totalItems: number
+  totalPages: number
+}
+
 const ALL_TOP = "__all__"
 const ALL_SUB = "__all_sub__"
+const MEDIA_PAGE_SIZE = 30
 const FOLDER_LABELS: Record<string, string> = {
   "by-type": "By Type",
   "by-style": "By Style",
@@ -68,22 +76,67 @@ export function MediaBrowser() {
   const [moving, setMoving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [previewAsset, setPreviewAsset] = useState<Asset | null>(null)
+  const [assetPage, setAssetPage] = useState(1)
+  const [pagination, setPagination] = useState<PaginationState>({
+    page: 1,
+    limit: MEDIA_PAGE_SIZE,
+    totalItems: 0,
+    totalPages: 1,
+  })
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase()
+  const usesSkuFolders = useMemo(() => {
+    if (selectedSubfolder === ALL_SUB) return false
+    return shouldUseProductSkuChildFolders(selectedSubfolder)
+  }, [selectedSubfolder])
+
+  const assetQuery = useMemo(() => {
+    const params = new URLSearchParams()
+    params.set("page", String(assetPage))
+    params.set("limit", String(MEDIA_PAGE_SIZE))
+    if (normalizedSearchTerm) params.set("search", normalizedSearchTerm)
+
+    if (selectedChildFolder) {
+      params.set("folder", selectedChildFolder)
+      params.set("folderMode", "exact")
+      return params.toString()
+    }
+
+    if (selectedSubfolder !== ALL_SUB) {
+      if (!usesSkuFolders) {
+        params.set("folder", selectedSubfolder)
+        params.set("folderMode", "exact")
+      }
+      return params.toString()
+    }
+
+    if (selectedTopFolder !== ALL_TOP) {
+      params.set("folder", selectedTopFolder)
+      params.set("folderMode", "exact")
+    }
+
+    return params.toString()
+  }, [assetPage, normalizedSearchTerm, selectedChildFolder, selectedSubfolder, selectedTopFolder, usesSkuFolders])
 
   const loadMedia = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch("/api/admin/media", { cache: "no-store" })
-      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[]; assets?: Asset[] })
+      const res = await fetch(`/api/admin/media?${assetQuery}`, { cache: "no-store" })
+      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[]; assets?: Asset[]; pagination?: PaginationState })
       if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
       setFolders(json?.folders || [])
       setAssets(json?.assets || [])
+      setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
+      if (json?.pagination?.page && json.pagination.page !== assetPage) {
+        setAssetPage(json.pagination.page)
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to fetch media")
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [assetPage, assetQuery])
 
   useEffect(() => {
     loadMedia()
@@ -139,7 +192,9 @@ export function MediaBrowser() {
       .sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
   }, [folders, selectedSubfolder])
 
-  const normalizedSearchTerm = searchTerm.trim().toLowerCase()
+  useEffect(() => {
+    setAssetPage(1)
+  }, [searchTerm, selectedTopFolder, selectedSubfolder, selectedChildFolder])
 
   const currentLevelFolders = useMemo(() => {
     if (selectedChildFolder) return [] as string[]
@@ -182,38 +237,7 @@ export function MediaBrowser() {
     })
   }, [currentLevelFolders, normalizedSearchTerm, searchableFolders])
 
-  const usesSkuFolders = useMemo(() => {
-    if (selectedSubfolder === ALL_SUB) return false
-    return shouldUseProductSkuChildFolders(selectedSubfolder)
-  }, [selectedSubfolder])
-
-  const filteredAssets = useMemo(() => {
-    return assets.filter((asset) => {
-      if (selectedChildFolder) {
-        const inFolder = asset.folder === selectedChildFolder
-        if (!inFolder) return false
-      } else if (selectedSubfolder !== ALL_SUB) {
-        if (usesSkuFolders) return false
-        const inSubfolder = asset.folder === selectedSubfolder
-        if (!inSubfolder) return false
-      } else {
-        const inFolder =
-          !activeFolder ||
-          asset.folder === activeFolder
-        if (!inFolder) return false
-      }
-
-      if (!normalizedSearchTerm) return true
-
-      const displayName = prettifyAssetName(asset).toLowerCase()
-      return (
-        displayName.includes(normalizedSearchTerm) ||
-        asset.name.toLowerCase().includes(normalizedSearchTerm) ||
-        asset.folder.toLowerCase().includes(normalizedSearchTerm) ||
-        asset.usedIn.toLowerCase().includes(normalizedSearchTerm)
-      )
-    })
-  }, [activeFolder, assets, normalizedSearchTerm, selectedChildFolder, selectedSubfolder, usesSkuFolders])
+  const filteredAssets = assets
 
   const renameSelectedFolder = async () => {
     if (!selectedFolderCard) return
@@ -516,6 +540,7 @@ export function MediaBrowser() {
               No images found
             </div>
           ) : visibleCurrentLevelFolders.length === 0 ? (
+            <>
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
               {filteredAssets.map((asset) => {
                 const selected = selectedUrls.includes(asset.url)
@@ -564,6 +589,22 @@ export function MediaBrowser() {
                 )
               })}
             </div>
+            <div className="mt-6 flex items-center justify-between rounded-2xl border border-[#dce3ed] bg-white px-4 py-3">
+              <p className="text-sm text-slate-500">
+                Page {pagination.page} of {pagination.totalPages} • {pagination.totalItems} items
+              </p>
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" size="sm" disabled={pagination.page <= 1} onClick={() => setAssetPage((prev) => Math.max(1, prev - 1))}>
+                  <ChevronLeft className="mr-1 h-4 w-4" />
+                  Previous
+                </Button>
+                <Button type="button" variant="outline" size="sm" disabled={pagination.page >= pagination.totalPages} onClick={() => setAssetPage((prev) => Math.min(pagination.totalPages, prev + 1))}>
+                  Next
+                  <ChevronRight className="ml-1 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            </>
           ) : null}
         </CardContent>
       </Card>

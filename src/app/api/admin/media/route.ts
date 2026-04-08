@@ -52,6 +52,13 @@ type AggregatedMediaAsset = {
   sizeBytes?: number
 }
 
+type MediaPagination = {
+  page: number
+  limit: number
+  totalItems: number
+  totalPages: number
+}
+
 type UploadVariantGroup = {
   baseKey: string
   relativeBase: string
@@ -615,8 +622,17 @@ async function backfillProductSkuFolders(
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const searchParams = req.nextUrl.searchParams
+    const pageInput = Number(searchParams.get("page") || "1")
+    const limitInput = Number(searchParams.get("limit") || "30")
+    const page = Number.isFinite(pageInput) && pageInput > 0 ? Math.floor(pageInput) : 1
+    const limit = Number.isFinite(limitInput) && limitInput > 0 ? Math.min(100, Math.floor(limitInput)) : 30
+    const search = (searchParams.get("search") || "").trim().toLowerCase()
+    const folder = sanitizeFolderPath(searchParams.get("folder") || "")
+    const folderMode = searchParams.get("folderMode") === "prefix" ? "prefix" : "exact"
+
     const uploadRoot = path.join(process.cwd(), "public", "uploads")
     await ensureManagedMediaFolders()
     await cleanupLegacyMediaFolders()
@@ -817,9 +833,40 @@ export async function GET() {
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => a.name.localeCompare(b.name))
 
+    const sortedAssets = uniqueAssets
+      .sort((a, b) => b.createdAt - a.createdAt || a.name.localeCompare(b.name))
+      .filter((asset) => {
+        if (folder) {
+          const inFolder = folderMode === "prefix"
+            ? asset.folder === folder || asset.folder.startsWith(`${folder}/`)
+            : asset.folder === folder
+          if (!inFolder) return false
+        }
+
+        if (!search) return true
+
+        const haystack = [asset.name, asset.folder, asset.usedIn, asset.source]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+        return haystack.includes(search)
+      })
+
+    const totalItems = sortedAssets.length
+    const totalPages = Math.max(1, Math.ceil(totalItems / limit))
+    const safePage = Math.min(page, totalPages)
+    const start = (safePage - 1) * limit
+    const pagination: MediaPagination = {
+      page: safePage,
+      limit,
+      totalItems,
+      totalPages,
+    }
+
     return NextResponse.json({
       folders,
-      assets: uniqueAssets.sort((a, b) => b.createdAt - a.createdAt || a.name.localeCompare(b.name)),
+      assets: sortedAssets.slice(start, start + limit),
+      pagination,
     })
   } catch (error) {
     logger.error("Error fetching media", { error: error instanceof Error ? error.message : String(error) }, "admin-media-api")

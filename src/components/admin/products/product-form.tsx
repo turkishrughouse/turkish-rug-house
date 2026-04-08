@@ -1346,8 +1346,8 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
         [featuredImage, galleryImages]
     )
     const primaryPreviewImage = useMemo(
-        () => buildAdminPreviewEntry(primaryImage) || previewImages[0] || null,
-        [primaryImage, previewImages]
+        () => buildAdminPreviewEntry(primaryImage),
+        [primaryImage]
     )
 
     const openImagePreview = (index: number) => {
@@ -2026,7 +2026,6 @@ export function ProductForm({ lang = "en", initialData, options }: ProductFormPr
                                                         <AdminPreviewImage
                                                             key={primaryPreviewImage.src}
                                                             entry={primaryPreviewImage}
-                                                            fallbackEntry={previewImages[0] || null}
                                                             alt={tx("Product image thumb", "Ürün görsel önizleme")}
                                                             className="h-20 w-full rounded-sm object-cover"
                                                         />

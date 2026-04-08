@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Loader2, Upload, Image as ImageIcon, Check, Folder as FolderIcon } from "lucide-react"
+import { Loader2, Upload, Image as ImageIcon, Check, Folder as FolderIcon, ChevronLeft, ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -25,6 +25,13 @@ type Asset = {
   sizeBytes?: number
 }
 
+type PaginationState = {
+  page: number
+  limit: number
+  totalItems: number
+  totalPages: number
+}
+
 type TabKey = "upload" | "library"
 
 type MediaPickerDialogProps = {
@@ -44,6 +51,7 @@ type MediaPickerDialogProps = {
 const FOLDER_COLOR_KEY = "media-picker-folder-colors"
 const ASSET_LABEL_KEY = "media-picker-asset-labels"
 const FOLDER_COLOR_OPTIONS = ["#f59e0b", "#ef4444", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899", "#64748b"]
+const MEDIA_PAGE_SIZE = 30
 
 function formatFolderLabel(value: string) {
   return value
@@ -143,6 +151,13 @@ export function MediaPickerDialog({
   const [dragTargetFolder, setDragTargetFolder] = useState<string | null>(null)
   const [hiddenDeletedUrls, setHiddenDeletedUrls] = useState<string[]>([])
   const [selectedAssetDimensions, setSelectedAssetDimensions] = useState<{ width: number; height: number } | null>(null)
+  const [assetPage, setAssetPage] = useState(1)
+  const [pagination, setPagination] = useState<PaginationState>({
+    page: 1,
+    limit: MEDIA_PAGE_SIZE,
+    totalItems: 0,
+    totalPages: 1,
+  })
   const dialogContentRef = useRef<HTMLDivElement | null>(null)
   const libraryScrollRef = useRef<HTMLDivElement | null>(null)
   const deleteTimeoutsRef = useRef<Record<string, number>>({})
@@ -156,11 +171,51 @@ export function MediaPickerDialog({
     return ""
   }, [productMeta?.categoryFolderPath, productMeta?.sku])
 
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase()
+
+  const usesSkuFolders = useMemo(() => {
+    if (activeSubfolder === "all") return false
+    return shouldUseProductSkuChildFolders(activeSubfolder)
+  }, [activeSubfolder])
+
+  const assetQuery = useMemo(() => {
+    const params = new URLSearchParams()
+    params.set("page", String(assetPage))
+    params.set("limit", String(MEDIA_PAGE_SIZE))
+    if (normalizedSearchTerm) params.set("search", normalizedSearchTerm)
+
+    if (selectedChildFolder) {
+      params.set("folder", selectedChildFolder)
+      params.set("folderMode", "prefix")
+      return params.toString()
+    }
+
+    if (activeFolder === "all") {
+      return params.toString()
+    }
+
+    if (activeSubfolder === "all") {
+      params.set("folder", activeFolder)
+      params.set("folderMode", normalizedSearchTerm.length > 0 ? "prefix" : "exact")
+      return params.toString()
+    }
+
+    if (usesSkuFolders) {
+      params.set("folder", "__no_results__")
+      params.set("folderMode", "exact")
+      return params.toString()
+    }
+
+    params.set("folder", activeSubfolder)
+    params.set("folderMode", "prefix")
+    return params.toString()
+  }, [activeFolder, activeSubfolder, assetPage, normalizedSearchTerm, selectedChildFolder, usesSkuFolders])
+
   const loadMedia = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch("/api/admin/media", { cache: "no-store" })
-      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[]; assets?: Asset[] })
+      const res = await fetch(`/api/admin/media?${assetQuery}`, { cache: "no-store" })
+      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[]; assets?: Asset[]; pagination?: PaginationState })
       if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
       const nextFolders: Folder[] = json?.folders ?? []
       const nextAssets: Asset[] = (json?.assets ?? []).map((asset: Asset) => ({
@@ -169,6 +224,10 @@ export function MediaPickerDialog({
       }))
       setFolders(nextFolders)
       setAssets(nextAssets)
+      setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
+      if (json?.pagination?.page && json.pagination.page !== assetPage) {
+        setAssetPage(json.pagination.page)
+      }
       return { folders: nextFolders, assets: nextAssets }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to fetch media")
@@ -176,7 +235,7 @@ export function MediaPickerDialog({
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [assetPage, assetQuery])
 
   useEffect(() => {
     if (!open) return
@@ -235,6 +294,13 @@ export function MediaPickerDialog({
       setDraggingUrls([])
       setDragTargetFolder(null)
       setHiddenDeletedUrls([])
+      setAssetPage(1)
+      setPagination({
+        page: 1,
+        limit: MEDIA_PAGE_SIZE,
+        totalItems: 0,
+        totalPages: 1,
+      })
     }
   }, [open])
 
@@ -283,8 +349,8 @@ export function MediaPickerDialog({
       if (top) names.add(top)
     }
     const normalFolders = Array.from(names).map((name) => ({ name, count: 0 })).sort((a, b) => a.name.localeCompare(b.name))
-    return [{ name: "all", count: imageAssets.length }, ...normalFolders]
-  }, [folders, imageAssets.length])
+    return [{ name: "all", count: pagination.totalItems }, ...normalFolders]
+  }, [folders, pagination.totalItems])
 
   useEffect(() => {
     if (!open) return
@@ -308,8 +374,6 @@ export function MediaPickerDialog({
       .map((leaf) => `${activeSubfolder}/${leaf}`)
       .sort((a, b) => a.localeCompare(b))
   }, [activeSubfolder, folders])
-
-  const normalizedSearchTerm = searchTerm.trim().toLowerCase()
 
   const currentLevelFolders = useMemo(() => {
     if (selectedChildFolder) return [] as string[]
@@ -352,10 +416,9 @@ export function MediaPickerDialog({
     })
   }, [currentLevelFolders, normalizedSearchTerm, searchableFolders])
 
-  const usesSkuFolders = useMemo(() => {
-    if (activeSubfolder === "all") return false
-    return shouldUseProductSkuChildFolders(activeSubfolder)
-  }, [activeSubfolder])
+  useEffect(() => {
+    setAssetPage(1)
+  }, [activeFolder, activeSubfolder, selectedChildFolder, searchTerm])
 
   const getAssetLabelGroup = useCallback((asset: Asset) => {
     const folderLeaf = asset.folder.split("/").filter(Boolean).pop() || asset.folder
@@ -1095,6 +1158,7 @@ export function MediaPickerDialog({
                       No images found
                     </div>
                   ) : (
+                    <>
                     <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                       {sortedFilteredAssets.map((asset) => {
                         const selected = selectedUrls.includes(asset.url)
@@ -1141,6 +1205,22 @@ export function MediaPickerDialog({
                         )
                       })}
                     </div>
+                    <div className="mt-5 flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                      <p className="text-sm text-slate-500">
+                        Page {pagination.page} of {pagination.totalPages} • {pagination.totalItems} items
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button type="button" variant="outline" size="sm" disabled={pagination.page <= 1} onClick={() => setAssetPage((prev) => Math.max(1, prev - 1))}>
+                          <ChevronLeft className="mr-1 h-4 w-4" />
+                          Previous
+                        </Button>
+                        <Button type="button" variant="outline" size="sm" disabled={pagination.page >= pagination.totalPages} onClick={() => setAssetPage((prev) => Math.min(pagination.totalPages, prev + 1))}>
+                          Next
+                          <ChevronRight className="ml-1 h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    </>
                   )}
                 </div>
               </div>
