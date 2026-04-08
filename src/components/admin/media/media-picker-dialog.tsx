@@ -219,6 +219,7 @@ export function MediaPickerDialog({
     return shouldUseProductSkuChildFolders(activeSubfolder)
   }, [activeSubfolder])
   const isPromotedSubfolderView = activeSubfolder === "all" && Boolean(selectedChildFolder)
+  const isRootBrowseState = activeFolder === "all"
 
   const assetQuery = useMemo(() => {
     const params = new URLSearchParams()
@@ -1337,7 +1338,7 @@ export function MediaPickerDialog({
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Loading media...
                     </div>
-                  ) : (isPromotedSubfolderView || !selectedChildFolder) && visibleCurrentLevelFolders.length > 0 ? (
+                  ) : !isRootBrowseState && (isPromotedSubfolderView || !selectedChildFolder) && visibleCurrentLevelFolders.length > 0 ? (
                     <div className="space-y-6">
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                         {visibleCurrentLevelFolders.map((folder) => {
@@ -1442,12 +1443,12 @@ export function MediaPickerDialog({
                         })}
                       </div>
                     </div>
-                  ) : sortedFilteredAssets.length === 0 ? (
+                  ) : sortedFilteredAssets.length === 0 && (isRootBrowseState || visibleCurrentLevelFolders.length === 0) ? (
                     <div className="flex h-[520px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
                       <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
                       No images found
                     </div>
-                  ) : (
+                  ) : isRootBrowseState || visibleCurrentLevelFolders.length === 0 ? (
                     <>
                     <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                       {sortedFilteredAssets.map((asset) => {
@@ -1511,7 +1512,7 @@ export function MediaPickerDialog({
                       </div>
                     </div>
                     </>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </div>

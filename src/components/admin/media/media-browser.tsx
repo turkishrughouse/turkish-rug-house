@@ -23,6 +23,7 @@ type Asset = {
   folder: string
   source: string
   usedIn: string
+  createdAt?: number
 }
 
 type PaginationState = {
@@ -126,6 +127,7 @@ export function MediaBrowser() {
     return shouldUseProductSkuChildFolders(selectedSubfolder)
   }, [selectedSubfolder])
   const isPromotedSubfolderView = selectedSubfolder === ALL_SUB && Boolean(selectedChildFolder)
+  const isRootBrowseState = selectedTopFolder === ALL_TOP
 
   const assetQuery = useMemo(() => {
     const params = new URLSearchParams()
@@ -378,6 +380,10 @@ export function MediaBrowser() {
   const isTopLevelFolderView = selectedTopFolder !== ALL_TOP && selectedSubfolder === ALL_SUB && !selectedChildFolder
 
   const filteredAssets = assets
+  const sortedFilteredAssets = useMemo(
+    () => [...filteredAssets].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0) || a.name.localeCompare(b.name)),
+    [filteredAssets]
+  )
 
   useEffect(() => {
     console.info("[admin-media-browser] rendered assets", {
@@ -386,14 +392,14 @@ export function MediaBrowser() {
       selectedChildFolder,
       returnedAssetCount: assets.length,
       renderedFolderCount: visibleCurrentLevelFolders.length,
-      renderedAssetCount: filteredAssets.length,
+      renderedAssetCount: sortedFilteredAssets.length,
       emptyStateInputs: {
         loading,
         renderedFolderCount: visibleCurrentLevelFolders.length,
-        filteredAssetCount: filteredAssets.length,
+        filteredAssetCount: sortedFilteredAssets.length,
       },
     })
-  }, [assets.length, filteredAssets.length, loading, selectedChildFolder, selectedSubfolder, selectedTopFolder, visibleCurrentLevelFolders.length])
+  }, [assets.length, loading, selectedChildFolder, selectedSubfolder, selectedTopFolder, sortedFilteredAssets.length, visibleCurrentLevelFolders.length])
 
   const renameSelectedFolder = async () => {
     if (!selectedFolderCard) return
@@ -692,7 +698,7 @@ export function MediaBrowser() {
             </div>
           ) : null}
 
-          {(isPromotedSubfolderView || !selectedChildFolder) && visibleCurrentLevelFolders.length > 0 ? (
+          {!isRootBrowseState && (isPromotedSubfolderView || !selectedChildFolder) && visibleCurrentLevelFolders.length > 0 ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
               {visibleCurrentLevelFolders.map((folderPath) => (
                 <button
@@ -765,15 +771,15 @@ export function MediaBrowser() {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Loading media...
             </div>
-          ) : filteredAssets.length === 0 && visibleCurrentLevelFolders.length === 0 ? (
+          ) : sortedFilteredAssets.length === 0 && (isRootBrowseState || visibleCurrentLevelFolders.length === 0) ? (
             <div className="flex h-[420px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
               <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
               No images found
             </div>
-          ) : visibleCurrentLevelFolders.length === 0 ? (
+          ) : isRootBrowseState || visibleCurrentLevelFolders.length === 0 ? (
             <>
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-              {filteredAssets.map((asset) => {
+              {sortedFilteredAssets.map((asset) => {
                 const selected = selectedUrls.includes(asset.url)
                 return (
                   <div
