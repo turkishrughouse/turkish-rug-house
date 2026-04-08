@@ -142,30 +142,55 @@ export function MediaManager() {
     selectedUploadFolderRef.current = selectedUploadFolder
   }, [selectedUploadFolder])
 
-  const loadMedia = useCallback(async () => {
+  const loadFolders = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch("/api/admin/media", { cache: "no-store" })
-      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[]; assets?: Asset[] })
-      if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
+      const res = await fetch("/api/admin/media/folders", { cache: "no-store" })
+      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[] })
+      if (!res.ok) throw new Error(json?.error || "Failed to fetch folders")
       const nextFolders = json?.folders || []
-      const nextAssets = json?.assets || []
       setFolders(nextFolders)
-      setAssets(nextAssets)
       if (!nextFolders.some((f: Folder) => f.name === selectedUploadFolderRef.current)) {
         const fallbackFolder = nextFolders[0]?.name || "categories"
         setSelectedUploadFolder((prev) => (prev === fallbackFolder ? prev : fallbackFolder))
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to fetch media")
+      toast.error(error instanceof Error ? error.message : "Failed to fetch folders")
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    loadMedia()
-  }, [loadMedia])
+    void loadFolders()
+  }, [loadFolders])
+
+  const loadAssets = useCallback(async () => {
+    if (currentFolderPath === ROOT_VIEW) {
+      setAssets([])
+      return
+    }
+    setLoading(true)
+    try {
+      const params = new URLSearchParams()
+      params.set("folder", currentFolderPath)
+      params.set("folderMode", "prefix")
+      params.set("limit", "500")
+      if (search.trim()) params.set("search", search.trim().toLowerCase())
+      const res = await fetch(`/api/admin/media?${params.toString()}`, { cache: "no-store" })
+      const json = await res.json().catch(() => null as null | { error?: string; assets?: Asset[] })
+      if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
+      setAssets(json?.assets || [])
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to fetch media")
+    } finally {
+      setLoading(false)
+    }
+  }, [currentFolderPath, search])
+
+  useEffect(() => {
+    void loadAssets()
+  }, [loadAssets])
 
   const topFolders = useMemo(() => {
     const counts = new Map<string, number>()
@@ -376,7 +401,7 @@ export function MediaManager() {
       if (!res.ok) throw new Error(json?.error || "Failed to move file")
       toast.success("File moved")
       setManagingAsset(null)
-      await loadMedia()
+      await loadAssets()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to move file")
     } finally {
@@ -398,7 +423,7 @@ export function MediaManager() {
       if (!res.ok) throw new Error(json?.error || "Failed to delete file")
       toast.success("File deleted")
       setManagingAsset(null)
-      await loadMedia()
+      await loadAssets()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to delete file")
     } finally {
@@ -426,7 +451,7 @@ export function MediaManager() {
       }
       toast.success(`${uploadOnly.length} dosya tasindi`)
       setSelectedAssetUrls([])
-      await loadMedia()
+      await loadAssets()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Toplu tasima basarisiz")
     } finally {
@@ -455,7 +480,7 @@ export function MediaManager() {
       }
       toast.success(`${uploadOnly.length} dosya silindi`)
       setSelectedAssetUrls([])
-      await loadMedia()
+      await loadAssets()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Toplu silme basarisiz")
     } finally {
@@ -481,7 +506,7 @@ export function MediaManager() {
         if (!res.ok) throw new Error(json.error || "Upload failed")
       }
       toast.success("Files uploaded")
-      await loadMedia()
+      await Promise.all([loadFolders(), loadAssets()])
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Upload failed")
     } finally {
@@ -515,7 +540,7 @@ export function MediaManager() {
         setSelectedUploadFolder(json.folder)
         setTargetFolder(json.folder)
       }
-      await loadMedia()
+      await Promise.all([loadFolders(), loadAssets()])
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to rename folder")
     }
@@ -587,7 +612,7 @@ export function MediaManager() {
       toast.success(
         `${optimizedCount} / ${processedCount} images optimized${savedKb > 0 ? ` (${savedKb.toFixed(1)} KB saved)` : ""}`
       )
-      await loadMedia()
+      await Promise.all([loadFolders(), loadAssets()])
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to optimize images")
     } finally {
@@ -606,7 +631,7 @@ export function MediaManager() {
       if (!res.ok || !json?.folder) throw new Error(json?.error || "Failed to clone folder")
       toast.success(`Folder cloned: ${folderLeafName(json.folder)}`)
       setFolderContextMenu(null)
-      await loadMedia()
+      await Promise.all([loadFolders(), loadAssets()])
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to clone folder")
     }
@@ -838,7 +863,7 @@ export function MediaManager() {
                   {uploading ? "Uploading..." : "Upload"}
                 </span>
               </label>
-              <Button type="button" variant="outline" onClick={loadMedia}>
+              <Button type="button" variant="outline" onClick={() => void Promise.all([loadFolders(), loadAssets()])}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh
               </Button>

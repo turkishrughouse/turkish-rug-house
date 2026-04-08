@@ -13,6 +13,11 @@ import { getStorageProvider } from "@/lib/storage/provider"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
+type FolderInfo = {
+  name: string
+  count: number
+}
+
 const deleteFolderSchema = z.object({
   folder: z.string().min(1, "Folder is required"),
 })
@@ -30,6 +35,102 @@ const cloneFolderSchema = z.object({
 
 function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function buildCategoryPathMap(
+  categories: Array<{ id: string; slug: string; parentId: string | null }>
+) {
+  const byId = new Map(categories.map((category) => [category.id, category]))
+  const cache = new Map<string, string>()
+
+  const resolvePath = (id: string): string => {
+    if (cache.has(id)) return cache.get(id) || ""
+    const current = byId.get(id)
+    if (!current) return ""
+    const parentPath = current.parentId ? resolvePath(current.parentId) : ""
+    const next = sanitizeFolderPath(parentPath ? `${parentPath}/${current.slug}` : current.slug)
+    cache.set(id, next)
+    return next
+  }
+
+  for (const category of categories) resolvePath(category.id)
+  return cache
+}
+
+async function collectUploadFolders(rootDir: string, relative = ""): Promise<string[]> {
+  const current = path.join(rootDir, relative)
+  const entries = await readdir(current, { withFileTypes: true }).catch(() => [])
+  const folders: string[] = []
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const childRelative = relative ? `${relative}/${entry.name}` : entry.name
+    const logicalPath = sanitizeFolderPath(childRelative)
+    if (logicalPath) folders.push(logicalPath)
+    const nested = await collectUploadFolders(rootDir, childRelative)
+    folders.push(...nested)
+  }
+
+  return folders
+}
+
+async function listMediaFolders(): Promise<FolderInfo[]> {
+  const uploadRoot = path.join(process.cwd(), "public", "uploads")
+  const [categories, products, uploadFolders] = await Promise.all([
+    prisma.category.findMany({
+      select: { id: true, slug: true, parentId: true },
+      orderBy: { sortOrder: "asc" },
+    }),
+    prisma.product.findMany({
+      where: { sku: { not: null } },
+      select: {
+        sku: true,
+        categories: { select: { id: true } },
+      },
+    }),
+    collectUploadFolders(uploadRoot),
+  ])
+
+  const categoryPathMap = buildCategoryPathMap(categories)
+  const folderNames = new Set<string>()
+
+  for (const root of getManagedMediaRoots()) {
+    const safeRoot = sanitizeFolderPath(root)
+    if (safeRoot) folderNames.add(safeRoot)
+  }
+
+  for (const categoryPath of categoryPathMap.values()) {
+    if (categoryPath) folderNames.add(categoryPath)
+  }
+
+  for (const product of products) {
+    const sku = sanitizeFolderPath(product.sku || "")
+    if (!sku) continue
+    for (const category of product.categories) {
+      const categoryPath = categoryPathMap.get(category.id) || ""
+      if (!categoryPath) continue
+      folderNames.add(`${categoryPath}/${sku}`)
+    }
+  }
+
+  for (const folder of uploadFolders) {
+    if (!folder) continue
+    folderNames.add(folder)
+  }
+
+  return Array.from(folderNames)
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => ({ name, count: 0 }))
+}
+
+export async function GET() {
+  try {
+    const folders = await listMediaFolders()
+    return NextResponse.json({ folders })
+  } catch (error) {
+    console.error("GET /api/admin/media/folders error:", error)
+    return NextResponse.json({ error: "Failed to fetch folders" }, { status: 500 })
+  }
 }
 
 async function replaceFolderUrlReferences(oldFolder: string, nextFolder: string) {

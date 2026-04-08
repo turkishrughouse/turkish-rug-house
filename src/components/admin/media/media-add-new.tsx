@@ -16,7 +16,7 @@ export function MediaAddNew() {
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   const loadFolders = useCallback(async () => {
-    const res = await fetch("/api/admin/media", { cache: "no-store" })
+    const res = await fetch("/api/admin/media/folders", { cache: "no-store" })
     const json = await res.json().catch(() => null as null | { folders?: Folder[]; error?: string })
     if (!res.ok) throw new Error(json?.error || "Failed to fetch folders")
     setFolders(json?.folders || [])

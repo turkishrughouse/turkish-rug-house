@@ -158,6 +158,7 @@ export function MediaPickerDialog({
     totalItems: 0,
     totalPages: 1,
   })
+  const [foldersLoaded, setFoldersLoaded] = useState(false)
   const dialogContentRef = useRef<HTMLDivElement | null>(null)
   const libraryScrollRef = useRef<HTMLDivElement | null>(null)
   const deleteTimeoutsRef = useRef<Record<string, number>>({})
@@ -211,24 +212,36 @@ export function MediaPickerDialog({
     return params.toString()
   }, [activeFolder, activeSubfolder, assetPage, normalizedSearchTerm, selectedChildFolder, usesSkuFolders])
 
-  const loadMedia = useCallback(async () => {
+  const loadFolders = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/media/folders", { cache: "no-store" })
+      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[] })
+      if (!res.ok) throw new Error(json?.error || "Failed to fetch folders")
+      const nextFolders: Folder[] = json?.folders ?? []
+      setFolders(nextFolders)
+      return { folders: nextFolders }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to fetch folders")
+      return null
+    }
+  }, [])
+
+  const loadAssets = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetch(`/api/admin/media?${assetQuery}`, { cache: "no-store" })
-      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[]; assets?: Asset[]; pagination?: PaginationState })
+      const json = await res.json().catch(() => null as null | { error?: string; assets?: Asset[]; pagination?: PaginationState })
       if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
-      const nextFolders: Folder[] = json?.folders ?? []
       const nextAssets: Asset[] = (json?.assets ?? []).map((asset: Asset) => ({
         ...asset,
         url: normalizePickerAssetUrl(asset.url),
       }))
-      setFolders(nextFolders)
       setAssets(nextAssets)
       setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
       if (json?.pagination?.page && json.pagination.page !== assetPage) {
         setAssetPage(json.pagination.page)
       }
-      return { folders: nextFolders, assets: nextAssets }
+      return { assets: nextAssets }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to fetch media")
       return null
@@ -239,8 +252,8 @@ export function MediaPickerDialog({
 
   useEffect(() => {
     if (!open) return
-    loadMedia()
-  }, [open, loadMedia])
+    void loadFolders().finally(() => setFoldersLoaded(true))
+  }, [open, loadFolders])
 
   useEffect(() => {
     if (!open) return
@@ -301,6 +314,7 @@ export function MediaPickerDialog({
         totalItems: 0,
         totalPages: 1,
       })
+      setFoldersLoaded(false)
     }
   }, [open])
 
@@ -354,14 +368,31 @@ export function MediaPickerDialog({
 
   useEffect(() => {
     if (!open) return
+    if (!foldersLoaded) return
     if (activeFolder !== "all") return
     if (didAutoPickFolder) return
-    if (topFolders.length === 0) return
-    setActiveFolder(topFolders[0].name)
+    if (topFolders.length <= 1) return
+    setActiveFolder(topFolders[1]?.name || "all")
     setActiveSubfolder("all")
     setUploadFolder(topFolders[1]?.name || "categories")
     setDidAutoPickFolder(true)
-  }, [open, activeFolder, didAutoPickFolder, topFolders])
+  }, [open, foldersLoaded, activeFolder, didAutoPickFolder, topFolders])
+
+  useEffect(() => {
+    if (!open || !foldersLoaded) return
+    if (activeFolder === "all" && !selectedChildFolder) {
+      setAssets([])
+      setPagination({
+        page: 1,
+        limit: MEDIA_PAGE_SIZE,
+        totalItems: 0,
+        totalPages: 1,
+      })
+      setLoading(false)
+      return
+    }
+    void loadAssets()
+  }, [activeFolder, foldersLoaded, loadAssets, open, selectedChildFolder])
 
   const childFolders = useMemo(() => {
     if (activeSubfolder === "all") return [] as string[]
@@ -598,7 +629,7 @@ export function MediaPickerDialog({
         }
         setHiddenDeletedUrls((prev) => prev.filter((url) => !uniqueUrls.includes(url)))
         delete deleteTimeoutsRef.current[deleteId]
-        await loadMedia()
+        await Promise.all([loadFolders(), loadAssets()])
       } catch (error) {
         setHiddenDeletedUrls((prev) => prev.filter((url) => !uniqueUrls.includes(url)))
         delete deleteTimeoutsRef.current[deleteId]
@@ -662,7 +693,8 @@ export function MediaPickerDialog({
       }
       toast.success(`${uploadedUrls.length} file(s) uploaded`)
       setHiddenDeletedUrls((prev) => prev.filter((url) => !uploadedUrls.includes(url)))
-      const refreshed = await loadMedia()
+      await loadFolders()
+      const refreshed = await loadAssets()
       setTab("library")
       setSelectedFolder(null)
       setSelectedRightFolders([])
@@ -726,7 +758,7 @@ export function MediaPickerDialog({
       toast.success("Folder created")
       setSelectedFolder(createdFolder)
       setSelectedRightFolders([createdFolder])
-      await loadMedia()
+      await Promise.all([loadFolders(), loadAssets()])
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create folder")
     } finally {
@@ -757,7 +789,7 @@ export function MediaPickerDialog({
       toast.success("Folder renamed")
       if (activeSubfolder === folderPath) setActiveSubfolder(nextFolder)
       if (uploadFolder === folderPath) setUploadFolder(nextFolder)
-      await loadMedia()
+      await Promise.all([loadFolders(), loadAssets()])
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to rename folder")
     }
@@ -781,7 +813,7 @@ export function MediaPickerDialog({
       if (uploadFolder === folderPath) setUploadFolder(activeFolder !== "all" ? activeFolder : "categories")
       setSelectedFolder(null)
       setSelectedRightFolders((prev) => prev.filter((item) => item !== folderPath))
-      await loadMedia()
+      await Promise.all([loadFolders(), loadAssets()])
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to delete folder")
     }
@@ -820,7 +852,7 @@ export function MediaPickerDialog({
       toast.success(`Klonlandı: ${json.folder.split("/").pop() || json.folder}`)
       setSelectedFolder(json.folder)
       setSelectedRightFolders([json.folder])
-      await loadMedia()
+      await Promise.all([loadFolders(), loadAssets()])
       requestAnimationFrame(() => {
         if (libraryScrollRef.current) {
           libraryScrollRef.current.scrollTop = libraryScrollTop
@@ -857,7 +889,7 @@ export function MediaPickerDialog({
         }
       }
       toast.success("Selected images moved")
-      await loadMedia()
+      await Promise.all([loadFolders(), loadAssets()])
       setSelectedUrls([])
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to move image")

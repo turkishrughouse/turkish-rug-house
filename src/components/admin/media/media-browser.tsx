@@ -83,6 +83,7 @@ export function MediaBrowser() {
     totalItems: 0,
     totalPages: 1,
   })
+  const [foldersLoaded, setFoldersLoaded] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
@@ -119,13 +120,43 @@ export function MediaBrowser() {
     return params.toString()
   }, [assetPage, normalizedSearchTerm, selectedChildFolder, selectedSubfolder, selectedTopFolder, usesSkuFolders])
 
-  const loadMedia = useCallback(async () => {
+  const loadFolders = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/media/folders", { cache: "no-store" })
+      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[] })
+      if (!res.ok) throw new Error(json?.error || "Failed to fetch folders")
+      setFolders(json?.folders || [])
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to fetch folders")
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadFolders().finally(() => setFoldersLoaded(true))
+  }, [loadFolders])
+
+  const topFolders = useMemo(() => {
+    const names = new Set<string>()
+    for (const folder of folders) {
+      const top = folder.name.split("/")[0] || folder.name
+      if (top) names.add(top)
+    }
+    return Array.from(names).sort((a, b) => folderLabel(a).localeCompare(folderLabel(b)))
+  }, [folders])
+
+  useEffect(() => {
+    if (!foldersLoaded) return
+    if (selectedTopFolder !== ALL_TOP) return
+    if (topFolders.length === 0) return
+    setSelectedTopFolder(topFolders[0] || ALL_TOP)
+  }, [foldersLoaded, selectedTopFolder, topFolders])
+
+  const loadAssets = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetch(`/api/admin/media?${assetQuery}`, { cache: "no-store" })
-      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[]; assets?: Asset[]; pagination?: PaginationState })
+      const json = await res.json().catch(() => null as null | { error?: string; assets?: Asset[]; pagination?: PaginationState })
       if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
-      setFolders(json?.folders || [])
       setAssets(json?.assets || [])
       setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
       if (json?.pagination?.page && json.pagination.page !== assetPage) {
@@ -139,17 +170,15 @@ export function MediaBrowser() {
   }, [assetPage, assetQuery])
 
   useEffect(() => {
-    loadMedia()
-  }, [loadMedia])
-
-  const topFolders = useMemo(() => {
-    const names = new Set<string>()
-    for (const folder of folders) {
-      const top = folder.name.split("/")[0] || folder.name
-      if (top) names.add(top)
+    if (!foldersLoaded) return
+    if (selectedTopFolder === ALL_TOP && !selectedChildFolder) {
+      setAssets([])
+      setPagination({ page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
+      setLoading(false)
+      return
     }
-    return Array.from(names).sort((a, b) => folderLabel(a).localeCompare(folderLabel(b)))
-  }, [folders])
+    void loadAssets()
+  }, [foldersLoaded, loadAssets, selectedChildFolder, selectedTopFolder])
 
   const subfolders = useMemo(() => {
     if (selectedTopFolder === ALL_TOP) return [] as string[]
@@ -259,7 +288,7 @@ export function MediaBrowser() {
     }
     toast.success("Klasör güncellendi")
     setSelectedFolderCard(json.folder)
-    await loadMedia()
+    await Promise.all([loadFolders(), loadAssets()])
   }
 
   const deleteSelectedFolder = async () => {
@@ -280,7 +309,7 @@ export function MediaBrowser() {
       setSelectedChildFolder("")
     }
     setSelectedFolderCard("")
-    await loadMedia()
+    await Promise.all([loadFolders(), loadAssets()])
   }
 
   const allFilteredSelected = filteredAssets.length > 0 && filteredAssets.every((asset) => selectedUrls.includes(asset.url))
@@ -326,7 +355,7 @@ export function MediaBrowser() {
         if (!res.ok) throw new Error(json?.error || "Upload failed")
       }
       toast.success(`${list.length} dosya eklendi`)
-      await loadMedia()
+      await Promise.all([loadFolders(), loadAssets()])
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Upload failed")
     } finally {
@@ -365,7 +394,7 @@ export function MediaBrowser() {
       }
       toast.success(`${uploadOnly.length} fotograf eklendi`)
       setSelectedUrls([])
-      await loadMedia()
+      await Promise.all([loadFolders(), loadAssets()])
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Move failed")
     } finally {
@@ -395,7 +424,7 @@ export function MediaBrowser() {
       toast.success(`${selectedUrls.length} fotograf silindi`)
       setSelectedUrls([])
       setPreviewAsset(null)
-      await loadMedia()
+      await Promise.all([loadFolders(), loadAssets()])
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Delete failed")
     } finally {

@@ -6,15 +6,11 @@ import { z } from "zod"
 import { prisma } from "@/lib/db"
 import {
   sanitizeFolderPath,
-  ensureCategoryMediaFolders,
-  ensureAllProductSkuFolders,
-  ensureManagedMediaFolders,
-  cleanupLegacyMediaFolders,
   getManagedMediaRoots,
 } from "@/lib/media-folders"
 import { logger } from "@/lib/logger"
 import { getStorageProvider } from "@/lib/storage/provider"
-import { getProductImageUrl, parseProductImageRecords, parseProductImages } from "@/lib/product-images"
+import { getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { ensureMediaRegistryTable } from "@/lib/media-registry"
 
 export const runtime = "nodejs"
@@ -29,11 +25,6 @@ type MediaAsset = {
   usedIn: string
   createdAt: number
   sizeBytes?: number
-}
-
-type FolderInfo = {
-  name: string
-  path: string
 }
 
 type UploadCandidate = {
@@ -74,6 +65,8 @@ type SiblingUploadAsset = {
   absolutePath: string
   fileName: string
 }
+
+type FolderMatchMode = "exact" | "prefix"
 
 const createFolderSchema = z.object({
   name: z.string().min(1, "Folder name is required"),
@@ -390,27 +383,13 @@ async function replaceUrlReferences(oldUrl: string, nextUrl: string | null) {
   }
 }
 
-async function listUploadFolders(rootDir: string, relative = ""): Promise<FolderInfo[]> {
-  const current = path.join(rootDir, relative)
-  const entries = await readdir(current, { withFileTypes: true }).catch(() => [])
-  const folders: FolderInfo[] = []
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    const childRelative = relative ? `${relative}/${entry.name}` : entry.name
-    const logicalPath = toLogicalUploadRelativePath(childRelative)
-    if (logicalPath) {
-      const logicalName = logicalPath.split("/").pop() || logicalPath
-      folders.push({ name: logicalName, path: logicalPath })
-    }
-    const nested = await listUploadFolders(rootDir, childRelative)
-    folders.push(...nested)
-  }
-
-  return folders
+function folderMatchesContext(assetFolder: string, targetFolder: string, mode: FolderMatchMode) {
+  if (!targetFolder) return true
+  if (mode === "prefix") return assetFolder === targetFolder || assetFolder.startsWith(`${targetFolder}/`)
+  return assetFolder === targetFolder
 }
 
-async function listUploadFiles(rootDir: string, relative = ""): Promise<MediaAsset[]> {
+async function listUploadFilesInFolder(rootDir: string, relative = "", recursive = false): Promise<MediaAsset[]> {
   const storage = getStorageProvider()
   const current = path.join(rootDir, relative)
   const entries = await readdir(current, { withFileTypes: true }).catch(() => [])
@@ -421,7 +400,8 @@ async function listUploadFiles(rootDir: string, relative = ""): Promise<MediaAss
     const fullPath = path.join(rootDir, childRelative)
 
     if (entry.isDirectory()) {
-      const nestedAssets = await listUploadFiles(rootDir, childRelative)
+      if (!recursive) continue
+      const nestedAssets = await listUploadFilesInFolder(rootDir, childRelative, true)
       for (const asset of nestedAssets) {
         const group = extractVariantGroup(getStorageProvider().toRelativePath(asset.url) || "")
         groups.set(`${asset.folder}@@${group.baseKey}`, {
@@ -557,71 +537,6 @@ async function pruneEmptyUploadFolders(folder: string) {
   }
 }
 
-async function moveUploadedAssetToFolder(url: string, targetFolder: string) {
-  const siblings = await getSiblingUploadAssets(url)
-  if (siblings.length === 0) return null
-
-  const sourceFolder = extractFolderFromUrl(url)
-  if (sourceFolder === targetFolder) return url
-
-  const targetDir = path.join(process.cwd(), "public", "uploads", targetFolder)
-  await mkdir(targetDir, { recursive: true })
-
-  for (const sibling of siblings) {
-    const targetPath = path.join(targetDir, sibling.fileName)
-    const exists = await stat(targetPath).then(() => true).catch(() => false)
-    if (exists) {
-      return null
-    }
-  }
-
-  const storage = getStorageProvider()
-  let nextPrimaryUrl = ""
-  await ensureMediaRegistryTable()
-  for (const sibling of siblings) {
-    const targetPath = path.join(targetDir, sibling.fileName)
-    await rename(sibling.absolutePath, targetPath)
-    const nextUrl = storage.getPublicUrl(`${targetFolder}/${sibling.fileName}`)
-    await replaceUrlReferences(sibling.url, nextUrl)
-    await prisma.$executeRaw`UPDATE "MediaAsset" SET "image_url" = ${nextUrl}, "object_key" = ${`${targetFolder}/${sibling.fileName}`} WHERE "image_url" = ${sibling.url}`
-    if (sibling.fileName.endsWith("-master.webp") || !nextPrimaryUrl) {
-      nextPrimaryUrl = nextUrl
-    }
-  }
-  await pruneEmptyUploadFolders(sourceFolder)
-  return nextPrimaryUrl || url
-}
-
-async function backfillProductSkuFolders(
-  products: Array<{ id: string; title: string; sku: string | null; images: string; categories: Array<{ id: string; slug: string; parentId: string | null }> }>,
-  categoryPathMap: Map<string, string>
-) {
-  for (const product of products) {
-    const sku = sanitizeFolderPath(product.sku || "")
-    if (!sku) continue
-
-    const targetCategoryFolders = product.categories
-      .map((category) => categoryPathMap.get(category.id) || "")
-      .filter(Boolean)
-
-    if (targetCategoryFolders.length === 0) continue
-
-    const productImages = parseProductImages(product.images)
-    for (const baseCategoryFolder of targetCategoryFolders) {
-      const targetFolder = `${baseCategoryFolder}/${sku}`
-      await mkdir(path.join(process.cwd(), "public", "uploads", targetFolder), { recursive: true })
-    }
-
-    for (const imageUrl of productImages) {
-      const currentFolder = extractFolderFromUrl(imageUrl)
-      const matchedCategoryFolder = targetCategoryFolders.find((folder) => currentFolder === folder)
-      if (!matchedCategoryFolder) continue
-      const targetFolder = `${matchedCategoryFolder}/${sku}`
-      await moveUploadedAssetToFolder(imageUrl, targetFolder).catch(() => null)
-    }
-  }
-}
-
 export async function GET(req: NextRequest) {
   try {
     const searchParams = req.nextUrl.searchParams
@@ -631,14 +546,25 @@ export async function GET(req: NextRequest) {
     const limit = Number.isFinite(limitInput) && limitInput > 0 ? Math.min(100, Math.floor(limitInput)) : 30
     const search = (searchParams.get("search") || "").trim().toLowerCase()
     const folder = sanitizeFolderPath(searchParams.get("folder") || "")
-    const folderMode = searchParams.get("folderMode") === "prefix" ? "prefix" : "exact"
+    const folderMode: FolderMatchMode = searchParams.get("folderMode") === "prefix" ? "prefix" : "exact"
 
     const uploadRoot = path.join(process.cwd(), "public", "uploads")
-    await ensureManagedMediaFolders()
-    await cleanupLegacyMediaFolders()
-    await ensureCategoryMediaFolders()
-    await ensureAllProductSkuFolders()
     const allowedRoots = await getAllowedFolderRoots()
+    const scopedFolderTop = topFolderName(folder)
+    const hasScopedFolder = Boolean(folder)
+    const folderAllowed = !hasScopedFolder || allowedRoots.has(scopedFolderTop)
+
+    if (!folderAllowed) {
+      return NextResponse.json({
+        assets: [],
+        pagination: {
+          page: 1,
+          limit,
+          totalItems: 0,
+          totalPages: 1,
+        },
+      })
+    }
 
     const [products, categories, pages, profiles] = await Promise.all([
       prisma.product.findMany({
@@ -658,12 +584,10 @@ export async function GET(req: NextRequest) {
     const categoryPathMap = buildCategoryPathMap(
       categories.map((category) => ({ id: category.id, slug: category.slug, parentId: category.parentId }))
     )
-    await backfillProductSkuFolders(products, categoryPathMap)
 
-    const [uploadFolders, uploadedFiles] = await Promise.all([
-      listUploadFolders(uploadRoot),
-      listUploadFiles(uploadRoot),
-    ])
+    const uploadedFiles = hasScopedFolder
+      ? await listUploadFilesInFolder(uploadRoot, folder, folderMode === "prefix")
+      : []
     const uploadLookup = buildUploadLookup(uploadedFiles)
 
     const assets: MediaAsset[] = [...uploadedFiles]
@@ -779,6 +703,7 @@ export async function GET(req: NextRequest) {
     for (const asset of assets) {
       const assetTopFolder = topFolderName(asset.folder)
       if (!allowedRoots.has(assetTopFolder)) continue
+      if (hasScopedFolder && !folderMatchesContext(asset.folder, folder, folderMode)) continue
       const canonical = resolveCanonicalAssetIdentity(asset.url, asset.folder, uploadLookup)
       const dedupKey = canonical.dedupKey
       const existing = dedup.get(dedupKey)
@@ -818,21 +743,6 @@ export async function GET(req: NextRequest) {
       sizeBytes: asset.sizeBytes,
     }))
 
-    const folderSet = new Map<string, number>()
-    for (const asset of uniqueAssets) {
-      folderSet.set(asset.folder, (folderSet.get(asset.folder) || 0) + 1)
-    }
-    for (const folder of uploadFolders) {
-      const folderPath = folder.path || folder.name
-      const top = topFolderName(folderPath)
-      if (!allowedRoots.has(top)) continue
-      if (!folderSet.has(folderPath)) folderSet.set(folderPath, 0)
-    }
-
-    const folders = Array.from(folderSet.entries())
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-
     const sortedAssets = uniqueAssets
       .sort((a, b) => b.createdAt - a.createdAt || a.name.localeCompare(b.name))
       .filter((asset) => {
@@ -864,7 +774,6 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({
-      folders,
       assets: sortedAssets.slice(start, start + limit),
       pagination,
     })
