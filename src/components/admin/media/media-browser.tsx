@@ -66,6 +66,10 @@ function folderMatchesOrDescends(assetFolder: string, targetFolder: string) {
   return assetFolder === targetFolder || assetFolder.startsWith(`${targetFolder}/`)
 }
 
+function folderMatchesExactly(assetFolder: string, targetFolder: string) {
+  return assetFolder === targetFolder
+}
+
 export function MediaBrowser() {
   const [folders, setFolders] = useState<Folder[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
@@ -104,7 +108,7 @@ export function MediaBrowser() {
 
     if (selectedChildFolder) {
       params.set("folder", selectedChildFolder)
-      params.set("folderMode", "prefix")
+      params.set("folderMode", "exact")
       return params.toString()
     }
 
@@ -158,10 +162,22 @@ export function MediaBrowser() {
   const loadAssets = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/admin/media?${assetQuery}`, { cache: "no-store" })
+      const requestUrl = `/api/admin/media?${assetQuery}`
+      console.debug("[media-browser] request", {
+        selectedTopFolder,
+        selectedSubfolder,
+        selectedChildFolder,
+        requestUrl,
+      })
+      const res = await fetch(requestUrl, { cache: "no-store" })
       const json = await res.json().catch(() => null as null | { error?: string; assets?: Asset[]; pagination?: PaginationState })
       if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
-      setAssets(json?.assets || [])
+      const nextAssets = json?.assets || []
+      console.debug("[media-browser] response", {
+        selectedChildFolder,
+        assetFolders: nextAssets.map((asset) => asset.folder),
+      })
+      setAssets(nextAssets)
       setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
       if (json?.pagination?.page && json.pagination.page !== assetPage) {
         setAssetPage(json.pagination.page)
@@ -171,7 +187,7 @@ export function MediaBrowser() {
     } finally {
       setLoading(false)
     }
-  }, [assetPage, assetQuery])
+  }, [assetPage, assetQuery, selectedChildFolder, selectedSubfolder, selectedTopFolder])
 
   useEffect(() => {
     if (!foldersLoaded) return
@@ -273,7 +289,7 @@ export function MediaBrowser() {
   const filteredAssets = useMemo(() => {
     return assets.filter((asset) => {
       if (selectedChildFolder) {
-        return folderMatchesOrDescends(asset.folder, selectedChildFolder)
+        return folderMatchesExactly(asset.folder, selectedChildFolder)
       }
       if (selectedSubfolder !== ALL_SUB) {
         if (usesSkuFolders) return false
@@ -285,6 +301,16 @@ export function MediaBrowser() {
       return true
     })
   }, [assets, selectedChildFolder, selectedSubfolder, selectedTopFolder, usesSkuFolders])
+
+  useEffect(() => {
+    console.debug("[media-browser] filtered", {
+      selectedTopFolder,
+      selectedSubfolder,
+      selectedChildFolder,
+      assetFolders: assets.map((asset) => asset.folder),
+      filteredAssetCount: filteredAssets.length,
+    })
+  }, [assets, filteredAssets.length, selectedChildFolder, selectedSubfolder, selectedTopFolder])
 
   const renameSelectedFolder = async () => {
     if (!selectedFolderCard) return

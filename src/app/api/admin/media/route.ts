@@ -540,6 +540,7 @@ async function pruneEmptyUploadFolders(folder: string) {
 export async function GET(req: NextRequest) {
   try {
     const searchParams = req.nextUrl.searchParams
+    const requestedFolder = searchParams.get("folder") || ""
     const pageInput = Number(searchParams.get("page") || "1")
     const limitInput = Number(searchParams.get("limit") || "30")
     const page = Number.isFinite(pageInput) && pageInput > 0 ? Math.floor(pageInput) : 1
@@ -547,6 +548,13 @@ export async function GET(req: NextRequest) {
     const search = (searchParams.get("search") || "").trim().toLowerCase()
     const folder = sanitizeFolderPath(searchParams.get("folder") || "")
     const folderMode: FolderMatchMode = searchParams.get("folderMode") === "prefix" ? "prefix" : "exact"
+
+    console.info("[api/admin/media] request", {
+      requestedFolder,
+      sanitizedFolder: folder,
+      folderMode,
+      url: req.nextUrl.toString(),
+    })
 
     const uploadRoot = path.join(process.cwd(), "public", "uploads")
     const allowedRoots = await getAllowedFolderRoots()
@@ -761,6 +769,13 @@ export async function GET(req: NextRequest) {
           .toLowerCase()
         return haystack.includes(search)
       })
+
+    console.info("[api/admin/media] response", {
+      folder,
+      folderMode,
+      assetFolders: sortedAssets.map((asset) => asset.folder),
+      assetCount: sortedAssets.length,
+    })
 
     const totalItems = sortedAssets.length
     const totalPages = Math.max(1, Math.ceil(totalItems / limit))

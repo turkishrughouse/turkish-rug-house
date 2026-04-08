@@ -123,6 +123,10 @@ function folderMatchesOrDescends(assetFolder: string, targetFolder: string) {
   return assetFolder === targetFolder || assetFolder.startsWith(`${targetFolder}/`)
 }
 
+function folderMatchesExactly(assetFolder: string, targetFolder: string) {
+  return assetFolder === targetFolder
+}
+
 export function MediaPickerDialog({
   open,
   onOpenChange,
@@ -191,7 +195,7 @@ export function MediaPickerDialog({
 
     if (selectedChildFolder) {
       params.set("folder", selectedChildFolder)
-      params.set("folderMode", "prefix")
+      params.set("folderMode", "exact")
       return params.toString()
     }
 
@@ -233,13 +237,24 @@ export function MediaPickerDialog({
   const loadAssets = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/admin/media?${assetQuery}`, { cache: "no-store" })
+      const requestUrl = `/api/admin/media?${assetQuery}`
+      console.debug("[media-picker] request", {
+        activeFolder,
+        activeSubfolder,
+        selectedChildFolder,
+        requestUrl,
+      })
+      const res = await fetch(requestUrl, { cache: "no-store" })
       const json = await res.json().catch(() => null as null | { error?: string; assets?: Asset[]; pagination?: PaginationState })
       if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
       const nextAssets: Asset[] = (json?.assets ?? []).map((asset: Asset) => ({
         ...asset,
         url: normalizePickerAssetUrl(asset.url),
       }))
+      console.debug("[media-picker] response", {
+        selectedChildFolder,
+        assetFolders: nextAssets.map((asset) => asset.folder),
+      })
       setAssets(nextAssets)
       setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
       if (json?.pagination?.page && json.pagination.page !== assetPage) {
@@ -252,7 +267,7 @@ export function MediaPickerDialog({
     } finally {
       setLoading(false)
     }
-  }, [assetPage, assetQuery])
+  }, [activeFolder, activeSubfolder, assetPage, assetQuery, selectedChildFolder])
 
   useEffect(() => {
     if (!open) return
@@ -463,7 +478,7 @@ export function MediaPickerDialog({
   const filteredAssets = useMemo(() => {
     return imageAssets.filter((asset) => {
       if (selectedChildFolder) {
-        const inFolder = folderMatchesOrDescends(asset.folder, selectedChildFolder)
+        const inFolder = folderMatchesExactly(asset.folder, selectedChildFolder)
         if (!inFolder) return false
       } else if (activeFolder === "all") {
         // keep all assets
@@ -489,6 +504,16 @@ export function MediaPickerDialog({
       )
     })
   }, [activeFolder, activeSubfolder, assetLabels, getAssetLabelGroup, imageAssets, normalizedSearchTerm, selectedChildFolder, usesSkuFolders])
+
+  useEffect(() => {
+    console.debug("[media-picker] filtered", {
+      activeFolder,
+      activeSubfolder,
+      selectedChildFolder,
+      assetFolders: imageAssets.map((asset) => asset.folder),
+      filteredAssetCount: filteredAssets.length,
+    })
+  }, [activeFolder, activeSubfolder, filteredAssets.length, imageAssets, selectedChildFolder])
 
   const sortedFilteredAssets = useMemo(() => {
     return [...filteredAssets].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
