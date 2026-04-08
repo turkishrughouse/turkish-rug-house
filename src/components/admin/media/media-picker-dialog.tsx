@@ -9,8 +9,9 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { buildMediaDropdownTree } from "@/components/admin/media/media-dropdown-options"
 import { listCanonicalFolderPaths, resolveCanonicalFolderPath } from "@/lib/admin/media-folder-paths"
-import { isProductSkuFolderPath, looksLikeProductSkuSegment, shouldUseProductSkuChildFolders } from "@/lib/media-sku-roots"
+import { isProductSkuFolderPath, shouldUseProductSkuChildFolders } from "@/lib/media-sku-roots"
 import { getImageUrl } from "@/lib/storage/url"
 import { normalizeMediaTitleForBaseName, prettifyAdminMediaLabel, stripDuplicateMediaPrefix } from "@/lib/admin/media-labels"
 
@@ -452,18 +453,12 @@ export function MediaPickerDialog({
     }
   }, [open, resetSelectionState])
 
+  const dropdownTree = useMemo(() => buildMediaDropdownTree(folderNames), [folderNames])
+
   const directSubfolders = useMemo(() => {
     if (activeFolder === "all") return [] as string[]
-    const prefix = `${activeFolder}/`
-    return canonicalFolders
-      .map((folder) => folder.name)
-      .filter((name) => name.startsWith(prefix))
-      .map((name) => name.slice(prefix.length))
-      .filter((rest) => rest.length > 0 && !rest.includes("/"))
-      .filter((leaf) => !looksLikeProductSkuSegment(leaf))
-      .map((leaf) => `${activeFolder}/${leaf}`)
-      .sort((a, b) => a.localeCompare(b))
-  }, [activeFolder, canonicalFolders])
+    return (dropdownTree.subfoldersByTop.get(activeFolder) || []).slice().sort((a, b) => a.localeCompare(b))
+  }, [activeFolder, dropdownTree.subfoldersByTop])
 
   const currentPath = useMemo(() => {
     if (selectedChildFolder) return selectedChildFolder
@@ -491,14 +486,36 @@ export function MediaPickerDialog({
   }, [hiddenDeletedUrls, uniqueAssets])
 
   const topFolders = useMemo(() => {
-    const names = new Set<string>()
-    for (const folder of canonicalFolders) {
-      const top = folder.name.split("/")[0] || folder.name
-      if (top) names.add(top)
-    }
-    const normalFolders = Array.from(names).map((name) => ({ name, count: 0 })).sort((a, b) => a.name.localeCompare(b.name))
+    const normalFolders = dropdownTree.topFolders
+      .map((name) => ({ name, count: 0 }))
+      .sort((a, b) => a.name.localeCompare(b.name))
     return [{ name: "all", count: pagination.totalItems }, ...normalFolders]
-  }, [canonicalFolders, pagination.totalItems])
+  }, [dropdownTree.topFolders, pagination.totalItems])
+
+  useEffect(() => {
+    if (activeFolder === "all") return
+    if (dropdownTree.topFolders.includes(activeFolder)) return
+    resetSelectionState({
+      topFolder: "all",
+      subfolder: "all",
+      childFolder: "",
+      uploadFolderValue: preferredUploadFolder || "categories",
+    })
+  }, [activeFolder, dropdownTree.topFolders, preferredUploadFolder, resetSelectionState])
+
+  useEffect(() => {
+    if (activeSubfolder === "all") return
+    if (directSubfolders.includes(activeSubfolder)) return
+    resetSelectionState({
+      topFolder: activeFolder,
+      subfolder: "all",
+      childFolder: "",
+      resetSearch: false,
+      resetSelection: false,
+      resetFolderSelection: false,
+      uploadFolderValue: activeFolder === "all" ? preferredUploadFolder || "categories" : activeFolder,
+    })
+  }, [activeFolder, activeSubfolder, directSubfolders, preferredUploadFolder, resetSelectionState])
 
   useEffect(() => {
     if (!open || !foldersLoaded) return

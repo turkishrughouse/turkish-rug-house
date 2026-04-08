@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import { buildMediaDropdownTree } from "@/components/admin/media/media-dropdown-options"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -237,14 +238,21 @@ export function MediaBrowser() {
     })
   }, [foldersLoaded, resetSelectionState])
 
-  const topFolders = useMemo(() => {
-    const names = new Set<string>()
-    for (const folder of canonicalFolders) {
-      const top = folder.name.split("/")[0] || folder.name
-      if (top) names.add(top)
-    }
-    return Array.from(names).sort((a, b) => folderLabel(a).localeCompare(folderLabel(b)))
-  }, [canonicalFolders])
+  const dropdownTree = useMemo(() => buildMediaDropdownTree(folderNames), [folderNames])
+  const topFolders = useMemo(
+    () => [...dropdownTree.topFolders].sort((a, b) => folderLabel(a).localeCompare(folderLabel(b))),
+    [dropdownTree.topFolders]
+  )
+
+  useEffect(() => {
+    if (selectedTopFolder === ALL_TOP) return
+    if (topFolders.includes(selectedTopFolder)) return
+    resetSelectionState({
+      topFolder: ALL_TOP,
+      subfolder: ALL_SUB,
+      childFolder: "",
+    })
+  }, [resetSelectionState, selectedTopFolder, topFolders])
 
   const loadAssets = useCallback(async () => {
     setLoading(true)
@@ -289,15 +297,22 @@ export function MediaBrowser() {
 
   const subfolders = useMemo(() => {
     if (selectedTopFolder === ALL_TOP) return [] as string[]
-    const prefix = `${selectedTopFolder}/`
-    return canonicalFolders
-      .map((folder) => folder.name)
-      .filter((name) => name.startsWith(prefix))
-      .map((name) => name.slice(prefix.length))
-      .filter((rest) => rest.length > 0 && !rest.includes("/"))
-      .map((leaf) => `${selectedTopFolder}/${leaf}`)
+    return (dropdownTree.subfoldersByTop.get(selectedTopFolder) || []).slice()
       .sort((a, b) => folderLabel(a).localeCompare(folderLabel(b)))
-  }, [canonicalFolders, selectedTopFolder])
+  }, [dropdownTree.subfoldersByTop, selectedTopFolder])
+
+  useEffect(() => {
+    if (selectedSubfolder === ALL_SUB) return
+    if (subfolders.includes(selectedSubfolder)) return
+    resetSelectionState({
+      topFolder: selectedTopFolder,
+      subfolder: ALL_SUB,
+      childFolder: "",
+      resetSearch: false,
+      resetSelection: false,
+      resetFolderCard: false,
+    })
+  }, [resetSelectionState, selectedSubfolder, selectedTopFolder, subfolders])
 
   const activeFolder = selectedChildFolder || (selectedSubfolder !== ALL_SUB ? selectedSubfolder : selectedTopFolder !== ALL_TOP ? selectedTopFolder : "")
 
