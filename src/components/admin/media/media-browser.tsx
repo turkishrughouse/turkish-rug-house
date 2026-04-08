@@ -66,6 +66,10 @@ function folderMatchesOrDescends(assetFolder: string, targetFolder: string) {
   return assetFolder === targetFolder || assetFolder.startsWith(`${targetFolder}/`)
 }
 
+function folderMatchesExactly(assetFolder: string, targetFolder: string) {
+  return assetFolder === targetFolder
+}
+
 export function MediaBrowser() {
   const [folders, setFolders] = useState<Folder[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
@@ -171,7 +175,6 @@ export function MediaBrowser() {
       const nextAssets = json?.assets || []
       console.debug("[media-browser] response", {
         selectedChildFolder,
-        apiAssetCountReceived: nextAssets.length,
         assetFolders: nextAssets.map((asset: Asset) => asset.folder),
       })
       setAssets(nextAssets)
@@ -185,14 +188,6 @@ export function MediaBrowser() {
       setLoading(false)
     }
   }, [assetPage, assetQuery, selectedChildFolder, selectedSubfolder, selectedTopFolder])
-
-  useEffect(() => {
-    console.debug("[media-browser] assets-state", {
-      selectedChildFolder,
-      assetsCountAfterSetAssets: assets.length,
-      assetFolders: assets.map((asset) => asset.folder),
-    })
-  }, [assets, selectedChildFolder])
 
   useEffect(() => {
     if (!foldersLoaded) return
@@ -292,8 +287,10 @@ export function MediaBrowser() {
   }, [currentLevelFolders, normalizedSearchTerm, searchableFolders])
 
   const filteredAssets = useMemo(() => {
-    if (selectedChildFolder) return assets
     return assets.filter((asset) => {
+      if (selectedChildFolder) {
+        return folderMatchesExactly(asset.folder, selectedChildFolder)
+      }
       if (selectedSubfolder !== ALL_SUB) {
         if (usesSkuFolders) return false
         return folderMatchesOrDescends(asset.folder, selectedSubfolder)
@@ -305,15 +302,6 @@ export function MediaBrowser() {
     })
   }, [assets, selectedChildFolder, selectedSubfolder, selectedTopFolder, usesSkuFolders])
 
-  const renderedAssets = filteredAssets
-
-  useEffect(() => {
-    console.debug("[media-browser] rendered", {
-      selectedChildFolder,
-      finalRenderedAssetCount: renderedAssets.length,
-    })
-  }, [renderedAssets.length, selectedChildFolder])
-
   useEffect(() => {
     console.debug("[media-browser] filtered", {
       selectedTopFolder,
@@ -323,19 +311,6 @@ export function MediaBrowser() {
       filteredAssetCount: filteredAssets.length,
     })
   }, [assets, filteredAssets.length, selectedChildFolder, selectedSubfolder, selectedTopFolder])
-
-  useEffect(() => {
-    console.debug("[media-browser] empty-state", {
-      selectedChildFolder,
-      loading,
-      visibleCurrentLevelFoldersCount: visibleCurrentLevelFolders.length,
-      renderedAssetCount: renderedAssets.length,
-      showEmptyState:
-        !loading &&
-        !(!selectedChildFolder && visibleCurrentLevelFolders.length > 0) &&
-        renderedAssets.length === 0,
-    })
-  }, [loading, renderedAssets.length, selectedChildFolder, visibleCurrentLevelFolders.length])
 
   const renameSelectedFolder = async () => {
     if (!selectedFolderCard) return
@@ -632,7 +607,7 @@ export function MediaBrowser() {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Loading media...
             </div>
-          ) : renderedAssets.length === 0 && visibleCurrentLevelFolders.length === 0 ? (
+          ) : filteredAssets.length === 0 && visibleCurrentLevelFolders.length === 0 ? (
             <div className="flex h-[420px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
               <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
               No images found
@@ -640,7 +615,7 @@ export function MediaBrowser() {
           ) : visibleCurrentLevelFolders.length === 0 ? (
             <>
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-              {renderedAssets.map((asset) => {
+              {filteredAssets.map((asset) => {
                 const selected = selectedUrls.includes(asset.url)
                 return (
                   <div
