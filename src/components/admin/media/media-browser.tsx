@@ -62,14 +62,6 @@ function prettifyAssetName(asset: Asset) {
   return prettifyAdminMediaLabel(asset)
 }
 
-function folderMatchesOrDescends(assetFolder: string, targetFolder: string) {
-  return assetFolder === targetFolder || assetFolder.startsWith(`${targetFolder}/`)
-}
-
-function folderMatchesExactly(assetFolder: string, targetFolder: string) {
-  return assetFolder === targetFolder
-}
-
 export function MediaBrowser() {
   const [folders, setFolders] = useState<Folder[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
@@ -115,14 +107,14 @@ export function MediaBrowser() {
     if (selectedSubfolder !== ALL_SUB) {
       if (!usesSkuFolders) {
         params.set("folder", selectedSubfolder)
-        params.set("folderMode", "prefix")
+        params.set("folderMode", "exact")
       }
       return params.toString()
     }
 
     if (selectedTopFolder !== ALL_TOP) {
       params.set("folder", selectedTopFolder)
-      params.set("folderMode", "prefix")
+      params.set("folderMode", "exact")
     }
 
     return params.toString()
@@ -162,22 +154,10 @@ export function MediaBrowser() {
   const loadAssets = useCallback(async () => {
     setLoading(true)
     try {
-      const requestUrl = `/api/admin/media?${assetQuery}`
-      console.debug("[media-browser] request", {
-        selectedTopFolder,
-        selectedSubfolder,
-        selectedChildFolder,
-        requestUrl,
-      })
-      const res = await fetch(requestUrl, { cache: "no-store" })
+      const res = await fetch(`/api/admin/media?${assetQuery}`, { cache: "no-store" })
       const json = await res.json().catch(() => null as null | { error?: string; assets?: Asset[]; pagination?: PaginationState })
       if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
-      const nextAssets = json?.assets || []
-      console.debug("[media-browser] response", {
-        selectedChildFolder,
-        assetFolders: nextAssets.map((asset: Asset) => asset.folder),
-      })
-      setAssets(nextAssets)
+      setAssets(json?.assets || [])
       setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
       if (json?.pagination?.page && json.pagination.page !== assetPage) {
         setAssetPage(json.pagination.page)
@@ -187,7 +167,7 @@ export function MediaBrowser() {
     } finally {
       setLoading(false)
     }
-  }, [assetPage, assetQuery, selectedChildFolder, selectedSubfolder, selectedTopFolder])
+  }, [assetPage, assetQuery])
 
   useEffect(() => {
     if (!foldersLoaded) return
@@ -286,31 +266,7 @@ export function MediaBrowser() {
     })
   }, [currentLevelFolders, normalizedSearchTerm, searchableFolders])
 
-  const filteredAssets = useMemo(() => {
-    return assets.filter((asset) => {
-      if (selectedChildFolder) {
-        return folderMatchesExactly(asset.folder, selectedChildFolder)
-      }
-      if (selectedSubfolder !== ALL_SUB) {
-        if (usesSkuFolders) return false
-        return folderMatchesOrDescends(asset.folder, selectedSubfolder)
-      }
-      if (selectedTopFolder !== ALL_TOP) {
-        return folderMatchesOrDescends(asset.folder, selectedTopFolder)
-      }
-      return true
-    })
-  }, [assets, selectedChildFolder, selectedSubfolder, selectedTopFolder, usesSkuFolders])
-
-  useEffect(() => {
-    console.debug("[media-browser] filtered", {
-      selectedTopFolder,
-      selectedSubfolder,
-      selectedChildFolder,
-      assetFolders: assets.map((asset) => asset.folder),
-      filteredAssetCount: filteredAssets.length,
-    })
-  }, [assets, filteredAssets.length, selectedChildFolder, selectedSubfolder, selectedTopFolder])
+  const filteredAssets = assets
 
   const renameSelectedFolder = async () => {
     if (!selectedFolderCard) return

@@ -119,14 +119,6 @@ function resolveProductUploadFolder(baseFolder: string, sku: string) {
   return `${cleanFolder}/${cleanSku}`
 }
 
-function folderMatchesOrDescends(assetFolder: string, targetFolder: string) {
-  return assetFolder === targetFolder || assetFolder.startsWith(`${targetFolder}/`)
-}
-
-function folderMatchesExactly(assetFolder: string, targetFolder: string) {
-  return assetFolder === targetFolder
-}
-
 export function MediaPickerDialog({
   open,
   onOpenChange,
@@ -195,7 +187,7 @@ export function MediaPickerDialog({
 
     if (selectedChildFolder) {
       params.set("folder", selectedChildFolder)
-      params.set("folderMode", "exact")
+      params.set("folderMode", "prefix")
       return params.toString()
     }
 
@@ -205,7 +197,7 @@ export function MediaPickerDialog({
 
     if (activeSubfolder === "all") {
       params.set("folder", activeFolder)
-      params.set("folderMode", "prefix")
+      params.set("folderMode", normalizedSearchTerm.length > 0 ? "prefix" : "exact")
       return params.toString()
     }
 
@@ -237,24 +229,13 @@ export function MediaPickerDialog({
   const loadAssets = useCallback(async () => {
     setLoading(true)
     try {
-      const requestUrl = `/api/admin/media?${assetQuery}`
-      console.debug("[media-picker] request", {
-        activeFolder,
-        activeSubfolder,
-        selectedChildFolder,
-        requestUrl,
-      })
-      const res = await fetch(requestUrl, { cache: "no-store" })
+      const res = await fetch(`/api/admin/media?${assetQuery}`, { cache: "no-store" })
       const json = await res.json().catch(() => null as null | { error?: string; assets?: Asset[]; pagination?: PaginationState })
       if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
       const nextAssets: Asset[] = (json?.assets ?? []).map((asset: Asset) => ({
         ...asset,
         url: normalizePickerAssetUrl(asset.url),
       }))
-      console.debug("[media-picker] response", {
-        selectedChildFolder,
-        assetFolders: nextAssets.map((asset) => asset.folder),
-      })
       setAssets(nextAssets)
       setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
       if (json?.pagination?.page && json.pagination.page !== assetPage) {
@@ -267,7 +248,7 @@ export function MediaPickerDialog({
     } finally {
       setLoading(false)
     }
-  }, [activeFolder, activeSubfolder, assetPage, assetQuery, selectedChildFolder])
+  }, [assetPage, assetQuery])
 
   useEffect(() => {
     if (!open) return
@@ -478,16 +459,18 @@ export function MediaPickerDialog({
   const filteredAssets = useMemo(() => {
     return imageAssets.filter((asset) => {
       if (selectedChildFolder) {
-        const inFolder = folderMatchesExactly(asset.folder, selectedChildFolder)
+        const inFolder = asset.folder === selectedChildFolder || asset.folder.startsWith(`${selectedChildFolder}/`)
         if (!inFolder) return false
       } else if (activeFolder === "all") {
         // keep all assets
       } else if (activeSubfolder === "all") {
-        const inTopFolder = folderMatchesOrDescends(asset.folder, activeFolder)
+        const inTopFolder =
+          asset.folder === activeFolder ||
+          (normalizedSearchTerm.length > 0 && asset.folder.startsWith(`${activeFolder}/`))
         if (!inTopFolder) return false
       } else if (usesSkuFolders) {
         return false
-      } else if (!folderMatchesOrDescends(asset.folder, activeSubfolder)) {
+      } else if (asset.folder !== activeSubfolder && !asset.folder.startsWith(`${activeSubfolder}/`)) {
         return false
       }
 
@@ -504,16 +487,6 @@ export function MediaPickerDialog({
       )
     })
   }, [activeFolder, activeSubfolder, assetLabels, getAssetLabelGroup, imageAssets, normalizedSearchTerm, selectedChildFolder, usesSkuFolders])
-
-  useEffect(() => {
-    console.debug("[media-picker] filtered", {
-      activeFolder,
-      activeSubfolder,
-      selectedChildFolder,
-      assetFolders: imageAssets.map((asset) => asset.folder),
-      filteredAssetCount: filteredAssets.length,
-    })
-  }, [activeFolder, activeSubfolder, filteredAssets.length, imageAssets, selectedChildFolder])
 
   const sortedFilteredAssets = useMemo(() => {
     return [...filteredAssets].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
