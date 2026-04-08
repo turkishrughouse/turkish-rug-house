@@ -217,6 +217,7 @@ export function MediaPickerDialog({
     if (activeSubfolder === "all") return false
     return shouldUseProductSkuChildFolders(activeSubfolder)
   }, [activeSubfolder])
+  const isPromotedSubfolderView = activeSubfolder === "all" && Boolean(selectedChildFolder)
 
   const assetQuery = useMemo(() => {
     const params = new URLSearchParams()
@@ -227,6 +228,22 @@ export function MediaPickerDialog({
     let rawSelectedValue = ""
     let selectedLabel = ""
     let canonicalFolder = ""
+
+    if (isPromotedSubfolderView) {
+      rawSelectedValue = selectedChildFolder
+      selectedLabel = formatFolderLabel(selectedChildFolder.split("/").pop() || selectedChildFolder)
+      canonicalFolder = canonicalizeFolderPath(selectedChildFolder)
+      console.info("[media-picker-dialog] asset request", {
+        selectedUiLabel: selectedLabel,
+        selectedRawValue: rawSelectedValue,
+        canonicalResolvedValue: canonicalFolder,
+        finalRequestFolder: "",
+        topFolder: activeFolder,
+        selectedSubfolder: activeSubfolder,
+        selectedChildFolder,
+      })
+      return params.toString()
+    }
 
     if (selectedChildFolder) {
       rawSelectedValue = selectedChildFolder
@@ -239,8 +256,8 @@ export function MediaPickerDialog({
         selectedRawValue: rawSelectedValue,
         canonicalResolvedValue: canonicalFolder,
         finalRequestFolder: canonicalFolder,
-        activeFolder,
-        activeSubfolder,
+        topFolder: activeFolder,
+        selectedSubfolder: activeSubfolder,
         selectedChildFolder,
       })
       return params.toString()
@@ -252,8 +269,8 @@ export function MediaPickerDialog({
         selectedRawValue: "",
         canonicalResolvedValue: "",
         finalRequestFolder: "",
-        activeFolder,
-        activeSubfolder,
+        topFolder: activeFolder,
+        selectedSubfolder: activeSubfolder,
         selectedChildFolder,
       })
       return params.toString()
@@ -270,8 +287,8 @@ export function MediaPickerDialog({
         selectedRawValue: rawSelectedValue,
         canonicalResolvedValue: canonicalFolder,
         finalRequestFolder: canonicalFolder,
-        activeFolder,
-        activeSubfolder,
+        topFolder: activeFolder,
+        selectedSubfolder: activeSubfolder,
         selectedChildFolder,
       })
       return params.toString()
@@ -288,8 +305,8 @@ export function MediaPickerDialog({
         selectedRawValue: rawSelectedValue,
         canonicalResolvedValue: canonicalFolder,
         finalRequestFolder: "__no_results__",
-        activeFolder,
-        activeSubfolder,
+        topFolder: activeFolder,
+        selectedSubfolder: activeSubfolder,
         selectedChildFolder,
       })
       return params.toString()
@@ -305,12 +322,12 @@ export function MediaPickerDialog({
       selectedRawValue: rawSelectedValue,
       canonicalResolvedValue: canonicalFolder,
       finalRequestFolder: canonicalFolder,
-      activeFolder,
-      activeSubfolder,
+      topFolder: activeFolder,
+      selectedSubfolder: activeSubfolder,
       selectedChildFolder,
     })
     return params.toString()
-  }, [activeFolder, activeSubfolder, assetPage, canonicalizeFolderPath, normalizedSearchTerm, selectedChildFolder, usesSkuFolders])
+  }, [activeFolder, activeSubfolder, assetPage, canonicalizeFolderPath, isPromotedSubfolderView, normalizedSearchTerm, selectedChildFolder, usesSkuFolders])
 
   const loadFolders = useCallback(async () => {
     try {
@@ -485,6 +502,17 @@ export function MediaPickerDialog({
 
   useEffect(() => {
     if (!open || !foldersLoaded) return
+    if (isPromotedSubfolderView) {
+      setAssets([])
+      setPagination({
+        page: 1,
+        limit: MEDIA_PAGE_SIZE,
+        totalItems: 0,
+        totalPages: 1,
+      })
+      setLoading(false)
+      return
+    }
     if (activeFolder === "all" && !selectedChildFolder) {
       setAssets([])
       setPagination({
@@ -497,7 +525,7 @@ export function MediaPickerDialog({
       return
     }
     void loadAssets()
-  }, [activeFolder, activeSubfolder, foldersLoaded, loadAssets, open, selectedChildFolder])
+  }, [activeFolder, activeSubfolder, foldersLoaded, isPromotedSubfolderView, loadAssets, open, selectedChildFolder])
 
   const childFolders = useMemo(() => {
     if (activeSubfolder === "all") return [] as string[]
@@ -512,13 +540,21 @@ export function MediaPickerDialog({
   }, [activeSubfolder, canonicalFolders])
 
   const currentLevelFolders = useMemo(() => {
+    if (isPromotedSubfolderView) return childFolders
     if (selectedChildFolder) return [] as string[]
     if (activeSubfolder !== "all") return childFolders
     return directSubfolders
-  }, [activeSubfolder, childFolders, directSubfolders, selectedChildFolder])
+  }, [activeSubfolder, childFolders, directSubfolders, isPromotedSubfolderView, selectedChildFolder])
 
   const searchableFolders = useMemo(() => {
     const allFolderNames = canonicalFolders.map((folder) => folder.name)
+
+    if (isPromotedSubfolderView) {
+      const prefix = `${selectedChildFolder}/`
+      return allFolderNames
+        .filter((name) => name.startsWith(prefix))
+        .sort((a, b) => a.localeCompare(b))
+    }
 
     if (selectedChildFolder) {
       const prefix = `${selectedChildFolder}/`
@@ -542,7 +578,7 @@ export function MediaPickerDialog({
     }
 
     return allFolderNames.sort((a, b) => a.localeCompare(b))
-  }, [activeFolder, activeSubfolder, canonicalFolders, selectedChildFolder])
+  }, [activeFolder, activeSubfolder, canonicalFolders, isPromotedSubfolderView, selectedChildFolder])
 
   const visibleCurrentLevelFolders = useMemo(() => {
     if (!normalizedSearchTerm) return currentLevelFolders
@@ -604,8 +640,9 @@ export function MediaPickerDialog({
       topFolder: activeFolder,
       selectedSubfolder: activeSubfolder,
       selectedChildFolder,
-      assetsCountAfterSetAssets: assets.length,
-      finalRenderedAssetCount: sortedFilteredAssets.length,
+      returnedAssetCount: assets.length,
+      renderedFolderCount: visibleCurrentLevelFolders.length,
+      renderedAssetCount: sortedFilteredAssets.length,
       emptyStateInputs: {
         loading,
         renderedFolderCount: visibleCurrentLevelFolders.length,
@@ -1294,7 +1331,7 @@ export function MediaPickerDialog({
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Loading media...
                     </div>
-                  ) : !selectedChildFolder && visibleCurrentLevelFolders.length > 0 ? (
+                  ) : (isPromotedSubfolderView || !selectedChildFolder) && visibleCurrentLevelFolders.length > 0 ? (
                     <div className="space-y-6">
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                         {visibleCurrentLevelFolders.map((folder) => {
