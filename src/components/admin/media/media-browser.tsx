@@ -175,7 +175,7 @@ export function MediaBrowser() {
       const nextAssets = json?.assets || []
       console.debug("[media-browser] response", {
         selectedChildFolder,
-        assetFolders: nextAssets.map((asset) => asset.folder),
+        assetFolders: nextAssets.map((asset: Asset) => asset.folder),
       })
       setAssets(nextAssets)
       setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
