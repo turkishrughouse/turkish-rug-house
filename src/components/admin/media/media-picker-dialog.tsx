@@ -186,77 +186,29 @@ export function MediaPickerDialog({
     params.set("limit", String(MEDIA_PAGE_SIZE))
     if (normalizedSearchTerm) params.set("search", normalizedSearchTerm)
 
+    const selectedPath =
+      selectedChildFolder ||
+      (activeSubfolder !== "all" ? activeSubfolder : activeFolder !== "all" ? activeFolder : "")
+    const isAllCategoriesRoot = activeFolder === "all" && activeSubfolder === "all" && !selectedChildFolder
+    const isLeafFolder = Boolean(selectedPath) && !shouldUseProductSkuChildFolders(selectedPath)
+    const isCategoryRootBrowseState = activeFolder !== "all" && activeSubfolder === "all" && !selectedChildFolder
+    const isSubcategoryBrowseState = Boolean(selectedPath) && !isLeafFolder && !isCategoryRootBrowseState
+
     let finalRequestFolder = ""
     let finalFolderMode = ""
-    let isLeafFolder = false
 
-    if (selectedChildFolder) {
-      isLeafFolder = !shouldUseProductSkuChildFolders(selectedChildFolder)
-      finalRequestFolder = isLeafFolder ? selectedChildFolder : BROWSE_ONLY_FOLDER
-      finalFolderMode = "exact"
+    if (!isAllCategoriesRoot) {
+      if (isLeafFolder) {
+        finalRequestFolder = selectedPath
+        finalFolderMode = "exact"
+      } else {
+        finalRequestFolder = BROWSE_ONLY_FOLDER
+        finalFolderMode = "prefix"
+      }
       params.set("folder", finalRequestFolder)
       params.set("folderMode", finalFolderMode)
-      console.info("[media-picker-dialog] asset request", {
-        selectedTopFolder: activeFolder,
-        selectedSubfolder: activeSubfolder,
-        selectedChildFolder,
-        finalRequestFolder,
-        finalFolderMode,
-        isLeafFolder,
-      })
-      return params.toString()
     }
 
-    if (activeFolder === "all") {
-      console.info("[media-picker-dialog] asset request", {
-        selectedTopFolder: activeFolder,
-        selectedSubfolder: activeSubfolder,
-        selectedChildFolder,
-        finalRequestFolder,
-        finalFolderMode,
-        isLeafFolder,
-      })
-      return params.toString()
-    }
-
-    if (activeSubfolder === "all") {
-      isLeafFolder = !shouldUseProductSkuChildFolders(activeFolder)
-      finalRequestFolder = isLeafFolder ? activeFolder : BROWSE_ONLY_FOLDER
-      finalFolderMode = "exact"
-      params.set("folder", finalRequestFolder)
-      params.set("folderMode", finalFolderMode)
-      console.info("[media-picker-dialog] asset request", {
-        selectedTopFolder: activeFolder,
-        selectedSubfolder: activeSubfolder,
-        selectedChildFolder,
-        finalRequestFolder,
-        finalFolderMode,
-        isLeafFolder,
-      })
-      return params.toString()
-    }
-
-    if (usesSkuFolders) {
-      finalRequestFolder = BROWSE_ONLY_FOLDER
-      finalFolderMode = "exact"
-      params.set("folder", finalRequestFolder)
-      params.set("folderMode", finalFolderMode)
-      console.info("[media-picker-dialog] asset request", {
-        selectedTopFolder: activeFolder,
-        selectedSubfolder: activeSubfolder,
-        selectedChildFolder,
-        finalRequestFolder,
-        finalFolderMode,
-        isLeafFolder,
-      })
-      return params.toString()
-    }
-
-    isLeafFolder = true
-    finalRequestFolder = activeSubfolder
-    finalFolderMode = "exact"
-    params.set("folder", finalRequestFolder)
-    params.set("folderMode", finalFolderMode)
     console.info("[media-picker-dialog] asset request", {
       selectedTopFolder: activeFolder,
       selectedSubfolder: activeSubfolder,
@@ -264,9 +216,11 @@ export function MediaPickerDialog({
       finalRequestFolder,
       finalFolderMode,
       isLeafFolder,
+      isCategoryRootBrowseState,
+      isSubcategoryBrowseState,
     })
     return params.toString()
-  }, [activeFolder, activeSubfolder, assetPage, normalizedSearchTerm, selectedChildFolder, usesSkuFolders])
+  }, [activeFolder, activeSubfolder, assetPage, normalizedSearchTerm, selectedChildFolder])
 
   const loadFolders = useCallback(async () => {
     try {

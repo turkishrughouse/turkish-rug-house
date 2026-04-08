@@ -99,53 +99,25 @@ export function MediaBrowser() {
     params.set("limit", String(MEDIA_PAGE_SIZE))
     if (normalizedSearchTerm) params.set("search", normalizedSearchTerm)
 
+    const selectedPath =
+      selectedChildFolder ||
+      (selectedSubfolder !== ALL_SUB ? selectedSubfolder : selectedTopFolder !== ALL_TOP ? selectedTopFolder : "")
+    const isAllCategoriesRoot = selectedTopFolder === ALL_TOP && selectedSubfolder === ALL_SUB && !selectedChildFolder
+    const isLeafFolder = Boolean(selectedPath) && !shouldUseProductSkuChildFolders(selectedPath)
+    const isCategoryRootBrowseState = selectedTopFolder !== ALL_TOP && selectedSubfolder === ALL_SUB && !selectedChildFolder
+    const isSubcategoryBrowseState = Boolean(selectedPath) && !isLeafFolder && !isCategoryRootBrowseState
+
     let finalRequestFolder = ""
     let finalFolderMode = ""
-    let isLeafFolder = false
 
-    if (selectedChildFolder) {
-      isLeafFolder = !shouldUseProductSkuChildFolders(selectedChildFolder)
-      finalRequestFolder = isLeafFolder ? selectedChildFolder : BROWSE_ONLY_FOLDER
-      finalFolderMode = "exact"
-      params.set("folder", finalRequestFolder)
-      params.set("folderMode", finalFolderMode)
-      console.info("[admin-media-browser] asset request", {
-        selectedTopFolder,
-        selectedSubfolder,
-        selectedChildFolder,
-        finalRequestFolder,
-        finalFolderMode,
-        isLeafFolder,
-      })
-      return params.toString()
-    }
-
-    if (selectedSubfolder !== ALL_SUB) {
-      isLeafFolder = !usesSkuFolders
+    if (!isAllCategoriesRoot) {
       if (isLeafFolder) {
-        finalRequestFolder = selectedSubfolder
+        finalRequestFolder = selectedPath
         finalFolderMode = "exact"
       } else {
         finalRequestFolder = BROWSE_ONLY_FOLDER
-        finalFolderMode = "exact"
+        finalFolderMode = "prefix"
       }
-      params.set("folder", finalRequestFolder)
-      params.set("folderMode", finalFolderMode)
-      console.info("[admin-media-browser] asset request", {
-        selectedTopFolder,
-        selectedSubfolder,
-        selectedChildFolder,
-        finalRequestFolder,
-        finalFolderMode,
-        isLeafFolder,
-      })
-      return params.toString()
-    }
-
-    if (selectedTopFolder !== ALL_TOP) {
-      isLeafFolder = !shouldUseProductSkuChildFolders(selectedTopFolder)
-      finalRequestFolder = isLeafFolder ? selectedTopFolder : BROWSE_ONLY_FOLDER
-      finalFolderMode = "exact"
       params.set("folder", finalRequestFolder)
       params.set("folderMode", finalFolderMode)
     }
@@ -157,10 +129,12 @@ export function MediaBrowser() {
       finalRequestFolder,
       finalFolderMode,
       isLeafFolder,
+      isCategoryRootBrowseState,
+      isSubcategoryBrowseState,
     })
 
     return params.toString()
-  }, [assetPage, normalizedSearchTerm, selectedChildFolder, selectedSubfolder, selectedTopFolder, usesSkuFolders])
+  }, [assetPage, normalizedSearchTerm, selectedChildFolder, selectedSubfolder, selectedTopFolder])
 
   const loadFolders = useCallback(async () => {
     try {
