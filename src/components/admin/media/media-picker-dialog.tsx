@@ -123,10 +123,6 @@ function folderMatchesOrDescends(assetFolder: string, targetFolder: string) {
   return assetFolder === targetFolder || assetFolder.startsWith(`${targetFolder}/`)
 }
 
-function folderMatchesExactly(assetFolder: string, targetFolder: string) {
-  return assetFolder === targetFolder
-}
-
 export function MediaPickerDialog({
   open,
   onOpenChange,
@@ -253,6 +249,7 @@ export function MediaPickerDialog({
       }))
       console.debug("[media-picker] response", {
         selectedChildFolder,
+        apiAssetCountReceived: nextAssets.length,
         assetFolders: nextAssets.map((asset) => asset.folder),
       })
       setAssets(nextAssets)
@@ -268,6 +265,14 @@ export function MediaPickerDialog({
       setLoading(false)
     }
   }, [activeFolder, activeSubfolder, assetPage, assetQuery, selectedChildFolder])
+
+  useEffect(() => {
+    console.debug("[media-picker] assets-state", {
+      selectedChildFolder,
+      assetsCountAfterSetAssets: assets.length,
+      assetFolders: assets.map((asset) => asset.folder),
+    })
+  }, [assets, selectedChildFolder])
 
   useEffect(() => {
     if (!open) return
@@ -476,11 +481,9 @@ export function MediaPickerDialog({
   }, [productMeta?.sku])
 
   const filteredAssets = useMemo(() => {
+    if (selectedChildFolder) return imageAssets
     return imageAssets.filter((asset) => {
-      if (selectedChildFolder) {
-        const inFolder = folderMatchesExactly(asset.folder, selectedChildFolder)
-        if (!inFolder) return false
-      } else if (activeFolder === "all") {
+      if (activeFolder === "all") {
         // keep all assets
       } else if (activeSubfolder === "all") {
         const inTopFolder = folderMatchesOrDescends(asset.folder, activeFolder)
@@ -518,6 +521,28 @@ export function MediaPickerDialog({
   const sortedFilteredAssets = useMemo(() => {
     return [...filteredAssets].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
   }, [filteredAssets])
+
+  const renderedAssets = sortedFilteredAssets
+
+  useEffect(() => {
+    console.debug("[media-picker] rendered", {
+      selectedChildFolder,
+      finalRenderedAssetCount: renderedAssets.length,
+    })
+  }, [renderedAssets.length, selectedChildFolder])
+
+  useEffect(() => {
+    console.debug("[media-picker] empty-state", {
+      selectedChildFolder,
+      loading,
+      visibleCurrentLevelFoldersCount: visibleCurrentLevelFolders.length,
+      renderedAssetCount: renderedAssets.length,
+      showEmptyState:
+        !loading &&
+        !(!selectedChildFolder && visibleCurrentLevelFolders.length > 0) &&
+        renderedAssets.length === 0,
+    })
+  }, [loading, renderedAssets.length, selectedChildFolder, visibleCurrentLevelFolders.length])
 
   const selectedAsset = useMemo(() => {
     if (selectedUrls.length === 0) return null
@@ -1211,7 +1236,7 @@ export function MediaPickerDialog({
                         })}
                       </div>
                     </div>
-                  ) : sortedFilteredAssets.length === 0 ? (
+                  ) : renderedAssets.length === 0 ? (
                     <div className="flex h-[520px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
                       <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
                       No images found
@@ -1219,7 +1244,7 @@ export function MediaPickerDialog({
                   ) : (
                     <>
                     <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-                      {sortedFilteredAssets.map((asset) => {
+                      {renderedAssets.map((asset) => {
                         const selected = selectedUrls.includes(asset.url)
                         const labelGroup = getAssetLabelGroup(asset)
                         const displayLabel = assetLabels[labelGroup] || prettifyPickerAssetName(asset)
