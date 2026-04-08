@@ -119,6 +119,10 @@ function resolveProductUploadFolder(baseFolder: string, sku: string) {
   return `${cleanFolder}/${cleanSku}`
 }
 
+function folderMatchesOrDescends(assetFolder: string, targetFolder: string) {
+  return assetFolder === targetFolder || assetFolder.startsWith(`${targetFolder}/`)
+}
+
 export function MediaPickerDialog({
   open,
   onOpenChange,
@@ -197,7 +201,7 @@ export function MediaPickerDialog({
 
     if (activeSubfolder === "all") {
       params.set("folder", activeFolder)
-      params.set("folderMode", normalizedSearchTerm.length > 0 ? "prefix" : "exact")
+      params.set("folderMode", "prefix")
       return params.toString()
     }
 
@@ -459,18 +463,16 @@ export function MediaPickerDialog({
   const filteredAssets = useMemo(() => {
     return imageAssets.filter((asset) => {
       if (selectedChildFolder) {
-        const inFolder = asset.folder === selectedChildFolder || asset.folder.startsWith(`${selectedChildFolder}/`)
+        const inFolder = folderMatchesOrDescends(asset.folder, selectedChildFolder)
         if (!inFolder) return false
       } else if (activeFolder === "all") {
         // keep all assets
       } else if (activeSubfolder === "all") {
-        const inTopFolder =
-          asset.folder === activeFolder ||
-          (normalizedSearchTerm.length > 0 && asset.folder.startsWith(`${activeFolder}/`))
+        const inTopFolder = folderMatchesOrDescends(asset.folder, activeFolder)
         if (!inTopFolder) return false
       } else if (usesSkuFolders) {
         return false
-      } else if (asset.folder !== activeSubfolder && !asset.folder.startsWith(`${activeSubfolder}/`)) {
+      } else if (!folderMatchesOrDescends(asset.folder, activeSubfolder)) {
         return false
       }
 

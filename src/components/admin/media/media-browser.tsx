@@ -62,6 +62,10 @@ function prettifyAssetName(asset: Asset) {
   return prettifyAdminMediaLabel(asset)
 }
 
+function folderMatchesOrDescends(assetFolder: string, targetFolder: string) {
+  return assetFolder === targetFolder || assetFolder.startsWith(`${targetFolder}/`)
+}
+
 export function MediaBrowser() {
   const [folders, setFolders] = useState<Folder[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
@@ -100,21 +104,21 @@ export function MediaBrowser() {
 
     if (selectedChildFolder) {
       params.set("folder", selectedChildFolder)
-      params.set("folderMode", "exact")
+      params.set("folderMode", "prefix")
       return params.toString()
     }
 
     if (selectedSubfolder !== ALL_SUB) {
       if (!usesSkuFolders) {
         params.set("folder", selectedSubfolder)
-        params.set("folderMode", "exact")
+        params.set("folderMode", "prefix")
       }
       return params.toString()
     }
 
     if (selectedTopFolder !== ALL_TOP) {
       params.set("folder", selectedTopFolder)
-      params.set("folderMode", "exact")
+      params.set("folderMode", "prefix")
     }
 
     return params.toString()
@@ -266,7 +270,21 @@ export function MediaBrowser() {
     })
   }, [currentLevelFolders, normalizedSearchTerm, searchableFolders])
 
-  const filteredAssets = assets
+  const filteredAssets = useMemo(() => {
+    return assets.filter((asset) => {
+      if (selectedChildFolder) {
+        return folderMatchesOrDescends(asset.folder, selectedChildFolder)
+      }
+      if (selectedSubfolder !== ALL_SUB) {
+        if (usesSkuFolders) return false
+        return folderMatchesOrDescends(asset.folder, selectedSubfolder)
+      }
+      if (selectedTopFolder !== ALL_TOP) {
+        return folderMatchesOrDescends(asset.folder, selectedTopFolder)
+      }
+      return true
+    })
+  }, [assets, selectedChildFolder, selectedSubfolder, selectedTopFolder, usesSkuFolders])
 
   const renameSelectedFolder = async () => {
     if (!selectedFolderCard) return
