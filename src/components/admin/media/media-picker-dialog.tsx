@@ -9,9 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { buildMediaDropdownTree } from "@/components/admin/media/media-dropdown-options"
-import { listCanonicalFolderPaths, resolveCanonicalFolderPath } from "@/lib/admin/media-folder-paths"
-import { isProductSkuFolderPath, shouldUseProductSkuChildFolders } from "@/lib/media-sku-roots"
+import { isProductSkuFolderPath, looksLikeProductSkuSegment, shouldUseProductSkuChildFolders } from "@/lib/media-sku-roots"
 import { getImageUrl } from "@/lib/storage/url"
 import { normalizeMediaTitleForBaseName, prettifyAdminMediaLabel, stripDuplicateMediaPrefix } from "@/lib/admin/media-labels"
 
@@ -140,6 +138,7 @@ export function MediaPickerDialog({
   const [folders, setFolders] = useState<Folder[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
   const [selectedUrls, setSelectedUrls] = useState<string[]>([])
+  const [didAutoPickFolder, setDidAutoPickFolder] = useState(false)
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [moving, setMoving] = useState(false)
   const [folderMenu, setFolderMenu] = useState<{ folder: string; x: number; y: number } | null>(null)
@@ -163,54 +162,15 @@ export function MediaPickerDialog({
   const dialogContentRef = useRef<HTMLDivElement | null>(null)
   const libraryScrollRef = useRef<HTMLDivElement | null>(null)
   const deleteTimeoutsRef = useRef<Record<string, number>>({})
-  const didInitializeRef = useRef(false)
-  const folderNames = useMemo(() => listCanonicalFolderPaths(folders.map((folder) => folder.name)), [folders])
-  const canonicalFolders = useMemo(() => folderNames.map((name) => ({ name, count: 0 })), [folderNames])
-  const canonicalizeFolderPath = useCallback((value: string) => resolveCanonicalFolderPath(value, folderNames), [folderNames])
-  const resetSelectionState = useCallback((next?: {
-    topFolder?: string
-    subfolder?: string
-    childFolder?: string
-    resetSearch?: boolean
-    resetSelection?: boolean
-    resetPagination?: boolean
-    resetFolderSelection?: boolean
-    uploadFolderValue?: string
-  }) => {
-    const topFolder = next?.topFolder ?? "all"
-    const subfolder = next?.subfolder ?? "all"
-    const childFolder = next?.childFolder ?? ""
-
-    setActiveFolder(topFolder)
-    setActiveSubfolder(subfolder)
-    setSelectedChildFolder(childFolder)
-
-    if (next?.resetSearch ?? true) setSearchTerm("")
-    if (next?.resetSelection ?? true) setSelectedUrls([])
-    if (next?.resetPagination ?? true) setAssetPage(1)
-    if (next?.resetFolderSelection ?? true) {
-      setSelectedFolder(null)
-      setSelectedRightFolders([])
-    }
-    if (typeof next?.uploadFolderValue === "string") {
-      setUploadFolder(next.uploadFolderValue)
-    }
-
-    console.info("[media-picker-dialog] selection state", {
-      topCategoryState: topFolder,
-      subcategoryState: subfolder,
-      selectedChildFolderState: childFolder,
-    })
-  }, [])
 
   const preferredUploadFolder = useMemo(() => {
     const sku = (productMeta?.sku || "").trim()
     const categoryFolderPath = (productMeta?.categoryFolderPath || "").trim()
     const resolved = resolveProductUploadFolder(categoryFolderPath, sku)
-    if (resolved) return canonicalizeFolderPath(resolved)
-    if (categoryFolderPath) return canonicalizeFolderPath(categoryFolderPath)
+    if (resolved) return resolved
+    if (categoryFolderPath) return categoryFolderPath
     return ""
-  }, [canonicalizeFolderPath, productMeta?.categoryFolderPath, productMeta?.sku])
+  }, [productMeta?.categoryFolderPath, productMeta?.sku])
 
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
 
@@ -218,8 +178,6 @@ export function MediaPickerDialog({
     if (activeSubfolder === "all") return false
     return shouldUseProductSkuChildFolders(activeSubfolder)
   }, [activeSubfolder])
-  const isPromotedSubfolderView = activeSubfolder === "all" && Boolean(selectedChildFolder)
-  const isRootBrowseState = activeFolder === "all"
 
   const assetQuery = useMemo(() => {
     const params = new URLSearchParams()
@@ -227,109 +185,32 @@ export function MediaPickerDialog({
     params.set("limit", String(MEDIA_PAGE_SIZE))
     if (normalizedSearchTerm) params.set("search", normalizedSearchTerm)
 
-    let rawSelectedValue = ""
-    let selectedLabel = ""
-    let canonicalFolder = ""
-
-    if (isPromotedSubfolderView) {
-      rawSelectedValue = selectedChildFolder
-      selectedLabel = formatFolderLabel(selectedChildFolder.split("/").pop() || selectedChildFolder)
-      canonicalFolder = canonicalizeFolderPath(selectedChildFolder)
-      console.info("[media-picker-dialog] asset request", {
-        selectedUiLabel: selectedLabel,
-        selectedRawValue: rawSelectedValue,
-        canonicalResolvedValue: canonicalFolder,
-        finalRequestFolder: "",
-        topFolder: activeFolder,
-        selectedSubfolder: activeSubfolder,
-        selectedChildFolder,
-      })
-      return params.toString()
-    }
-
     if (selectedChildFolder) {
-      rawSelectedValue = selectedChildFolder
-      selectedLabel = formatFolderLabel(selectedChildFolder.split("/").pop() || selectedChildFolder)
-      canonicalFolder = canonicalizeFolderPath(selectedChildFolder)
-      params.set("folder", canonicalFolder)
-      params.set("folderMode", "exact")
-      console.info("[media-picker-dialog] asset request", {
-        selectedUiLabel: selectedLabel,
-        selectedRawValue: rawSelectedValue,
-        canonicalResolvedValue: canonicalFolder,
-        finalRequestFolder: canonicalFolder,
-        topFolder: activeFolder,
-        selectedSubfolder: activeSubfolder,
-        selectedChildFolder,
-      })
+      params.set("folder", selectedChildFolder)
+      params.set("folderMode", "prefix")
       return params.toString()
     }
 
     if (activeFolder === "all") {
-      console.info("[media-picker-dialog] asset request", {
-        selectedUiLabel: "All media items",
-        selectedRawValue: "",
-        canonicalResolvedValue: "",
-        finalRequestFolder: "",
-        topFolder: activeFolder,
-        selectedSubfolder: activeSubfolder,
-        selectedChildFolder,
-      })
       return params.toString()
     }
 
     if (activeSubfolder === "all") {
-      rawSelectedValue = activeFolder
-      selectedLabel = formatFolderLabel(activeFolder)
-      canonicalFolder = canonicalizeFolderPath(activeFolder)
-      params.set("folder", canonicalFolder)
+      params.set("folder", activeFolder)
       params.set("folderMode", normalizedSearchTerm.length > 0 ? "prefix" : "exact")
-      console.info("[media-picker-dialog] asset request", {
-        selectedUiLabel: selectedLabel,
-        selectedRawValue: rawSelectedValue,
-        canonicalResolvedValue: canonicalFolder,
-        finalRequestFolder: canonicalFolder,
-        topFolder: activeFolder,
-        selectedSubfolder: activeSubfolder,
-        selectedChildFolder,
-      })
       return params.toString()
     }
 
     if (usesSkuFolders) {
-      rawSelectedValue = activeSubfolder
-      selectedLabel = formatFolderLabel(activeSubfolder.split("/").pop() || activeSubfolder)
-      canonicalFolder = canonicalizeFolderPath(activeSubfolder)
       params.set("folder", "__no_results__")
       params.set("folderMode", "exact")
-      console.info("[media-picker-dialog] asset request", {
-        selectedUiLabel: selectedLabel,
-        selectedRawValue: rawSelectedValue,
-        canonicalResolvedValue: canonicalFolder,
-        finalRequestFolder: "__no_results__",
-        topFolder: activeFolder,
-        selectedSubfolder: activeSubfolder,
-        selectedChildFolder,
-      })
       return params.toString()
     }
 
-    rawSelectedValue = activeSubfolder
-    selectedLabel = formatFolderLabel(activeSubfolder.split("/").pop() || activeSubfolder)
-    canonicalFolder = canonicalizeFolderPath(activeSubfolder)
-    params.set("folder", canonicalFolder)
+    params.set("folder", activeSubfolder)
     params.set("folderMode", "prefix")
-    console.info("[media-picker-dialog] asset request", {
-      selectedUiLabel: selectedLabel,
-      selectedRawValue: rawSelectedValue,
-      canonicalResolvedValue: canonicalFolder,
-      finalRequestFolder: canonicalFolder,
-      topFolder: activeFolder,
-      selectedSubfolder: activeSubfolder,
-      selectedChildFolder,
-    })
     return params.toString()
-  }, [activeFolder, activeSubfolder, assetPage, canonicalizeFolderPath, isPromotedSubfolderView, normalizedSearchTerm, selectedChildFolder, usesSkuFolders])
+  }, [activeFolder, activeSubfolder, assetPage, normalizedSearchTerm, selectedChildFolder, usesSkuFolders])
 
   const loadFolders = useCallback(async () => {
     try {
@@ -355,11 +236,6 @@ export function MediaPickerDialog({
         ...asset,
         url: normalizePickerAssetUrl(asset.url),
       }))
-      console.info("[media-picker-dialog] asset response", {
-        requestUrl: `/api/admin/media?${assetQuery}`,
-        apiAssetCountReceived: nextAssets.length,
-        assetFolders: nextAssets.map((asset: Asset) => asset.folder),
-      })
       setAssets(nextAssets)
       setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
       if (json?.pagination?.page && json.pagination.page !== assetPage) {
@@ -378,18 +254,6 @@ export function MediaPickerDialog({
     if (!open) return
     void loadFolders().finally(() => setFoldersLoaded(true))
   }, [open, loadFolders])
-
-  useEffect(() => {
-    if (!open || !foldersLoaded) return
-    if (didInitializeRef.current) return
-    didInitializeRef.current = true
-    resetSelectionState({
-      topFolder: "all",
-      subfolder: "all",
-      childFolder: "",
-      uploadFolderValue: preferredUploadFolder || "categories",
-    })
-  }, [foldersLoaded, open, preferredUploadFolder, resetSelectionState])
 
   useEffect(() => {
     if (!open) return
@@ -431,18 +295,19 @@ export function MediaPickerDialog({
     if (!open) {
       setSelectedUrls([])
       setTab("library")
-      resetSelectionState({
-        topFolder: "all",
-        subfolder: "all",
-        childFolder: "",
-        uploadFolderValue: "categories",
-      })
+      setActiveFolder("all")
+      setActiveSubfolder("all")
+      setSelectedChildFolder("")
       setSearchTerm("")
+      setDidAutoPickFolder(false)
       setFolderMenu(null)
       setShowColorPicker(false)
+      setSelectedFolder(null)
+      setSelectedRightFolders([])
       setDraggingUrls([])
       setDragTargetFolder(null)
       setHiddenDeletedUrls([])
+      setAssetPage(1)
       setPagination({
         page: 1,
         limit: MEDIA_PAGE_SIZE,
@@ -450,16 +315,21 @@ export function MediaPickerDialog({
         totalPages: 1,
       })
       setFoldersLoaded(false)
-      didInitializeRef.current = false
     }
-  }, [open, resetSelectionState])
-
-  const dropdownTree = useMemo(() => buildMediaDropdownTree(folderNames), [folderNames])
+  }, [open])
 
   const directSubfolders = useMemo(() => {
     if (activeFolder === "all") return [] as string[]
-    return (dropdownTree.subfoldersByTop.get(activeFolder) || []).slice().sort((a, b) => a.localeCompare(b))
-  }, [activeFolder, dropdownTree.subfoldersByTop])
+    const prefix = `${activeFolder}/`
+    return folders
+      .map((folder) => folder.name)
+      .filter((name) => name.startsWith(prefix))
+      .map((name) => name.slice(prefix.length))
+      .filter((rest) => rest.length > 0 && !rest.includes("/"))
+      .filter((leaf) => !looksLikeProductSkuSegment(leaf))
+      .map((leaf) => `${activeFolder}/${leaf}`)
+      .sort((a, b) => a.localeCompare(b))
+  }, [activeFolder, folders])
 
   const currentPath = useMemo(() => {
     if (selectedChildFolder) return selectedChildFolder
@@ -487,40 +357,30 @@ export function MediaPickerDialog({
   }, [hiddenDeletedUrls, uniqueAssets])
 
   const topFolders = useMemo(() => {
-    const normalFolders = dropdownTree.topFolders
-      .map((name) => ({ name, count: 0 }))
-      .sort((a, b) => a.name.localeCompare(b.name))
+    const names = new Set<string>()
+    for (const folder of folders) {
+      const top = folder.name.split("/")[0] || folder.name
+      if (top) names.add(top)
+    }
+    const normalFolders = Array.from(names).map((name) => ({ name, count: 0 })).sort((a, b) => a.name.localeCompare(b.name))
     return [{ name: "all", count: pagination.totalItems }, ...normalFolders]
-  }, [dropdownTree.topFolders, pagination.totalItems])
+  }, [folders, pagination.totalItems])
 
   useEffect(() => {
-    if (activeFolder === "all") return
-    if (dropdownTree.topFolders.includes(activeFolder)) return
-    resetSelectionState({
-      topFolder: "all",
-      subfolder: "all",
-      childFolder: "",
-      uploadFolderValue: preferredUploadFolder || "categories",
-    })
-  }, [activeFolder, dropdownTree.topFolders, preferredUploadFolder, resetSelectionState])
-
-  useEffect(() => {
-    if (activeSubfolder === "all") return
-    if (directSubfolders.includes(activeSubfolder)) return
-    resetSelectionState({
-      topFolder: activeFolder,
-      subfolder: "all",
-      childFolder: "",
-      resetSearch: false,
-      resetSelection: false,
-      resetFolderSelection: false,
-      uploadFolderValue: activeFolder === "all" ? preferredUploadFolder || "categories" : activeFolder,
-    })
-  }, [activeFolder, activeSubfolder, directSubfolders, preferredUploadFolder, resetSelectionState])
+    if (!open) return
+    if (!foldersLoaded) return
+    if (activeFolder !== "all") return
+    if (didAutoPickFolder) return
+    if (topFolders.length <= 1) return
+    setActiveFolder(topFolders[1]?.name || "all")
+    setActiveSubfolder("all")
+    setUploadFolder(topFolders[1]?.name || "categories")
+    setDidAutoPickFolder(true)
+  }, [open, foldersLoaded, activeFolder, didAutoPickFolder, topFolders])
 
   useEffect(() => {
     if (!open || !foldersLoaded) return
-    if (isPromotedSubfolderView) {
+    if (activeFolder === "all" && !selectedChildFolder) {
       setAssets([])
       setPagination({
         page: 1,
@@ -532,36 +392,28 @@ export function MediaPickerDialog({
       return
     }
     void loadAssets()
-  }, [activeFolder, activeSubfolder, foldersLoaded, isPromotedSubfolderView, loadAssets, open, selectedChildFolder])
+  }, [activeFolder, foldersLoaded, loadAssets, open, selectedChildFolder])
 
   const childFolders = useMemo(() => {
     if (activeSubfolder === "all") return [] as string[]
     const prefix = `${activeSubfolder}/`
-    return canonicalFolders
+    return folders
       .map((folder) => folder.name)
       .filter((name) => name.startsWith(prefix))
       .map((name) => name.slice(prefix.length))
       .filter((rest) => rest.length > 0 && !rest.includes("/"))
       .map((leaf) => `${activeSubfolder}/${leaf}`)
       .sort((a, b) => a.localeCompare(b))
-  }, [activeSubfolder, canonicalFolders])
+  }, [activeSubfolder, folders])
 
   const currentLevelFolders = useMemo(() => {
-    if (isPromotedSubfolderView) return childFolders
     if (selectedChildFolder) return [] as string[]
     if (activeSubfolder !== "all") return childFolders
     return directSubfolders
-  }, [activeSubfolder, childFolders, directSubfolders, isPromotedSubfolderView, selectedChildFolder])
+  }, [activeSubfolder, childFolders, directSubfolders, selectedChildFolder])
 
   const searchableFolders = useMemo(() => {
-    const allFolderNames = canonicalFolders.map((folder) => folder.name)
-
-    if (isPromotedSubfolderView) {
-      const prefix = `${selectedChildFolder}/`
-      return allFolderNames
-        .filter((name) => name.startsWith(prefix))
-        .sort((a, b) => a.localeCompare(b))
-    }
+    const allFolderNames = folders.map((folder) => folder.name)
 
     if (selectedChildFolder) {
       const prefix = `${selectedChildFolder}/`
@@ -585,7 +437,7 @@ export function MediaPickerDialog({
     }
 
     return allFolderNames.sort((a, b) => a.localeCompare(b))
-  }, [activeFolder, activeSubfolder, canonicalFolders, isPromotedSubfolderView, selectedChildFolder])
+  }, [activeFolder, activeSubfolder, folders, selectedChildFolder])
 
   const visibleCurrentLevelFolders = useMemo(() => {
     if (!normalizedSearchTerm) return currentLevelFolders
@@ -594,8 +446,6 @@ export function MediaPickerDialog({
       return folder.toLowerCase().includes(normalizedSearchTerm) || folderLeaf.toLowerCase().includes(normalizedSearchTerm)
     })
   }, [currentLevelFolders, normalizedSearchTerm, searchableFolders])
-
-  const isTopLevelFolderView = activeFolder !== "all" && activeSubfolder === "all" && !selectedChildFolder
 
   useEffect(() => {
     setAssetPage(1)
@@ -609,7 +459,7 @@ export function MediaPickerDialog({
   const filteredAssets = useMemo(() => {
     return imageAssets.filter((asset) => {
       if (selectedChildFolder) {
-        const inFolder = asset.folder === selectedChildFolder
+        const inFolder = asset.folder === selectedChildFolder || asset.folder.startsWith(`${selectedChildFolder}/`)
         if (!inFolder) return false
       } else if (activeFolder === "all") {
         // keep all assets
@@ -641,23 +491,6 @@ export function MediaPickerDialog({
   const sortedFilteredAssets = useMemo(() => {
     return [...filteredAssets].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
   }, [filteredAssets])
-
-  useEffect(() => {
-    console.info("[media-picker-dialog] rendered assets", {
-      topFolder: activeFolder,
-      selectedSubfolder: activeSubfolder,
-      selectedChildFolder,
-      returnedAssetCount: assets.length,
-      renderedFolderCount: visibleCurrentLevelFolders.length,
-      renderedAssetCount: sortedFilteredAssets.length,
-      emptyStateInputs: {
-        loading,
-        renderedFolderCount: visibleCurrentLevelFolders.length,
-        renderedAssetCount: sortedFilteredAssets.length,
-        selectedChildFolder,
-      },
-    })
-  }, [activeFolder, activeSubfolder, assets.length, loading, selectedChildFolder, sortedFilteredAssets.length, visibleCurrentLevelFolders.length])
 
   const selectedAsset = useMemo(() => {
     if (selectedUrls.length === 0) return null
@@ -825,9 +658,7 @@ export function MediaPickerDialog({
     if (files.length === 0) return
     setUploading(true)
     try {
-      const targetUploadFolder = canonicalizeFolderPath(
-        resolveProductUploadFolder(uploadFolder || preferredUploadFolder || "categories", productMeta?.sku || "")
-      )
+      const targetUploadFolder = resolveProductUploadFolder(uploadFolder || preferredUploadFolder || "categories", productMeta?.sku || "")
 
       const skuFolder = (productMeta?.sku || "").trim()
       if (skuFolder && targetUploadFolder.endsWith(`/${skuFolder}`)) {
@@ -868,7 +699,7 @@ export function MediaPickerDialog({
       setSelectedFolder(null)
       setSelectedRightFolders([])
 
-      const focusFolder = canonicalizeFolderPath(uploadedFolders[0] || targetUploadFolder)
+      const focusFolder = uploadedFolders[0] || targetUploadFolder
       const focusTop = focusFolder.split("/")[0] || "all"
       setActiveFolder(focusTop)
       if (isProductSkuFolderPath(focusFolder)) {
@@ -923,7 +754,7 @@ export function MediaPickerDialog({
       if (!res.ok || !json?.folder) {
         throw new Error(json?.error || "Failed to create folder")
       }
-      const createdFolder = canonicalizeFolderPath(json.folder)
+      const createdFolder = json.folder
       toast.success("Folder created")
       setSelectedFolder(createdFolder)
       setSelectedRightFolders([createdFolder])
@@ -954,7 +785,7 @@ export function MediaPickerDialog({
       if (!res.ok || !json?.folder) {
         throw new Error(json?.error || "Failed to rename folder")
       }
-      const nextFolder = canonicalizeFolderPath(json.folder)
+      const nextFolder = json.folder
       toast.success("Folder renamed")
       if (activeSubfolder === folderPath) setActiveSubfolder(nextFolder)
       if (uploadFolder === folderPath) setUploadFolder(nextFolder)
@@ -1018,10 +849,9 @@ export function MediaPickerDialog({
       if (!res.ok || !json?.folder) {
         throw new Error(json?.error || "Failed to clone folder")
       }
-      const clonedFolder = canonicalizeFolderPath(json.folder)
-      toast.success(`Klonlandı: ${clonedFolder.split("/").pop() || clonedFolder}`)
-      setSelectedFolder(clonedFolder)
-      setSelectedRightFolders([clonedFolder])
+      toast.success(`Klonlandı: ${json.folder.split("/").pop() || json.folder}`)
+      setSelectedFolder(json.folder)
+      setSelectedRightFolders([json.folder])
       await Promise.all([loadFolders(), loadAssets()])
       requestAnimationFrame(() => {
         if (libraryScrollRef.current) {
@@ -1037,12 +867,11 @@ export function MediaPickerDialog({
   }
 
   const moveAssetsToFolder = async (urls: string[], nextFolder: string) => {
-    const canonicalNextFolder = canonicalizeFolderPath(nextFolder)
     if (urls.length === 0) {
       toast.error("Select image first")
       return
     }
-    if (!canonicalNextFolder) {
+    if (!nextFolder) {
       toast.error("Target folder is required")
       return
     }
@@ -1052,7 +881,7 @@ export function MediaPickerDialog({
         const res = await fetch("/api/admin/media", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url, targetFolder: canonicalNextFolder }),
+          body: JSON.stringify({ url, targetFolder: nextFolder }),
         })
         const json = await res.json().catch(() => null as null | { error?: string })
         if (!res.ok) {
@@ -1179,24 +1008,12 @@ export function MediaPickerDialog({
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label>Upload Folder</Label>
-                <Select
-                  value={uploadFolder}
-                  onValueChange={(value) => {
-                    const canonicalValue = canonicalizeFolderPath(value)
-                    console.info("[media-picker-dialog] upload folder selected", {
-                      selectedUiLabel: value.split("/").map(formatFolderLabel).join(" / "),
-                      selectedRawValue: value,
-                      canonicalResolvedValue: canonicalValue,
-                      finalRequestFolder: canonicalValue,
-                    })
-                    setUploadFolder(canonicalValue)
-                  }}
-                >
+                <Select value={uploadFolder} onValueChange={setUploadFolder}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {canonicalFolders.map((folder) => (
+                    {folders.map((folder) => (
                       <SelectItem key={folder.name} value={folder.name}>
                         {folder.name.split("/").map(formatFolderLabel).join(" / ")}
                       </SelectItem>
@@ -1230,26 +1047,20 @@ export function MediaPickerDialog({
                         <Select
                           value={activeFolder}
                           onValueChange={(value) => {
-                            const canonicalValue = value === "all" ? "all" : canonicalizeFolderPath(value)
-                            console.info("[media-picker-dialog] top folder selected", {
-                              selectedUiLabel: value === "all" ? "All categories" : formatFolderLabel(value),
-                              selectedRawValue: value,
-                              canonicalResolvedValue: canonicalValue,
-                            })
-                            const nextFolder = value === "all" ? preferredUploadFolder || "categories" : canonicalValue
-                            resetSelectionState({
-                              topFolder: canonicalValue,
-                              subfolder: "all",
-                              childFolder: "",
-                              uploadFolderValue: nextFolder,
-                            })
+                            setActiveFolder(value)
+                            setActiveSubfolder("all")
+                            setSelectedChildFolder("")
+                            setSelectedFolder(null)
+                            setSelectedRightFolders([])
+                            const nextFolder = value === "all" ? preferredUploadFolder || "categories" : value
+                            setUploadFolder(nextFolder)
                           }}
                         >
                           <SelectTrigger className="h-12 border-[#cfd9e4] bg-white text-[15px]">
-                            <SelectValue placeholder="All categories" />
+                            <SelectValue placeholder="All media items" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="all">All categories</SelectItem>
+                            <SelectItem value="all">All media items</SelectItem>
                             {topFolders
                               .filter((folder) => folder.name !== "all")
                               .map((folder) => (
@@ -1263,21 +1074,12 @@ export function MediaPickerDialog({
                         <Select
                           value={activeSubfolder}
                           onValueChange={(value) => {
-                            const canonicalValue = value === "all" ? "all" : canonicalizeFolderPath(value)
-                            console.info("[media-picker-dialog] subfolder selected", {
-                              selectedUiLabel: value === "all" ? "All subcategories" : formatFolderLabel(value.split("/").pop() || value),
-                              selectedRawValue: value,
-                              canonicalResolvedValue: canonicalValue,
-                            })
-                            const nextFolder = value === "all"
-                              ? (activeFolder === "all" ? preferredUploadFolder || "categories" : activeFolder)
-                              : canonicalValue
-                            resetSelectionState({
-                              topFolder: activeFolder,
-                              subfolder: canonicalValue,
-                              childFolder: "",
-                              uploadFolderValue: nextFolder,
-                            })
+                            setActiveSubfolder(value)
+                            setSelectedChildFolder("")
+                            setSelectedFolder(null)
+                            setSelectedRightFolders([])
+                            const nextFolder = value === "all" ? (activeFolder === "all" ? preferredUploadFolder || "categories" : activeFolder) : value
+                            setUploadFolder(nextFolder)
                           }}
                           disabled={activeFolder === "all"}
                         >
@@ -1338,7 +1140,7 @@ export function MediaPickerDialog({
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Loading media...
                     </div>
-                  ) : !isRootBrowseState && (isPromotedSubfolderView || !selectedChildFolder) && visibleCurrentLevelFolders.length > 0 ? (
+                  ) : !selectedChildFolder && visibleCurrentLevelFolders.length > 0 ? (
                     <div className="space-y-6">
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                         {visibleCurrentLevelFolders.map((folder) => {
@@ -1352,82 +1154,21 @@ export function MediaPickerDialog({
                               onClick={(event) => {
                                 const withMultiSelect = event.metaKey || event.ctrlKey
                                 toggleRightFolderSelection(folder, withMultiSelect)
-                                resetSelectionState({
-                                  topFolder: activeFolder,
-                                  subfolder: activeSubfolder,
-                                  childFolder: "",
-                                  resetSearch: false,
-                                  resetSelection: false,
-                                  resetFolderSelection: false,
-                                  resetPagination: false,
-                                })
+                                setSelectedChildFolder("")
                               }}
                               onDoubleClick={() => {
-                                const canonicalValue = canonicalizeFolderPath(folder)
-                                console.info("[media-picker-dialog] child folder selected", {
-                                  topFolder: activeFolder,
-                                  selectedSubfolder: activeSubfolder,
-                                  selectedChildFolder,
-                                  selectedUiLabel: formatFolderLabel(folder.split("/").pop() || folder),
-                                  selectedRawValue: folder,
-                                  canonicalResolvedValue: canonicalValue,
-                                  finalRequestFolder: canonicalValue,
-                                })
                                 setSelectedFolder(folder)
                                 setSelectedRightFolders([folder])
-                                if (isTopLevelFolderView) {
-                                  resetSelectionState({
-                                    topFolder: activeFolder,
-                                    subfolder: canonicalValue,
-                                    childFolder: "",
-                                    resetSearch: false,
-                                    resetSelection: false,
-                                    resetFolderSelection: false,
-                                    resetPagination: true,
-                                    uploadFolderValue: canonicalValue,
-                                  })
-                                  return
-                                }
-                                resetSelectionState({
-                                  topFolder: activeFolder,
-                                  subfolder: activeSubfolder,
-                                  childFolder: canonicalValue,
-                                  resetSearch: false,
-                                  resetSelection: false,
-                                  resetFolderSelection: false,
-                                  resetPagination: true,
-                                  uploadFolderValue: canonicalValue,
-                                })
+                                setSelectedChildFolder(folder)
+                                setUploadFolder(folder)
                               }}
                               onKeyDown={(event) => {
                                 if (event.key === "Enter" || event.key === " ") {
                                   event.preventDefault()
-                                  const canonicalValue = canonicalizeFolderPath(folder)
                                   setSelectedFolder(folder)
                                   setSelectedRightFolders([folder])
-                                  if (isTopLevelFolderView) {
-                                    resetSelectionState({
-                                      topFolder: activeFolder,
-                                      subfolder: canonicalValue,
-                                      childFolder: "",
-                                      resetSearch: false,
-                                      resetSelection: false,
-                                      resetFolderSelection: false,
-                                      resetPagination: true,
-                                      uploadFolderValue: canonicalValue,
-                                    })
-                                    return
-                                  }
-                                  resetSelectionState({
-                                    topFolder: activeFolder,
-                                    subfolder: activeSubfolder,
-                                    childFolder: canonicalValue,
-                                    resetSearch: false,
-                                    resetSelection: false,
-                                    resetFolderSelection: false,
-                                    resetPagination: true,
-                                    uploadFolderValue: canonicalValue,
-                                  })
+                                  setSelectedChildFolder(folder)
+                                  setUploadFolder(folder)
                                 }
                               }}
                               className={`rounded-[28px] border bg-white p-6 text-left shadow-[0_8px_24px_rgba(15,23,42,0.05)] transition ${selected ? "border-teal-500 ring-2 ring-teal-200" : "border-[#dce3ed]"}`}
@@ -1443,12 +1184,12 @@ export function MediaPickerDialog({
                         })}
                       </div>
                     </div>
-                  ) : sortedFilteredAssets.length === 0 && (isRootBrowseState || visibleCurrentLevelFolders.length === 0) ? (
+                  ) : sortedFilteredAssets.length === 0 ? (
                     <div className="flex h-[520px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
                       <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
                       No images found
                     </div>
-                  ) : isRootBrowseState || visibleCurrentLevelFolders.length === 0 ? (
+                  ) : (
                     <>
                     <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                       {sortedFilteredAssets.map((asset) => {
@@ -1512,7 +1253,7 @@ export function MediaPickerDialog({
                       </div>
                     </div>
                     </>
-                  ) : null}
+                  )}
                 </div>
               </div>
             </div>

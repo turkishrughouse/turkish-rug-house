@@ -6,11 +6,9 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
-import { buildMediaDropdownTree } from "@/components/admin/media/media-dropdown-options"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { listCanonicalFolderPaths, resolveCanonicalFolderPath } from "@/lib/admin/media-folder-paths"
 import { isManagedUploadUrl } from "@/lib/storage/url"
 import { prettifyAdminMediaLabel } from "@/lib/admin/media-labels"
 import { shouldUseProductSkuChildFolders } from "@/lib/media-sku-roots"
@@ -23,7 +21,6 @@ type Asset = {
   folder: string
   source: string
   usedIn: string
-  createdAt?: number
 }
 
 type PaginationState = {
@@ -88,46 +85,12 @@ export function MediaBrowser() {
   })
   const [foldersLoaded, setFoldersLoaded] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const didInitializeRef = useRef(false)
 
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
-  const folderNames = useMemo(() => listCanonicalFolderPaths(folders.map((folder) => folder.name)), [folders])
-  const canonicalFolders = useMemo(() => folderNames.map((name) => ({ name, count: 0 })), [folderNames])
-  const canonicalizeFolderPath = useCallback((value: string) => resolveCanonicalFolderPath(value, folderNames), [folderNames])
-  const resetSelectionState = useCallback((next?: {
-    topFolder?: string
-    subfolder?: string
-    childFolder?: string
-    resetSearch?: boolean
-    resetSelection?: boolean
-    resetPagination?: boolean
-    resetFolderCard?: boolean
-  }) => {
-    const topFolder = next?.topFolder ?? ALL_TOP
-    const subfolder = next?.subfolder ?? ALL_SUB
-    const childFolder = next?.childFolder ?? ""
-
-    setSelectedTopFolder(topFolder)
-    setSelectedSubfolder(subfolder)
-    setSelectedChildFolder(childFolder)
-
-    if (next?.resetSearch ?? true) setSearchTerm("")
-    if (next?.resetFolderCard ?? true) setSelectedFolderCard("")
-    if (next?.resetSelection ?? true) setSelectedUrls([])
-    if (next?.resetPagination ?? true) setAssetPage(1)
-
-    console.info("[admin-media-browser] selection state", {
-      topCategoryState: topFolder,
-      subcategoryState: subfolder,
-      selectedChildFolderState: childFolder,
-    })
-  }, [])
   const usesSkuFolders = useMemo(() => {
     if (selectedSubfolder === ALL_SUB) return false
     return shouldUseProductSkuChildFolders(selectedSubfolder)
   }, [selectedSubfolder])
-  const isPromotedSubfolderView = selectedSubfolder === ALL_SUB && Boolean(selectedChildFolder)
-  const isRootBrowseState = selectedTopFolder === ALL_TOP
 
   const assetQuery = useMemo(() => {
     const params = new URLSearchParams()
@@ -135,84 +98,27 @@ export function MediaBrowser() {
     params.set("limit", String(MEDIA_PAGE_SIZE))
     if (normalizedSearchTerm) params.set("search", normalizedSearchTerm)
 
-    let rawSelectedValue = ""
-    let selectedLabel = ""
-    let canonicalFolder = ""
-
-    if (isPromotedSubfolderView) {
-      rawSelectedValue = selectedChildFolder
-      selectedLabel = folderLabel(selectedChildFolder.split("/").pop() || selectedChildFolder)
-      canonicalFolder = canonicalizeFolderPath(selectedChildFolder)
-      console.info("[admin-media-browser] asset request", {
-        selectedUiLabel: selectedLabel,
-        selectedRawValue: rawSelectedValue,
-        canonicalResolvedValue: canonicalFolder,
-        finalRequestFolder: "",
-        topFolder: selectedTopFolder,
-        selectedSubfolder,
-        selectedChildFolder,
-      })
-      return params.toString()
-    }
-
     if (selectedChildFolder) {
-      rawSelectedValue = selectedChildFolder
-      selectedLabel = folderLabel(selectedChildFolder.split("/").pop() || selectedChildFolder)
-      canonicalFolder = canonicalizeFolderPath(selectedChildFolder)
-      params.set("folder", canonicalFolder)
+      params.set("folder", selectedChildFolder)
       params.set("folderMode", "exact")
-      console.info("[admin-media-browser] asset request", {
-        selectedUiLabel: selectedLabel,
-        selectedRawValue: rawSelectedValue,
-        canonicalResolvedValue: canonicalFolder,
-        finalRequestFolder: canonicalFolder,
-        topFolder: selectedTopFolder,
-        selectedSubfolder,
-        selectedChildFolder,
-      })
       return params.toString()
     }
 
     if (selectedSubfolder !== ALL_SUB) {
-      rawSelectedValue = selectedSubfolder
-      selectedLabel = folderLabel(selectedSubfolder.split("/").pop() || selectedSubfolder)
-      canonicalFolder = canonicalizeFolderPath(selectedSubfolder)
       if (!usesSkuFolders) {
-        params.set("folder", canonicalFolder)
+        params.set("folder", selectedSubfolder)
         params.set("folderMode", "exact")
       }
-      console.info("[admin-media-browser] asset request", {
-        selectedUiLabel: selectedLabel,
-        selectedRawValue: rawSelectedValue,
-        canonicalResolvedValue: canonicalFolder,
-        finalRequestFolder: params.get("folder") || "",
-        topFolder: selectedTopFolder,
-        selectedSubfolder,
-        selectedChildFolder,
-      })
       return params.toString()
     }
 
     if (selectedTopFolder !== ALL_TOP) {
-      rawSelectedValue = selectedTopFolder
-      selectedLabel = folderLabel(selectedTopFolder)
-      canonicalFolder = canonicalizeFolderPath(selectedTopFolder)
-      params.set("folder", canonicalFolder)
+      params.set("folder", selectedTopFolder)
       params.set("folderMode", "exact")
     }
 
-    console.info("[admin-media-browser] asset request", {
-      selectedUiLabel: selectedLabel,
-      selectedRawValue: rawSelectedValue,
-      canonicalResolvedValue: canonicalFolder,
-      finalRequestFolder: params.get("folder") || "",
-      topFolder: selectedTopFolder,
-      selectedSubfolder,
-      selectedChildFolder,
-    })
-
     return params.toString()
-  }, [assetPage, canonicalizeFolderPath, isPromotedSubfolderView, normalizedSearchTerm, selectedChildFolder, selectedSubfolder, selectedTopFolder, usesSkuFolders])
+  }, [assetPage, normalizedSearchTerm, selectedChildFolder, selectedSubfolder, selectedTopFolder, usesSkuFolders])
 
   const loadFolders = useCallback(async () => {
     try {
@@ -229,32 +135,21 @@ export function MediaBrowser() {
     void loadFolders().finally(() => setFoldersLoaded(true))
   }, [loadFolders])
 
+  const topFolders = useMemo(() => {
+    const names = new Set<string>()
+    for (const folder of folders) {
+      const top = folder.name.split("/")[0] || folder.name
+      if (top) names.add(top)
+    }
+    return Array.from(names).sort((a, b) => folderLabel(a).localeCompare(folderLabel(b)))
+  }, [folders])
+
   useEffect(() => {
     if (!foldersLoaded) return
-    if (didInitializeRef.current) return
-    didInitializeRef.current = true
-    resetSelectionState({
-      topFolder: ALL_TOP,
-      subfolder: ALL_SUB,
-      childFolder: "",
-    })
-  }, [foldersLoaded, resetSelectionState])
-
-  const dropdownTree = useMemo(() => buildMediaDropdownTree(folderNames), [folderNames])
-  const topFolders = useMemo(
-    () => [...dropdownTree.topFolders].sort((a, b) => folderLabel(a).localeCompare(folderLabel(b))),
-    [dropdownTree.topFolders]
-  )
-
-  useEffect(() => {
-    if (selectedTopFolder === ALL_TOP) return
-    if (topFolders.includes(selectedTopFolder)) return
-    resetSelectionState({
-      topFolder: ALL_TOP,
-      subfolder: ALL_SUB,
-      childFolder: "",
-    })
-  }, [resetSelectionState, selectedTopFolder, topFolders])
+    if (selectedTopFolder !== ALL_TOP) return
+    if (topFolders.length === 0) return
+    setSelectedTopFolder(topFolders[0] || ALL_TOP)
+  }, [foldersLoaded, selectedTopFolder, topFolders])
 
   const loadAssets = useCallback(async () => {
     setLoading(true)
@@ -262,13 +157,7 @@ export function MediaBrowser() {
       const res = await fetch(`/api/admin/media?${assetQuery}`, { cache: "no-store" })
       const json = await res.json().catch(() => null as null | { error?: string; assets?: Asset[]; pagination?: PaginationState })
       if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
-      const nextAssets = json?.assets || []
-      console.info("[admin-media-browser] asset response", {
-        requestUrl: `/api/admin/media?${assetQuery}`,
-        apiAssetCountReceived: nextAssets.length,
-        assetFolders: nextAssets.map((asset: Asset) => asset.folder),
-      })
-      setAssets(nextAssets)
+      setAssets(json?.assets || [])
       setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
       if (json?.pagination?.page && json.pagination.page !== assetPage) {
         setAssetPage(json.pagination.page)
@@ -282,68 +171,68 @@ export function MediaBrowser() {
 
   useEffect(() => {
     if (!foldersLoaded) return
-    if (isPromotedSubfolderView) {
+    if (selectedTopFolder === ALL_TOP && !selectedChildFolder) {
       setAssets([])
       setPagination({ page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
       setLoading(false)
       return
     }
     void loadAssets()
-  }, [foldersLoaded, isPromotedSubfolderView, loadAssets, selectedChildFolder, selectedSubfolder, selectedTopFolder])
+  }, [foldersLoaded, loadAssets, selectedChildFolder, selectedTopFolder])
 
   const subfolders = useMemo(() => {
     if (selectedTopFolder === ALL_TOP) return [] as string[]
-    return (dropdownTree.subfoldersByTop.get(selectedTopFolder) || []).slice()
+    const prefix = `${selectedTopFolder}/`
+    return folders
+      .map((folder) => folder.name)
+      .filter((name) => name.startsWith(prefix))
+      .map((name) => name.slice(prefix.length))
+      .filter((rest) => rest.length > 0 && !rest.includes("/"))
+      .map((leaf) => `${selectedTopFolder}/${leaf}`)
       .sort((a, b) => folderLabel(a).localeCompare(folderLabel(b)))
-  }, [dropdownTree.subfoldersByTop, selectedTopFolder])
+  }, [folders, selectedTopFolder])
 
   useEffect(() => {
-    if (selectedSubfolder === ALL_SUB) return
-    if (subfolders.includes(selectedSubfolder)) return
-    resetSelectionState({
-      topFolder: selectedTopFolder,
-      subfolder: ALL_SUB,
-      childFolder: "",
-      resetSearch: false,
-      resetSelection: false,
-      resetFolderCard: false,
-    })
-  }, [resetSelectionState, selectedSubfolder, selectedTopFolder, subfolders])
+    setSelectedSubfolder(ALL_SUB)
+    setSelectedChildFolder("")
+    setSearchTerm("")
+    setSelectedFolderCard("")
+    setSelectedUrls([])
+  }, [selectedTopFolder])
+
+  useEffect(() => {
+    setSelectedChildFolder("")
+    setSearchTerm("")
+    setSelectedFolderCard("")
+    setSelectedUrls([])
+  }, [selectedSubfolder])
 
   const activeFolder = selectedChildFolder || (selectedSubfolder !== ALL_SUB ? selectedSubfolder : selectedTopFolder !== ALL_TOP ? selectedTopFolder : "")
 
   const childFolders = useMemo(() => {
     if (selectedSubfolder === ALL_SUB) return [] as string[]
     const prefix = `${selectedSubfolder}/`
-    return canonicalFolders
+    return folders
       .map((folder) => folder.name)
       .filter((name) => name.startsWith(prefix))
       .map((name) => name.slice(prefix.length))
       .filter((rest) => rest.length > 0 && !rest.includes("/"))
       .map((leaf) => `${selectedSubfolder}/${leaf}`)
       .sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
-  }, [canonicalFolders, selectedSubfolder])
+  }, [folders, selectedSubfolder])
 
   useEffect(() => {
     setAssetPage(1)
   }, [searchTerm, selectedTopFolder, selectedSubfolder, selectedChildFolder])
 
   const currentLevelFolders = useMemo(() => {
-    if (isPromotedSubfolderView) return childFolders
     if (selectedChildFolder) return [] as string[]
     if (selectedSubfolder !== ALL_SUB) return childFolders
     return subfolders
-  }, [childFolders, isPromotedSubfolderView, selectedChildFolder, selectedSubfolder, subfolders])
+  }, [childFolders, selectedChildFolder, selectedSubfolder, subfolders])
 
   const searchableFolders = useMemo(() => {
-    const allFolderNames = canonicalFolders.map((folder) => folder.name)
-
-    if (isPromotedSubfolderView) {
-      const prefix = `${selectedChildFolder}/`
-      return allFolderNames
-        .filter((name) => name.startsWith(prefix))
-        .sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
-    }
+    const allFolderNames = folders.map((folder) => folder.name)
 
     if (selectedChildFolder) {
       const prefix = `${selectedChildFolder}/`
@@ -367,7 +256,7 @@ export function MediaBrowser() {
     }
 
     return allFolderNames.sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
-  }, [canonicalFolders, isPromotedSubfolderView, selectedChildFolder, selectedSubfolder, selectedTopFolder])
+  }, [folders, selectedChildFolder, selectedSubfolder, selectedTopFolder])
 
   const visibleCurrentLevelFolders = useMemo(() => {
     if (!normalizedSearchTerm) return currentLevelFolders
@@ -377,29 +266,7 @@ export function MediaBrowser() {
     })
   }, [currentLevelFolders, normalizedSearchTerm, searchableFolders])
 
-  const isTopLevelFolderView = selectedTopFolder !== ALL_TOP && selectedSubfolder === ALL_SUB && !selectedChildFolder
-
   const filteredAssets = assets
-  const sortedFilteredAssets = useMemo(
-    () => [...filteredAssets].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0) || a.name.localeCompare(b.name)),
-    [filteredAssets]
-  )
-
-  useEffect(() => {
-    console.info("[admin-media-browser] rendered assets", {
-      topFolder: selectedTopFolder,
-      selectedSubfolder,
-      selectedChildFolder,
-      returnedAssetCount: assets.length,
-      renderedFolderCount: visibleCurrentLevelFolders.length,
-      renderedAssetCount: sortedFilteredAssets.length,
-      emptyStateInputs: {
-        loading,
-        renderedFolderCount: visibleCurrentLevelFolders.length,
-        filteredAssetCount: sortedFilteredAssets.length,
-      },
-    })
-  }, [assets.length, loading, selectedChildFolder, selectedSubfolder, selectedTopFolder, sortedFilteredAssets.length, visibleCurrentLevelFolders.length])
 
   const renameSelectedFolder = async () => {
     if (!selectedFolderCard) return
@@ -466,7 +333,7 @@ export function MediaBrowser() {
   }
 
   const handleUpload = async (files: FileList | File[]) => {
-    const targetFolder = canonicalizeFolderPath(selectedChildFolder || selectedSubfolder)
+    const targetFolder = selectedChildFolder || selectedSubfolder
     if (targetFolder === ALL_SUB || !targetFolder) {
       toast.error("Once an alt kategori secin")
       return
@@ -498,7 +365,7 @@ export function MediaBrowser() {
   }
 
   const moveSelectedToSubfolder = async () => {
-    const targetFolder = canonicalizeFolderPath(selectedChildFolder || selectedSubfolder)
+    const targetFolder = selectedChildFolder || selectedSubfolder
     if (targetFolder === ALL_SUB || !targetFolder) {
       toast.error("Once bir alt kategori secin")
       return
@@ -572,27 +439,12 @@ export function MediaBrowser() {
           <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-center xl:justify-start">
             <div className="flex flex-1 flex-col gap-3 lg:flex-row lg:items-center">
               <div className="grid gap-3 sm:grid-cols-[260px_260px_minmax(220px,1fr)_auto]">
-                <Select
-                  value={selectedTopFolder}
-                  onValueChange={(value) => {
-                    const canonicalValue = value === ALL_TOP ? ALL_TOP : canonicalizeFolderPath(value)
-                    console.info("[admin-media-browser] top folder selected", {
-                      selectedUiLabel: value === ALL_TOP ? "All categories" : folderLabel(value),
-                      selectedRawValue: value,
-                      canonicalResolvedValue: canonicalValue,
-                    })
-                    resetSelectionState({
-                      topFolder: canonicalValue,
-                      subfolder: ALL_SUB,
-                      childFolder: "",
-                    })
-                  }}
-                >
+                <Select value={selectedTopFolder} onValueChange={setSelectedTopFolder}>
                   <SelectTrigger className="h-12 border-[#cfd9e4] bg-white text-[15px]">
                     <SelectValue placeholder="Ana sayfalar" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={ALL_TOP}>All categories</SelectItem>
+                    <SelectItem value={ALL_TOP}>All media items</SelectItem>
                     {topFolders.map((folder) => (
                       <SelectItem key={folder} value={folder}>
                         {folderLabel(folder)}
@@ -604,25 +456,8 @@ export function MediaBrowser() {
                   <Select
                     value={selectedSubfolder}
                     onValueChange={(value) => {
-                      const canonicalValue = value === ALL_SUB ? ALL_SUB : canonicalizeFolderPath(value)
-                      console.info("[admin-media-browser] subfolder selected", {
-                        selectedUiLabel: value === ALL_SUB ? "All subcategories" : folderLabel(value.split("/").pop() || value),
-                        selectedRawValue: value,
-                        canonicalResolvedValue: canonicalValue,
-                      })
-                      if (canonicalValue === ALL_SUB) {
-                        resetSelectionState({
-                          topFolder: selectedTopFolder,
-                          subfolder: ALL_SUB,
-                          childFolder: "",
-                        })
-                        return
-                      }
-                      resetSelectionState({
-                        topFolder: selectedTopFolder,
-                        subfolder: canonicalValue,
-                        childFolder: "",
-                      })
+                      setSelectedSubfolder(value)
+                      setSelectedChildFolder("")
                     }}
                     disabled={selectedTopFolder === ALL_TOP}
                   >
@@ -678,27 +513,13 @@ export function MediaBrowser() {
               <p className="text-sm text-slate-600">
                 {folderLabel(selectedChildFolder.split("/").pop() || selectedChildFolder)}
               </p>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-9 px-3"
-                onClick={() =>
-                  resetSelectionState({
-                    topFolder: selectedTopFolder,
-                    subfolder: selectedSubfolder,
-                    childFolder: "",
-                    resetSearch: false,
-                    resetSelection: false,
-                    resetFolderCard: false,
-                  })
-                }
-              >
+              <Button type="button" variant="outline" className="h-9 px-3" onClick={() => setSelectedChildFolder("")}>
                 Geri
               </Button>
             </div>
           ) : null}
 
-          {!isRootBrowseState && (isPromotedSubfolderView || !selectedChildFolder) && visibleCurrentLevelFolders.length > 0 ? (
+          {!selectedChildFolder && visibleCurrentLevelFolders.length > 0 ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
               {visibleCurrentLevelFolders.map((folderPath) => (
                 <button
@@ -706,37 +527,8 @@ export function MediaBrowser() {
                   type="button"
                   onClick={() => setSelectedFolderCard(folderPath)}
                   onDoubleClick={() => {
-                    const canonicalValue = canonicalizeFolderPath(folderPath)
-                    console.info("[admin-media-browser] child folder selected", {
-                      topFolder: selectedTopFolder,
-                      selectedSubfolder,
-                      selectedChildFolder,
-                      selectedUiLabel: folderLabel(folderPath.split("/").pop() || folderPath),
-                      selectedRawValue: folderPath,
-                      canonicalResolvedValue: canonicalValue,
-                    })
                     setSelectedFolderCard(folderPath)
-                    if (isTopLevelFolderView) {
-                      resetSelectionState({
-                        topFolder: selectedTopFolder,
-                        subfolder: canonicalValue,
-                        childFolder: "",
-                        resetSearch: false,
-                        resetSelection: false,
-                        resetFolderCard: false,
-                        resetPagination: true,
-                      })
-                      return
-                    }
-                    resetSelectionState({
-                      topFolder: selectedTopFolder,
-                      subfolder: selectedSubfolder,
-                      childFolder: canonicalValue,
-                      resetSearch: false,
-                      resetSelection: false,
-                      resetFolderCard: false,
-                      resetPagination: true,
-                    })
+                    setSelectedChildFolder(folderPath)
                   }}
                   onContextMenu={(event) => {
                     event.preventDefault()
@@ -771,15 +563,15 @@ export function MediaBrowser() {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Loading media...
             </div>
-          ) : sortedFilteredAssets.length === 0 && (isRootBrowseState || visibleCurrentLevelFolders.length === 0) ? (
+          ) : filteredAssets.length === 0 && visibleCurrentLevelFolders.length === 0 ? (
             <div className="flex h-[420px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
               <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
               No images found
             </div>
-          ) : isRootBrowseState || visibleCurrentLevelFolders.length === 0 ? (
+          ) : visibleCurrentLevelFolders.length === 0 ? (
             <>
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-              {sortedFilteredAssets.map((asset) => {
+              {filteredAssets.map((asset) => {
                 const selected = selectedUrls.includes(asset.url)
                 return (
                   <div
