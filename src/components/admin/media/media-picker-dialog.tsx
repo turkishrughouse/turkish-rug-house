@@ -497,7 +497,7 @@ export function MediaPickerDialog({
       return
     }
     void loadAssets()
-  }, [activeFolder, foldersLoaded, loadAssets, open, selectedChildFolder])
+  }, [activeFolder, activeSubfolder, foldersLoaded, loadAssets, open, selectedChildFolder])
 
   const childFolders = useMemo(() => {
     if (activeSubfolder === "all") return [] as string[]

@@ -262,7 +262,7 @@ export function MediaBrowser() {
       return
     }
     void loadAssets()
-  }, [foldersLoaded, loadAssets, selectedChildFolder, selectedTopFolder])
+  }, [foldersLoaded, loadAssets, selectedChildFolder, selectedSubfolder, selectedTopFolder])
 
   const subfolders = useMemo(() => {
     if (selectedTopFolder === ALL_TOP) return [] as string[]
