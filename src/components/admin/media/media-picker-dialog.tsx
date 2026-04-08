@@ -52,6 +52,7 @@ const FOLDER_COLOR_KEY = "media-picker-folder-colors"
 const ASSET_LABEL_KEY = "media-picker-asset-labels"
 const FOLDER_COLOR_OPTIONS = ["#f59e0b", "#ef4444", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899", "#64748b"]
 const MEDIA_PAGE_SIZE = 30
+const BROWSE_ONLY_FOLDER = "__no_results__"
 
 function formatFolderLabel(value: string) {
   return value
@@ -185,30 +186,85 @@ export function MediaPickerDialog({
     params.set("limit", String(MEDIA_PAGE_SIZE))
     if (normalizedSearchTerm) params.set("search", normalizedSearchTerm)
 
+    let finalRequestFolder = ""
+    let finalFolderMode = ""
+    let isLeafFolder = false
+
     if (selectedChildFolder) {
-      params.set("folder", selectedChildFolder)
-      params.set("folderMode", "prefix")
+      isLeafFolder = !shouldUseProductSkuChildFolders(selectedChildFolder)
+      finalRequestFolder = isLeafFolder ? selectedChildFolder : BROWSE_ONLY_FOLDER
+      finalFolderMode = "exact"
+      params.set("folder", finalRequestFolder)
+      params.set("folderMode", finalFolderMode)
+      console.info("[media-picker-dialog] asset request", {
+        selectedTopFolder: activeFolder,
+        selectedSubfolder: activeSubfolder,
+        selectedChildFolder,
+        finalRequestFolder,
+        finalFolderMode,
+        isLeafFolder,
+      })
       return params.toString()
     }
 
     if (activeFolder === "all") {
+      console.info("[media-picker-dialog] asset request", {
+        selectedTopFolder: activeFolder,
+        selectedSubfolder: activeSubfolder,
+        selectedChildFolder,
+        finalRequestFolder,
+        finalFolderMode,
+        isLeafFolder,
+      })
       return params.toString()
     }
 
     if (activeSubfolder === "all") {
-      params.set("folder", activeFolder)
-      params.set("folderMode", normalizedSearchTerm.length > 0 ? "prefix" : "exact")
+      isLeafFolder = !shouldUseProductSkuChildFolders(activeFolder)
+      finalRequestFolder = isLeafFolder ? activeFolder : BROWSE_ONLY_FOLDER
+      finalFolderMode = "exact"
+      params.set("folder", finalRequestFolder)
+      params.set("folderMode", finalFolderMode)
+      console.info("[media-picker-dialog] asset request", {
+        selectedTopFolder: activeFolder,
+        selectedSubfolder: activeSubfolder,
+        selectedChildFolder,
+        finalRequestFolder,
+        finalFolderMode,
+        isLeafFolder,
+      })
       return params.toString()
     }
 
     if (usesSkuFolders) {
-      params.set("folder", "__no_results__")
-      params.set("folderMode", "exact")
+      finalRequestFolder = BROWSE_ONLY_FOLDER
+      finalFolderMode = "exact"
+      params.set("folder", finalRequestFolder)
+      params.set("folderMode", finalFolderMode)
+      console.info("[media-picker-dialog] asset request", {
+        selectedTopFolder: activeFolder,
+        selectedSubfolder: activeSubfolder,
+        selectedChildFolder,
+        finalRequestFolder,
+        finalFolderMode,
+        isLeafFolder,
+      })
       return params.toString()
     }
 
-    params.set("folder", activeSubfolder)
-    params.set("folderMode", "prefix")
+    isLeafFolder = true
+    finalRequestFolder = activeSubfolder
+    finalFolderMode = "exact"
+    params.set("folder", finalRequestFolder)
+    params.set("folderMode", finalFolderMode)
+    console.info("[media-picker-dialog] asset request", {
+      selectedTopFolder: activeFolder,
+      selectedSubfolder: activeSubfolder,
+      selectedChildFolder,
+      finalRequestFolder,
+      finalFolderMode,
+      isLeafFolder,
+    })
     return params.toString()
   }, [activeFolder, activeSubfolder, assetPage, normalizedSearchTerm, selectedChildFolder, usesSkuFolders])
 

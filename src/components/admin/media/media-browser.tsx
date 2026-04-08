@@ -33,6 +33,7 @@ type PaginationState = {
 const ALL_TOP = "__all__"
 const ALL_SUB = "__all_sub__"
 const MEDIA_PAGE_SIZE = 30
+const BROWSE_ONLY_FOLDER = "__no_results__"
 const FOLDER_LABELS: Record<string, string> = {
   "by-type": "By Type",
   "by-style": "By Style",
@@ -98,24 +99,65 @@ export function MediaBrowser() {
     params.set("limit", String(MEDIA_PAGE_SIZE))
     if (normalizedSearchTerm) params.set("search", normalizedSearchTerm)
 
+    let finalRequestFolder = ""
+    let finalFolderMode = ""
+    let isLeafFolder = false
+
     if (selectedChildFolder) {
-      params.set("folder", selectedChildFolder)
-      params.set("folderMode", "exact")
+      isLeafFolder = !shouldUseProductSkuChildFolders(selectedChildFolder)
+      finalRequestFolder = isLeafFolder ? selectedChildFolder : BROWSE_ONLY_FOLDER
+      finalFolderMode = "exact"
+      params.set("folder", finalRequestFolder)
+      params.set("folderMode", finalFolderMode)
+      console.info("[admin-media-browser] asset request", {
+        selectedTopFolder,
+        selectedSubfolder,
+        selectedChildFolder,
+        finalRequestFolder,
+        finalFolderMode,
+        isLeafFolder,
+      })
       return params.toString()
     }
 
     if (selectedSubfolder !== ALL_SUB) {
-      if (!usesSkuFolders) {
-        params.set("folder", selectedSubfolder)
-        params.set("folderMode", "exact")
+      isLeafFolder = !usesSkuFolders
+      if (isLeafFolder) {
+        finalRequestFolder = selectedSubfolder
+        finalFolderMode = "exact"
+      } else {
+        finalRequestFolder = BROWSE_ONLY_FOLDER
+        finalFolderMode = "exact"
       }
+      params.set("folder", finalRequestFolder)
+      params.set("folderMode", finalFolderMode)
+      console.info("[admin-media-browser] asset request", {
+        selectedTopFolder,
+        selectedSubfolder,
+        selectedChildFolder,
+        finalRequestFolder,
+        finalFolderMode,
+        isLeafFolder,
+      })
       return params.toString()
     }
 
     if (selectedTopFolder !== ALL_TOP) {
-      params.set("folder", selectedTopFolder)
-      params.set("folderMode", "exact")
+      isLeafFolder = !shouldUseProductSkuChildFolders(selectedTopFolder)
+      finalRequestFolder = isLeafFolder ? selectedTopFolder : BROWSE_ONLY_FOLDER
+      finalFolderMode = "exact"
+      params.set("folder", finalRequestFolder)
+      params.set("folderMode", finalFolderMode)
     }
+
+    console.info("[admin-media-browser] asset request", {
+      selectedTopFolder,
+      selectedSubfolder,
+      selectedChildFolder,
+      finalRequestFolder,
+      finalFolderMode,
+      isLeafFolder,
+    })
 
     return params.toString()
   }, [assetPage, normalizedSearchTerm, selectedChildFolder, selectedSubfolder, selectedTopFolder, usesSkuFolders])
