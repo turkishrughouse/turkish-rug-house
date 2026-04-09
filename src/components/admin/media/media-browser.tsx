@@ -136,6 +136,27 @@ function buildCategoryOptions(categories: CategoryRow[]) {
   }
 }
 
+function resolveFolderRootsFromInventory(targetPath: string, folderNames: string[]) {
+  const cleanTarget = targetPath.trim().replace(/^\/+|\/+$/g, "")
+  if (!cleanTarget) return [] as string[]
+
+  const segments = cleanTarget.split("/").filter(Boolean)
+  for (let length = segments.length; length >= 1; length -= 1) {
+    const suffix = segments.slice(-length).join("/")
+    const matches = folderNames.filter((folder) => folder === suffix || folder.endsWith(`/${suffix}`))
+    if (matches.length === 0) continue
+
+    return matches
+      .filter((candidate) => !matches.some((other) => other !== candidate && candidate.startsWith(`${other}/`)))
+      .sort((a, b) => a.localeCompare(b))
+  }
+
+  const directMatches = folderNames.filter((folder) => folder === cleanTarget || folder.startsWith(`${cleanTarget}/`))
+  return directMatches
+    .filter((candidate) => !directMatches.some((other) => other !== candidate && candidate.startsWith(`${other}/`)))
+    .sort((a, b) => a.localeCompare(b))
+}
+
 export function MediaBrowser() {
   const [categories, setCategories] = useState<CategoryRow[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
@@ -162,26 +183,6 @@ export function MediaBrowser() {
 
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
   const categoryTree = useMemo(() => buildCategoryOptions(categories), [categories])
-
-  const assetQuery = useMemo(() => {
-    const params = new URLSearchParams()
-    params.set("page", String(assetPage))
-    params.set("limit", String(MEDIA_PAGE_SIZE))
-    if (normalizedSearchTerm) params.set("search", normalizedSearchTerm)
-
-    if (selectedChildFolder) {
-      params.set("folder", selectedChildFolder)
-      params.set("folderMode", "exact")
-    } else if (selectedSubfolder !== ALL_SUB) {
-      params.set("folder", selectedSubfolder)
-      params.set("folderMode", "prefix")
-    } else if (selectedTopFolder !== ALL_TOP) {
-      params.set("folder", selectedTopFolder)
-      params.set("folderMode", "prefix")
-    }
-
-    return params.toString()
-  }, [assetPage, normalizedSearchTerm, selectedChildFolder, selectedSubfolder, selectedTopFolder])
 
   const loadCategories = useCallback(async () => {
     try {
@@ -240,33 +241,6 @@ export function MediaBrowser() {
     setPreviewAsset(null)
   }, [])
 
-  const loadAssets = useCallback(async () => {
-    const requestId = latestAssetRequestRef.current + 1
-    latestAssetRequestRef.current = requestId
-    setLoading(true)
-    try {
-      const res = await fetch(`/api/admin/media?${assetQuery}`, { cache: "no-store" })
-      const json = await res.json().catch(() => null as null | { error?: string; assets?: Asset[]; pagination?: PaginationState })
-      if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
-      if (requestId !== latestAssetRequestRef.current) return
-      setAssets((json?.assets || []).map(withSortTimestamp))
-      setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
-      if (json?.pagination?.page && json.pagination.page !== assetPage) {
-        setAssetPage(json.pagination.page)
-      }
-    } catch (error) {
-      if (requestId !== latestAssetRequestRef.current) return
-      toast.error(error instanceof Error ? error.message : "Failed to fetch media")
-    } finally {
-      if (requestId !== latestAssetRequestRef.current) return
-      setLoading(false)
-    }
-  }, [assetPage, assetQuery])
-
-  useEffect(() => {
-    void loadAssets()
-  }, [loadAssets, selectedSubfolder, selectedTopFolder])
-
   const subfolders = useMemo(() => {
     if (selectedTopFolder === ALL_TOP) return [] as string[]
     return (categoryTree.subOptionsByTop.get(selectedTopFolder) || []).map((option) => option.value)
@@ -307,24 +281,28 @@ export function MediaBrowser() {
     [folders]
   )
 
+  const realFolderNames = useMemo(
+    () => Array.from(new Set(folders.filter((folder) => folder.count > 0).map((folder) => folder.name).filter(Boolean))),
+    [folders]
+  )
+
+  const resolvedSubfolderRoots = useMemo(() => {
+    if (selectedSubfolder === ALL_SUB || selectedChildFolder) return [] as string[]
+    return resolveFolderRootsFromInventory(selectedSubfolder, realFolderNames)
+  }, [realFolderNames, selectedChildFolder, selectedSubfolder])
+
   const resolvedSkuFolders = useMemo(() => {
     if (selectedSubfolder === ALL_SUB || selectedChildFolder) return [] as string[]
+    const candidateRoots = resolvedSubfolderRoots.length > 0 ? resolvedSubfolderRoots : resolveFolderRootsFromInventory(selectedSubfolder, folderNames)
 
-    const subfolderSegments = selectedSubfolder.split("/").filter(Boolean)
-    const subfolderLeaf = subfolderSegments[subfolderSegments.length - 1] || ""
-
-    return folderNames
+    return realFolderNames
+      .filter((folder) => candidateRoots.some((root) => folder.startsWith(`${root}/`)))
       .filter((folder) => {
-        const parts = folder.split("/").filter(Boolean)
-        const leaf = parts[parts.length - 1] || ""
-        if (!looksLikeProductSkuSegment(leaf)) return false
-        if (folder.startsWith(`${selectedSubfolder}/`)) return true
-        if (!subfolderLeaf) return false
-        const parent = parts.slice(0, -1)
-        return parent.includes(subfolderLeaf)
+        const leaf = folder.split("/").filter(Boolean).pop() || ""
+        return looksLikeProductSkuSegment(leaf)
       })
       .sort((a, b) => a.localeCompare(b))
-  }, [folderNames, selectedChildFolder, selectedSubfolder])
+  }, [folderNames, realFolderNames, resolvedSubfolderRoots, selectedChildFolder, selectedSubfolder])
 
   const visibleSkuFolders = useMemo(() => {
     if (!normalizedSearchTerm) return resolvedSkuFolders
@@ -337,24 +315,72 @@ export function MediaBrowser() {
   const isAllCategoriesRoot = selectedTopFolder === ALL_TOP && selectedSubfolder === ALL_SUB && !selectedChildFolder
   const showsSkuFolderCards = !isAllCategoriesRoot && selectedSubfolder !== ALL_SUB && !selectedChildFolder && resolvedSkuFolders.length > 0
 
-  const filteredAssets = useMemo(() => {
-    const topPrefix = selectedTopFolder !== ALL_TOP ? selectedTopFolder : ""
-    const subPrefix = selectedSubfolder !== ALL_SUB ? selectedSubfolder : ""
-    const childPrefix = selectedChildFolder
+  const requestFolder = useMemo(() => {
+    if (selectedChildFolder) return selectedChildFolder
+    if (selectedSubfolder !== ALL_SUB) return resolvedSubfolderRoots[0] || selectedSubfolder
+    if (selectedTopFolder !== ALL_TOP) return selectedTopFolder
+    return ""
+  }, [resolvedSubfolderRoots, selectedChildFolder, selectedSubfolder, selectedTopFolder])
 
+  const assetQuery = useMemo(() => {
+    const params = new URLSearchParams()
+    params.set("page", String(assetPage))
+    params.set("limit", String(MEDIA_PAGE_SIZE))
+    if (normalizedSearchTerm) params.set("search", normalizedSearchTerm)
+
+    if (requestFolder) {
+      params.set("folder", requestFolder)
+      params.set("folderMode", selectedChildFolder ? "exact" : "prefix")
+    }
+
+    return params.toString()
+  }, [assetPage, normalizedSearchTerm, requestFolder, selectedChildFolder])
+
+  const loadAssets = useCallback(async () => {
+    const requestId = latestAssetRequestRef.current + 1
+    latestAssetRequestRef.current = requestId
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/admin/media?${assetQuery}`, { cache: "no-store" })
+      const json = await res.json().catch(() => null as null | { error?: string; assets?: Asset[]; pagination?: PaginationState })
+      if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
+      if (requestId !== latestAssetRequestRef.current) return
+      setAssets((json?.assets || []).map(withSortTimestamp))
+      setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
+      if (json?.pagination?.page && json.pagination.page !== assetPage) {
+        setAssetPage(json.pagination.page)
+      }
+    } catch (error) {
+      if (requestId !== latestAssetRequestRef.current) return
+      toast.error(error instanceof Error ? error.message : "Failed to fetch media")
+    } finally {
+      if (requestId !== latestAssetRequestRef.current) return
+      setLoading(false)
+    }
+  }, [assetPage, assetQuery])
+
+  useEffect(() => {
+    void loadAssets()
+  }, [loadAssets, selectedSubfolder, selectedTopFolder])
+
+  const filteredAssets = useMemo(() => {
     return [...assets]
       .sort(compareAssetsNewestFirst)
       .filter((asset) => {
-        if (!topPrefix) return true
-        return asset.folder === topPrefix || asset.folder.startsWith(`${topPrefix}/`)
-      })
-      .filter((asset) => {
-        if (!subPrefix) return true
-        return asset.folder === subPrefix || asset.folder.startsWith(`${subPrefix}/`)
-      })
-      .filter((asset) => {
-        if (!childPrefix) return true
-        return asset.folder === childPrefix || asset.folder.startsWith(`${childPrefix}/`)
+        if (selectedChildFolder) {
+          return asset.folder === selectedChildFolder || asset.folder.startsWith(`${selectedChildFolder}/`)
+        }
+
+        if (selectedSubfolder !== ALL_SUB) {
+          const roots = resolvedSubfolderRoots.length > 0 ? resolvedSubfolderRoots : [selectedSubfolder]
+          return roots.some((root) => asset.folder === root || asset.folder.startsWith(`${root}/`))
+        }
+
+        if (selectedTopFolder !== ALL_TOP) {
+          return asset.folder === selectedTopFolder || asset.folder.startsWith(`${selectedTopFolder}/`)
+        }
+
+        return true
       })
       .filter((asset) => {
         if (!normalizedSearchTerm) return true
@@ -367,7 +393,7 @@ export function MediaBrowser() {
         ]
         return haystacks.some((value) => value.toLowerCase().includes(normalizedSearchTerm))
       })
-  }, [assets, normalizedSearchTerm, selectedChildFolder, selectedSubfolder, selectedTopFolder])
+  }, [assets, normalizedSearchTerm, resolvedSubfolderRoots, selectedChildFolder, selectedSubfolder, selectedTopFolder])
 
   const renderedAssets = useMemo(() => {
     if (showsSkuFolderCards) return [] as Asset[]

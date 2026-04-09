@@ -85,25 +85,30 @@ async function listMediaFolders(): Promise<FolderInfo[]> {
   ])
 
   const categoryPathMap = buildCategoryPathMap(categories)
-  const folderNames = new Set<string>()
+  const folderCounts = new Map<string, number>()
+
+  const markFolder = (name: string, count = 0) => {
+    const current = folderCounts.get(name) || 0
+    folderCounts.set(name, Math.max(current, count))
+  }
 
   for (const root of getManagedMediaRoots()) {
     const safeRoot = sanitizeFolderPath(root)
-    if (safeRoot) folderNames.add(safeRoot)
+    if (safeRoot) markFolder(safeRoot, 0)
   }
 
   for (const categoryPath of categoryPathMap.values()) {
-    if (categoryPath) folderNames.add(categoryPath)
+    if (categoryPath) markFolder(categoryPath, 0)
   }
 
   for (const folder of uploadFolders) {
     if (!folder) continue
-    folderNames.add(folder)
+    markFolder(folder, 1)
   }
 
-  return Array.from(folderNames)
-    .sort((a, b) => a.localeCompare(b))
-    .map((name) => ({ name, count: 0 }))
+  return Array.from(folderCounts.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([name, count]) => ({ name, count }))
 }
 
 export async function GET() {
