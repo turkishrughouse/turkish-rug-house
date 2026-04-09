@@ -234,15 +234,31 @@ export function MediaBrowser() {
   }, [selectedSubfolder, subfolders])
 
   const filteredAssets = useMemo(() => {
-    const selectedPrefix = selectedSubfolder !== ALL_SUB ? selectedSubfolder : selectedTopFolder !== ALL_TOP ? selectedTopFolder : ""
+    const topPrefix = selectedTopFolder !== ALL_TOP ? selectedTopFolder : ""
+    const subPrefix = selectedSubfolder !== ALL_SUB ? selectedSubfolder : ""
 
     return [...assets]
-      .filter((asset) => {
-        if (!selectedPrefix) return true
-        return asset.folder === selectedPrefix || asset.folder.startsWith(`${selectedPrefix}/`)
-      })
       .sort(compareAssetsNewestFirst)
-  }, [assets, selectedSubfolder, selectedTopFolder])
+      .filter((asset) => {
+        if (!topPrefix) return true
+        return asset.folder === topPrefix || asset.folder.startsWith(`${topPrefix}/`)
+      })
+      .filter((asset) => {
+        if (!subPrefix) return true
+        return asset.folder === subPrefix || asset.folder.startsWith(`${subPrefix}/`)
+      })
+      .filter((asset) => {
+        if (!normalizedSearchTerm) return true
+        const haystacks = [
+          asset.name,
+          asset.folder,
+          asset.usedIn,
+          prettifyAssetName(asset),
+          asset.url,
+        ]
+        return haystacks.some((value) => value.toLowerCase().includes(normalizedSearchTerm))
+      })
+  }, [assets, normalizedSearchTerm, selectedSubfolder, selectedTopFolder])
 
   const allFilteredSelected = filteredAssets.length > 0 && filteredAssets.every((asset) => selectedUrls.includes(asset.url))
 
