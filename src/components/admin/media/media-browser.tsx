@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Folder, FolderPlus, Image as ImageIcon, Loader2, Trash2, ChevronLeft, ChevronRight } from "lucide-react"
+import { FolderPlus, Image as ImageIcon, Loader2, Trash2, ChevronLeft, ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { isManagedUploadUrl } from "@/lib/storage/url"
 import { prettifyAdminMediaLabel } from "@/lib/admin/media-labels"
-import { shouldUseProductSkuChildFolders } from "@/lib/media-sku-roots"
+import { looksLikeProductSkuSegment } from "@/lib/media-sku-roots"
 
 type Folder = { name: string; count: number }
 type Asset = {
@@ -21,6 +21,7 @@ type Asset = {
   folder: string
   source: string
   usedIn: string
+  createdAt?: number
 }
 
 type PaginationState = {
@@ -33,7 +34,6 @@ type PaginationState = {
 const ALL_TOP = "__all__"
 const ALL_SUB = "__all_sub__"
 const MEDIA_PAGE_SIZE = 30
-const BROWSE_ONLY_FOLDER = "__no_results__"
 const FOLDER_LABELS: Record<string, string> = {
   "by-type": "By Type",
   "by-style": "By Style",
@@ -46,6 +46,8 @@ const FOLDER_LABELS: Record<string, string> = {
   pages: "Pages",
   profile: "Profile",
 }
+
+const INTERNAL_MEDIA_ROOTS = new Set(["cache", ".cache", "categories", "collections", "pages", "profile", "learn"])
 
 function folderLabel(value: string) {
   const raw = value.trim()
@@ -63,15 +65,35 @@ function prettifyAssetName(asset: Asset) {
   return prettifyAdminMediaLabel(asset)
 }
 
+function buildCategoryTree(folderNames: string[]) {
+  const subfoldersByTop = new Map<string, Set<string>>()
+
+  for (const folderName of folderNames) {
+    const parts = folderName.split("/").filter(Boolean)
+    const top = parts[0] || ""
+    const directChild = parts[1] || ""
+    if (!top || INTERNAL_MEDIA_ROOTS.has(top)) continue
+
+    if (!subfoldersByTop.has(top)) subfoldersByTop.set(top, new Set())
+    if (!directChild || looksLikeProductSkuSegment(directChild)) continue
+    subfoldersByTop.get(top)?.add(`${top}/${directChild}`)
+  }
+
+  return {
+    topFolders: Array.from(subfoldersByTop.keys()),
+    subfoldersByTop: new Map(
+      Array.from(subfoldersByTop.entries()).map(([top, children]) => [top, Array.from(children)])
+    ),
+  }
+}
+
 export function MediaBrowser() {
   const [folders, setFolders] = useState<Folder[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedTopFolder, setSelectedTopFolder] = useState(ALL_TOP)
   const [selectedSubfolder, setSelectedSubfolder] = useState(ALL_SUB)
-  const [selectedChildFolder, setSelectedChildFolder] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedFolderCard, setSelectedFolderCard] = useState("")
   const [selectedUrls, setSelectedUrls] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
   const [moving, setMoving] = useState(false)
@@ -88,10 +110,7 @@ export function MediaBrowser() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
-  const usesSkuFolders = useMemo(() => {
-    if (selectedSubfolder === ALL_SUB) return false
-    return shouldUseProductSkuChildFolders(selectedSubfolder)
-  }, [selectedSubfolder])
+  const categoryTree = useMemo(() => buildCategoryTree(folders.map((folder) => folder.name)), [folders])
 
   const assetQuery = useMemo(() => {
     const params = new URLSearchParams()
@@ -99,42 +118,16 @@ export function MediaBrowser() {
     params.set("limit", String(MEDIA_PAGE_SIZE))
     if (normalizedSearchTerm) params.set("search", normalizedSearchTerm)
 
-    const selectedPath =
-      selectedChildFolder ||
-      (selectedSubfolder !== ALL_SUB ? selectedSubfolder : selectedTopFolder !== ALL_TOP ? selectedTopFolder : "")
-    const isAllCategoriesRoot = selectedTopFolder === ALL_TOP && selectedSubfolder === ALL_SUB && !selectedChildFolder
-    const isLeafFolder = Boolean(selectedPath) && !shouldUseProductSkuChildFolders(selectedPath)
-    const isCategoryRootBrowseState = selectedTopFolder !== ALL_TOP && selectedSubfolder === ALL_SUB && !selectedChildFolder
-    const isSubcategoryBrowseState = Boolean(selectedPath) && !isLeafFolder && !isCategoryRootBrowseState
-
-    let finalRequestFolder = ""
-    let finalFolderMode = ""
-
-    if (!isAllCategoriesRoot) {
-      if (isLeafFolder) {
-        finalRequestFolder = selectedPath
-        finalFolderMode = "exact"
-      } else {
-        finalRequestFolder = BROWSE_ONLY_FOLDER
-        finalFolderMode = "prefix"
-      }
-      params.set("folder", finalRequestFolder)
-      params.set("folderMode", finalFolderMode)
+    if (selectedSubfolder !== ALL_SUB) {
+      params.set("folder", selectedSubfolder)
+      params.set("folderMode", "prefix")
+    } else if (selectedTopFolder !== ALL_TOP) {
+      params.set("folder", selectedTopFolder)
+      params.set("folderMode", "prefix")
     }
 
-    console.info("[admin-media-browser] asset request", {
-      selectedTopFolder,
-      selectedSubfolder,
-      selectedChildFolder,
-      finalRequestFolder,
-      finalFolderMode,
-      isLeafFolder,
-      isCategoryRootBrowseState,
-      isSubcategoryBrowseState,
-    })
-
     return params.toString()
-  }, [assetPage, normalizedSearchTerm, selectedChildFolder, selectedSubfolder, selectedTopFolder])
+  }, [assetPage, normalizedSearchTerm, selectedSubfolder, selectedTopFolder])
 
   const loadFolders = useCallback(async () => {
     try {
@@ -151,21 +144,10 @@ export function MediaBrowser() {
     void loadFolders().finally(() => setFoldersLoaded(true))
   }, [loadFolders])
 
-  const topFolders = useMemo(() => {
-    const names = new Set<string>()
-    for (const folder of folders) {
-      const top = folder.name.split("/")[0] || folder.name
-      if (top) names.add(top)
-    }
-    return Array.from(names).sort((a, b) => folderLabel(a).localeCompare(folderLabel(b)))
-  }, [folders])
-
-  useEffect(() => {
-    if (!foldersLoaded) return
-    if (selectedTopFolder !== ALL_TOP) return
-    if (topFolders.length === 0) return
-    setSelectedTopFolder(topFolders[0] || ALL_TOP)
-  }, [foldersLoaded, selectedTopFolder, topFolders])
+  const topFolders = useMemo(
+    () => [...categoryTree.topFolders].sort((a, b) => folderLabel(a).localeCompare(folderLabel(b))),
+    [categoryTree.topFolders]
+  )
 
   const loadAssets = useCallback(async () => {
     setLoading(true)
@@ -187,146 +169,51 @@ export function MediaBrowser() {
 
   useEffect(() => {
     if (!foldersLoaded) return
-    if (selectedTopFolder === ALL_TOP && !selectedChildFolder) {
-      setAssets([])
-      setPagination({ page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
-      setLoading(false)
-      return
-    }
     void loadAssets()
-  }, [foldersLoaded, loadAssets, selectedChildFolder, selectedTopFolder])
+  }, [foldersLoaded, loadAssets, selectedSubfolder, selectedTopFolder])
 
   const subfolders = useMemo(() => {
     if (selectedTopFolder === ALL_TOP) return [] as string[]
-    const prefix = `${selectedTopFolder}/`
-    return folders
-      .map((folder) => folder.name)
-      .filter((name) => name.startsWith(prefix))
-      .map((name) => name.slice(prefix.length))
-      .filter((rest) => rest.length > 0 && !rest.includes("/"))
-      .map((leaf) => `${selectedTopFolder}/${leaf}`)
+    return (categoryTree.subfoldersByTop.get(selectedTopFolder) || [])
+      .slice()
       .sort((a, b) => folderLabel(a).localeCompare(folderLabel(b)))
-  }, [folders, selectedTopFolder])
+  }, [categoryTree.subfoldersByTop, selectedTopFolder])
 
   useEffect(() => {
     setSelectedSubfolder(ALL_SUB)
-    setSelectedChildFolder("")
     setSearchTerm("")
-    setSelectedFolderCard("")
     setSelectedUrls([])
   }, [selectedTopFolder])
 
   useEffect(() => {
-    setSelectedChildFolder("")
+    setAssetPage(1)
     setSearchTerm("")
-    setSelectedFolderCard("")
     setSelectedUrls([])
   }, [selectedSubfolder])
 
-  const activeFolder = selectedChildFolder || (selectedSubfolder !== ALL_SUB ? selectedSubfolder : selectedTopFolder !== ALL_TOP ? selectedTopFolder : "")
-
-  const childFolders = useMemo(() => {
-    if (selectedSubfolder === ALL_SUB) return [] as string[]
-    const prefix = `${selectedSubfolder}/`
-    return folders
-      .map((folder) => folder.name)
-      .filter((name) => name.startsWith(prefix))
-      .map((name) => name.slice(prefix.length))
-      .filter((rest) => rest.length > 0 && !rest.includes("/"))
-      .map((leaf) => `${selectedSubfolder}/${leaf}`)
-      .sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
-  }, [folders, selectedSubfolder])
+  useEffect(() => {
+    if (selectedTopFolder === ALL_TOP) return
+    if (topFolders.includes(selectedTopFolder)) return
+    setSelectedTopFolder(ALL_TOP)
+    setSelectedSubfolder(ALL_SUB)
+  }, [selectedTopFolder, topFolders])
 
   useEffect(() => {
-    setAssetPage(1)
-  }, [searchTerm, selectedTopFolder, selectedSubfolder, selectedChildFolder])
+    if (selectedSubfolder === ALL_SUB) return
+    if (subfolders.includes(selectedSubfolder)) return
+    setSelectedSubfolder(ALL_SUB)
+  }, [selectedSubfolder, subfolders])
 
-  const currentLevelFolders = useMemo(() => {
-    if (selectedChildFolder) return [] as string[]
-    if (selectedSubfolder !== ALL_SUB) return childFolders
-    return subfolders
-  }, [childFolders, selectedChildFolder, selectedSubfolder, subfolders])
+  const filteredAssets = useMemo(() => {
+    const selectedPrefix = selectedSubfolder !== ALL_SUB ? selectedSubfolder : selectedTopFolder !== ALL_TOP ? selectedTopFolder : ""
 
-  const searchableFolders = useMemo(() => {
-    const allFolderNames = folders.map((folder) => folder.name)
-
-    if (selectedChildFolder) {
-      const prefix = `${selectedChildFolder}/`
-      return allFolderNames
-        .filter((name) => name.startsWith(prefix))
-        .sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
-    }
-
-    if (selectedSubfolder !== ALL_SUB) {
-      const prefix = `${selectedSubfolder}/`
-      return allFolderNames
-        .filter((name) => name.startsWith(prefix))
-        .sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
-    }
-
-    if (selectedTopFolder !== ALL_TOP) {
-      const prefix = `${selectedTopFolder}/`
-      return allFolderNames
-        .filter((name) => name.startsWith(prefix))
-        .sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
-    }
-
-    return allFolderNames.sort((a, b) => folderLabel(a.split("/").pop() || a).localeCompare(folderLabel(b.split("/").pop() || b)))
-  }, [folders, selectedChildFolder, selectedSubfolder, selectedTopFolder])
-
-  const visibleCurrentLevelFolders = useMemo(() => {
-    if (!normalizedSearchTerm) return currentLevelFolders
-    return searchableFolders.filter((folder) => {
-      const folderLeaf = folder.split("/").pop() || folder
-      return folder.toLowerCase().includes(normalizedSearchTerm) || folderLeaf.toLowerCase().includes(normalizedSearchTerm)
-    })
-  }, [currentLevelFolders, normalizedSearchTerm, searchableFolders])
-
-  const filteredAssets = assets
-
-  const renameSelectedFolder = async () => {
-    if (!selectedFolderCard) return
-    const currentName = selectedFolderCard.split("/").pop() || selectedFolderCard
-    const nextName = window.prompt("Yeni klasör adı", currentName)
-    if (!nextName) return
-    const trimmed = nextName.trim()
-    if (!trimmed) return
-
-    const res = await fetch("/api/admin/media/folders", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ folder: selectedFolderCard, newName: trimmed }),
-    })
-    const json = await res.json().catch(() => null as null | { error?: string; folder?: string })
-    if (!res.ok || !json?.folder) {
-      toast.error(json?.error || "Folder rename failed")
-      return
-    }
-    toast.success("Klasör güncellendi")
-    setSelectedFolderCard(json.folder)
-    await Promise.all([loadFolders(), loadAssets()])
-  }
-
-  const deleteSelectedFolder = async () => {
-    if (!selectedFolderCard) return
-    if (!window.confirm(`${selectedFolderCard} klasoru silinsin mi?`)) return
-    const res = await fetch("/api/admin/media/folders", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ folder: selectedFolderCard }),
-    })
-    const json = await res.json().catch(() => null as null | { error?: string })
-    if (!res.ok) {
-      toast.error(json?.error || "Folder delete failed")
-      return
-    }
-    toast.success("Klasör silindi")
-    if (selectedChildFolder === selectedFolderCard) {
-      setSelectedChildFolder("")
-    }
-    setSelectedFolderCard("")
-    await Promise.all([loadFolders(), loadAssets()])
-  }
+    return [...assets]
+      .filter((asset) => {
+        if (!selectedPrefix) return true
+        return asset.folder === selectedPrefix || asset.folder.startsWith(`${selectedPrefix}/`)
+      })
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0) || a.name.localeCompare(b.name))
+  }, [assets, selectedSubfolder, selectedTopFolder])
 
   const allFilteredSelected = filteredAssets.length > 0 && filteredAssets.every((asset) => selectedUrls.includes(asset.url))
 
@@ -341,7 +228,7 @@ export function MediaBrowser() {
   }
 
   const openFilePicker = () => {
-    if (selectedSubfolder === ALL_SUB && !selectedChildFolder) {
+    if (selectedSubfolder === ALL_SUB) {
       toast.error("Once an alt kategori secin")
       return
     }
@@ -349,7 +236,7 @@ export function MediaBrowser() {
   }
 
   const handleUpload = async (files: FileList | File[]) => {
-    const targetFolder = selectedChildFolder || selectedSubfolder
+    const targetFolder = selectedSubfolder
     if (targetFolder === ALL_SUB || !targetFolder) {
       toast.error("Once an alt kategori secin")
       return
@@ -381,7 +268,7 @@ export function MediaBrowser() {
   }
 
   const moveSelectedToSubfolder = async () => {
-    const targetFolder = selectedChildFolder || selectedSubfolder
+    const targetFolder = selectedSubfolder
     if (targetFolder === ALL_SUB || !targetFolder) {
       toast.error("Once bir alt kategori secin")
       return
@@ -419,10 +306,6 @@ export function MediaBrowser() {
   }
 
   const deleteSelected = async () => {
-    if (!selectedChildFolder && selectedFolderCard) {
-      await deleteSelectedFolder()
-      return
-    }
     if (selectedUrls.length === 0) return
     if (!window.confirm(`${selectedUrls.length} fotograf silinsin mi?`)) return
 
@@ -460,7 +343,7 @@ export function MediaBrowser() {
                     <SelectValue placeholder="Ana sayfalar" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={ALL_TOP}>All media items</SelectItem>
+                    <SelectItem value={ALL_TOP}>All categories</SelectItem>
                     {topFolders.map((folder) => (
                       <SelectItem key={folder} value={folder}>
                         {folderLabel(folder)}
@@ -473,7 +356,6 @@ export function MediaBrowser() {
                     value={selectedSubfolder}
                     onValueChange={(value) => {
                       setSelectedSubfolder(value)
-                      setSelectedChildFolder("")
                     }}
                     disabled={selectedTopFolder === ALL_TOP}
                   >
@@ -516,54 +398,13 @@ export function MediaBrowser() {
                 type="button"
                 variant="outline"
                 onClick={deleteSelected}
-                disabled={deleting || (selectedUrls.length === 0 && (!selectedFolderCard || Boolean(selectedChildFolder)))}
+                disabled={deleting || selectedUrls.length === 0}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Sil
               </Button>
             </div>
           </div>
-
-          {selectedChildFolder ? (
-            <div className="flex items-center justify-between rounded-xl border border-[#dce3ed] bg-[#f8fafc] px-4 py-3">
-              <p className="text-sm text-slate-600">
-                {folderLabel(selectedChildFolder.split("/").pop() || selectedChildFolder)}
-              </p>
-              <Button type="button" variant="outline" className="h-9 px-3" onClick={() => setSelectedChildFolder("")}>
-                Geri
-              </Button>
-            </div>
-          ) : null}
-
-          {!selectedChildFolder && visibleCurrentLevelFolders.length > 0 ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-              {visibleCurrentLevelFolders.map((folderPath) => (
-                <button
-                  key={folderPath}
-                  type="button"
-                  onClick={() => setSelectedFolderCard(folderPath)}
-                  onDoubleClick={() => {
-                    setSelectedFolderCard(folderPath)
-                    setSelectedChildFolder(folderPath)
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault()
-                    setSelectedFolderCard(folderPath)
-                  }}
-                  className={`flex min-h-[132px] flex-col items-start justify-between rounded-2xl border bg-white p-4 text-left transition hover:border-slate-300 ${
-                    selectedFolderCard === folderPath ? "border-teal-500 ring-2 ring-teal-200" : "border-[#dce3ed]"
-                  }`}
-                >
-                  <Folder className="h-8 w-8 text-amber-500" />
-                  <div>
-                    <p className="truncate text-sm font-medium text-slate-900">
-                      {folderLabel(folderPath.split("/").pop() || folderPath)}
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          ) : null}
 
           <input
             ref={fileInputRef}
@@ -579,12 +420,12 @@ export function MediaBrowser() {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Loading media...
             </div>
-          ) : filteredAssets.length === 0 && visibleCurrentLevelFolders.length === 0 ? (
+          ) : filteredAssets.length === 0 ? (
             <div className="flex h-[420px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
               <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
               No images found
             </div>
-          ) : visibleCurrentLevelFolders.length === 0 ? (
+          ) : (
             <>
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
               {filteredAssets.map((asset) => {
@@ -650,7 +491,7 @@ export function MediaBrowser() {
               </div>
             </div>
             </>
-          ) : null}
+          )}
         </CardContent>
       </Card>
 
