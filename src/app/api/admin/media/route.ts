@@ -287,7 +287,13 @@ async function getAllowedFolderRoots() {
     select: { slug: true },
   })
   const categoryRoots = topCategories.map((item) => sanitizeFolderPath(item.slug)).filter(Boolean)
-  return new Set([...managed, ...categoryRoots])
+  const uploadRoot = path.join(process.cwd(), "public", "uploads")
+  const uploadEntries = await readdir(uploadRoot, { withFileTypes: true }).catch(() => [])
+  const uploadRoots = uploadEntries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => sanitizeFolderPath(entry.name))
+    .filter(Boolean)
+  return new Set([...managed, ...categoryRoots, ...uploadRoots])
 }
 
 async function replaceUrlReferences(oldUrl: string, nextUrl: string | null) {

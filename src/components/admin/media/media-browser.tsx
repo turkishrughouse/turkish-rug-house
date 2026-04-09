@@ -145,16 +145,20 @@ function resolveFolderRootsFromInventory(targetPath: string, folderNames: string
     const suffix = segments.slice(-length).join("/")
     const matches = folderNames.filter((folder) => folder === suffix || folder.endsWith(`/${suffix}`))
     if (matches.length === 0) continue
-
+    const shortestDepth = Math.min(...matches.map((candidate) => candidate.split("/").filter(Boolean).length))
     return matches
-      .filter((candidate) => !matches.some((other) => other !== candidate && candidate.startsWith(`${other}/`)))
+      .filter((candidate) => candidate.split("/").filter(Boolean).length === shortestDepth)
       .sort((a, b) => a.localeCompare(b))
+      .slice(0, 1)
   }
 
   const directMatches = folderNames.filter((folder) => folder === cleanTarget || folder.startsWith(`${cleanTarget}/`))
+  if (directMatches.length === 0) return [] as string[]
+  const shortestDepth = Math.min(...directMatches.map((candidate) => candidate.split("/").filter(Boolean).length))
   return directMatches
-    .filter((candidate) => !directMatches.some((other) => other !== candidate && candidate.startsWith(`${other}/`)))
+    .filter((candidate) => candidate.split("/").filter(Boolean).length === shortestDepth)
     .sort((a, b) => a.localeCompare(b))
+    .slice(0, 1)
 }
 
 export function MediaBrowser() {
@@ -165,6 +169,7 @@ export function MediaBrowser() {
   const [selectedTopFolder, setSelectedTopFolder] = useState(ALL_TOP)
   const [selectedSubfolder, setSelectedSubfolder] = useState(ALL_SUB)
   const [selectedChildFolder, setSelectedChildFolder] = useState("")
+  const [selectedFolderCard, setSelectedFolderCard] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedUrls, setSelectedUrls] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
@@ -236,6 +241,7 @@ export function MediaBrowser() {
     setSelectedTopFolder(ALL_TOP)
     setSelectedSubfolder(ALL_SUB)
     setSelectedChildFolder("")
+    setSelectedFolderCard("")
     setAssetPage(1)
     setSelectedUrls([])
     setPreviewAsset(null)
@@ -258,6 +264,7 @@ export function MediaBrowser() {
     setAssetPage(1)
     setSelectedUrls([])
     setPreviewAsset(null)
+    setSelectedFolderCard("")
   }, [selectedChildFolder])
 
   useEffect(() => {
@@ -271,6 +278,7 @@ export function MediaBrowser() {
     if (subfolders.includes(selectedSubfolder)) return
     setSelectedSubfolder(ALL_SUB)
     setSelectedChildFolder("")
+    setSelectedFolderCard("")
     setAssetPage(1)
     setSelectedUrls([])
     setPreviewAsset(null)
@@ -531,6 +539,7 @@ export function MediaBrowser() {
                   setSelectedTopFolder(value)
                   setSelectedSubfolder(ALL_SUB)
                   setSelectedChildFolder("")
+                  setSelectedFolderCard("")
                   setAssetPage(1)
                   setSelectedUrls([])
                   setPreviewAsset(null)
@@ -553,6 +562,7 @@ export function MediaBrowser() {
                     onValueChange={(value) => {
                       setSelectedSubfolder(value)
                       setSelectedChildFolder("")
+                      setSelectedFolderCard("")
                       setAssetPage(1)
                       setSelectedUrls([])
                       setPreviewAsset(null)
@@ -631,12 +641,29 @@ export function MediaBrowser() {
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                   {visibleSkuFolders.map((folder) => {
                     const folderLeaf = folder.split("/").pop() || folder
+                    const selected = selectedFolderCard === folder
                     return (
                       <button
                         key={folder}
                         type="button"
-                        onClick={() => setSelectedChildFolder(folder)}
-                        className="rounded-[28px] border border-[#dce3ed] bg-white p-6 text-left shadow-[0_8px_24px_rgba(15,23,42,0.05)] transition hover:border-slate-300"
+                        onClick={() => setSelectedFolderCard(folder)}
+                        onDoubleClick={() => {
+                          setSelectedFolderCard(folder)
+                          setSelectedChildFolder(folder)
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault()
+                            setSelectedFolderCard(folder)
+                            setSelectedChildFolder(folder)
+                            return
+                          }
+                          if (event.key === " ") {
+                            event.preventDefault()
+                            setSelectedFolderCard(folder)
+                          }
+                        }}
+                        className={`rounded-[28px] border bg-white p-6 text-left shadow-[0_8px_24px_rgba(15,23,42,0.05)] transition hover:border-slate-300 ${selected ? "border-teal-500 ring-2 ring-teal-200" : "border-[#dce3ed]"}`}
                       >
                         <div className="mb-8 text-[#f59e0b]">
                           <FolderIcon className="h-9 w-9" />
@@ -658,7 +685,10 @@ export function MediaBrowser() {
             {selectedChildFolder ? (
               <div className="mb-4 flex items-center justify-between rounded-2xl border border-[#dce3ed] bg-white px-4 py-3">
                 <p className="text-sm text-slate-500">{selectedChildFolder}</p>
-                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedChildFolder("")}>
+                <Button type="button" variant="outline" size="sm" onClick={() => {
+                  setSelectedChildFolder("")
+                  setSelectedFolderCard("")
+                }}>
                   <ChevronLeft className="mr-1 h-4 w-4" />
                   Back
                 </Button>
