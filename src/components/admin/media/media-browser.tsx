@@ -46,6 +46,10 @@ const ALL_TOP = "__all__"
 const ALL_SUB = "__all_sub__"
 const MEDIA_PAGE_SIZE = 30
 
+function compareAssetsNewestFirst(a: Asset, b: Asset) {
+  return (b.createdAt || 0) - (a.createdAt || 0) || a.name.localeCompare(b.name) || a.url.localeCompare(b.url)
+}
+
 function prettifyAssetName(asset: Asset) {
   return prettifyAdminMediaLabel(asset)
 }
@@ -175,7 +179,7 @@ export function MediaBrowser() {
       const res = await fetch(`/api/admin/media?${assetQuery}`, { cache: "no-store" })
       const json = await res.json().catch(() => null as null | { error?: string; assets?: Asset[]; pagination?: PaginationState })
       if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
-      setAssets(json?.assets || [])
+      setAssets([...(json?.assets || [])].sort(compareAssetsNewestFirst))
       setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
       if (json?.pagination?.page && json.pagination.page !== assetPage) {
         setAssetPage(json.pagination.page)
@@ -237,7 +241,7 @@ export function MediaBrowser() {
         if (!selectedPrefix) return true
         return asset.folder === selectedPrefix || asset.folder.startsWith(`${selectedPrefix}/`)
       })
-      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0) || a.name.localeCompare(b.name))
+      .sort(compareAssetsNewestFirst)
   }, [assets, selectedSubfolder, selectedTopFolder])
 
   const allFilteredSelected = filteredAssets.length > 0 && filteredAssets.every((asset) => selectedUrls.includes(asset.url))
