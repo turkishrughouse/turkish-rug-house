@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { FolderPlus, Image as ImageIcon, Loader2, Trash2, ChevronLeft, ChevronRight } from "lucide-react"
+import { Folder as FolderIcon, FolderPlus, Image as ImageIcon, Loader2, Trash2, ChevronLeft, ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -11,7 +11,9 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { isManagedUploadUrl } from "@/lib/storage/url"
 import { prettifyAdminMediaLabel } from "@/lib/admin/media-labels"
+import { looksLikeProductSkuSegment } from "@/lib/media-sku-roots"
 
+type Folder = { name: string; count: number }
 type Asset = {
   id: string
   url: string
@@ -101,10 +103,12 @@ function buildCategoryOptions(categories: CategoryRow[]) {
 
 export function MediaBrowser() {
   const [categories, setCategories] = useState<CategoryRow[]>([])
+  const [folders, setFolders] = useState<Folder[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedTopFolder, setSelectedTopFolder] = useState(ALL_TOP)
   const [selectedSubfolder, setSelectedSubfolder] = useState(ALL_SUB)
+  const [selectedChildFolder, setSelectedChildFolder] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedUrls, setSelectedUrls] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
@@ -129,7 +133,10 @@ export function MediaBrowser() {
     params.set("limit", String(MEDIA_PAGE_SIZE))
     if (normalizedSearchTerm) params.set("search", normalizedSearchTerm)
 
-    if (selectedSubfolder !== ALL_SUB) {
+    if (selectedChildFolder) {
+      params.set("folder", selectedChildFolder)
+      params.set("folderMode", "exact")
+    } else if (selectedSubfolder !== ALL_SUB) {
       params.set("folder", selectedSubfolder)
       params.set("folderMode", "prefix")
     } else if (selectedTopFolder !== ALL_TOP) {
@@ -138,7 +145,7 @@ export function MediaBrowser() {
     }
 
     return params.toString()
-  }, [assetPage, normalizedSearchTerm, selectedSubfolder, selectedTopFolder])
+  }, [assetPage, normalizedSearchTerm, selectedChildFolder, selectedSubfolder, selectedTopFolder])
 
   const loadCategories = useCallback(async () => {
     try {
@@ -162,6 +169,21 @@ export function MediaBrowser() {
   useEffect(() => {
     void loadCategories()
   }, [loadCategories])
+
+  const loadFolders = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/media/folders", { cache: "no-store" })
+      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[] })
+      if (!res.ok) throw new Error(json?.error || "Failed to fetch folders")
+      setFolders(json?.folders || [])
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to fetch folders")
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadFolders()
+  }, [loadFolders])
 
   const topFolders = useMemo(
     () => categoryTree.topOptions.map((option) => option.value),
@@ -210,15 +232,23 @@ export function MediaBrowser() {
 
   useEffect(() => {
     setSelectedSubfolder(ALL_SUB)
+    setSelectedChildFolder("")
     setSearchTerm("")
     setSelectedUrls([])
   }, [selectedTopFolder])
 
   useEffect(() => {
+    setSelectedChildFolder("")
     setAssetPage(1)
     setSearchTerm("")
     setSelectedUrls([])
   }, [selectedSubfolder])
+
+  useEffect(() => {
+    setAssetPage(1)
+    setSelectedUrls([])
+    setPreviewAsset(null)
+  }, [selectedChildFolder])
 
   useEffect(() => {
     if (selectedTopFolder === ALL_TOP) return
@@ -233,9 +263,34 @@ export function MediaBrowser() {
     setSelectedSubfolder(ALL_SUB)
   }, [selectedSubfolder, subfolders])
 
+  const directSkuFolders = useMemo(() => {
+    if (selectedSubfolder === ALL_SUB || selectedChildFolder) return [] as string[]
+    const prefix = `${selectedSubfolder}/`
+    return folders
+      .map((folder) => folder.name)
+      .filter((name) => name.startsWith(prefix))
+      .map((name) => name.slice(prefix.length))
+      .filter((rest) => rest.length > 0 && !rest.includes("/"))
+      .filter((leaf) => looksLikeProductSkuSegment(leaf))
+      .map((leaf) => `${selectedSubfolder}/${leaf}`)
+      .sort((a, b) => a.localeCompare(b))
+  }, [folders, selectedChildFolder, selectedSubfolder])
+
+  const visibleSkuFolders = useMemo(() => {
+    if (!normalizedSearchTerm) return directSkuFolders
+    return directSkuFolders.filter((folder) => {
+      const leaf = folder.split("/").pop() || folder
+      return folder.toLowerCase().includes(normalizedSearchTerm) || leaf.toLowerCase().includes(normalizedSearchTerm)
+    })
+  }, [directSkuFolders, normalizedSearchTerm])
+
+  const isAllCategoriesRoot = selectedTopFolder === ALL_TOP && selectedSubfolder === ALL_SUB && !selectedChildFolder
+  const showsSkuFolderCards = !isAllCategoriesRoot && selectedSubfolder !== ALL_SUB && !selectedChildFolder && directSkuFolders.length > 0
+
   const filteredAssets = useMemo(() => {
     const topPrefix = selectedTopFolder !== ALL_TOP ? selectedTopFolder : ""
     const subPrefix = selectedSubfolder !== ALL_SUB ? selectedSubfolder : ""
+    const childPrefix = selectedChildFolder
 
     return [...assets]
       .sort(compareAssetsNewestFirst)
@@ -248,6 +303,10 @@ export function MediaBrowser() {
         return asset.folder === subPrefix || asset.folder.startsWith(`${subPrefix}/`)
       })
       .filter((asset) => {
+        if (!childPrefix) return true
+        return asset.folder === childPrefix || asset.folder.startsWith(`${childPrefix}/`)
+      })
+      .filter((asset) => {
         if (!normalizedSearchTerm) return true
         const haystacks = [
           asset.name,
@@ -258,18 +317,23 @@ export function MediaBrowser() {
         ]
         return haystacks.some((value) => value.toLowerCase().includes(normalizedSearchTerm))
       })
-  }, [assets, normalizedSearchTerm, selectedSubfolder, selectedTopFolder])
+  }, [assets, normalizedSearchTerm, selectedChildFolder, selectedSubfolder, selectedTopFolder])
 
-  const allFilteredSelected = filteredAssets.length > 0 && filteredAssets.every((asset) => selectedUrls.includes(asset.url))
+  const renderedAssets = useMemo(() => {
+    if (showsSkuFolderCards) return [] as Asset[]
+    return filteredAssets
+  }, [filteredAssets, showsSkuFolderCards])
+
+  const allFilteredSelected = renderedAssets.length > 0 && renderedAssets.every((asset) => selectedUrls.includes(asset.url))
 
   const toggleSelectAll = () => {
-    if (filteredAssets.length === 0) return
+    if (renderedAssets.length === 0) return
     if (allFilteredSelected) {
-      const visibleUrls = new Set(filteredAssets.map((asset) => asset.url))
+      const visibleUrls = new Set(renderedAssets.map((asset) => asset.url))
       setSelectedUrls((prev) => prev.filter((url) => !visibleUrls.has(url)))
       return
     }
-    setSelectedUrls(Array.from(new Set(filteredAssets.map((asset) => asset.url))))
+    setSelectedUrls(Array.from(new Set(renderedAssets.map((asset) => asset.url))))
   }
 
   const openFilePicker = () => {
@@ -383,7 +447,10 @@ export function MediaBrowser() {
           <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-center xl:justify-start">
             <div className="flex flex-1 flex-col gap-3 lg:flex-row lg:items-center">
               <div className="grid gap-3 sm:grid-cols-[260px_260px_minmax(220px,1fr)_auto]">
-                <Select value={selectedTopFolder} onValueChange={setSelectedTopFolder}>
+                <Select value={selectedTopFolder} onValueChange={(value) => {
+                  setSelectedTopFolder(value)
+                  setSelectedChildFolder("")
+                }}>
                   <SelectTrigger className="h-12 border-[#cfd9e4] bg-white text-[15px]">
                     <SelectValue placeholder="Ana sayfalar" />
                   </SelectTrigger>
@@ -401,6 +468,7 @@ export function MediaBrowser() {
                     value={selectedSubfolder}
                     onValueChange={(value) => {
                       setSelectedSubfolder(value)
+                      setSelectedChildFolder("")
                     }}
                     disabled={selectedTopFolder === ALL_TOP}
                   >
@@ -436,7 +504,7 @@ export function MediaBrowser() {
             </div>
 
             <div className="flex items-center gap-3 xl:ml-0">
-              <Button type="button" variant="outline" className="h-12 px-5" onClick={toggleSelectAll} disabled={filteredAssets.length === 0}>
+              <Button type="button" variant="outline" className="h-12 px-5" onClick={toggleSelectAll} disabled={renderedAssets.length === 0}>
                 {allFilteredSelected ? "Secimi Kaldir" : "Tumunu Sec"}
               </Button>
               <Button
@@ -465,15 +533,52 @@ export function MediaBrowser() {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Loading media...
             </div>
-          ) : filteredAssets.length === 0 ? (
+          ) : showsSkuFolderCards ? (
+            <div className="space-y-4">
+              {visibleSkuFolders.length === 0 ? (
+                <div className="flex h-[420px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
+                  <FolderIcon className="mb-3 h-10 w-10 text-slate-300" />
+                  No folders found
+                </div>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+                  {visibleSkuFolders.map((folder) => {
+                    const folderLeaf = folder.split("/").pop() || folder
+                    return (
+                      <button
+                        key={folder}
+                        type="button"
+                        onClick={() => setSelectedChildFolder(folder)}
+                        className="rounded-[28px] border border-[#dce3ed] bg-white p-6 text-left shadow-[0_8px_24px_rgba(15,23,42,0.05)] transition hover:border-slate-300"
+                      >
+                        <div className="mb-8 text-[#f59e0b]">
+                          <FolderIcon className="h-9 w-9" />
+                        </div>
+                        <div className="text-[18px] font-semibold text-slate-900">{folderLeaf}</div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          ) : renderedAssets.length === 0 ? (
             <div className="flex h-[420px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7dee8] bg-[#f8fafc] text-slate-500">
               <ImageIcon className="mb-3 h-10 w-10 text-slate-300" />
               No images found
             </div>
           ) : (
             <>
+            {selectedChildFolder ? (
+              <div className="mb-4 flex items-center justify-between rounded-2xl border border-[#dce3ed] bg-white px-4 py-3">
+                <p className="text-sm text-slate-500">{selectedChildFolder}</p>
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedChildFolder("")}>
+                  <ChevronLeft className="mr-1 h-4 w-4" />
+                  Back
+                </Button>
+              </div>
+            ) : null}
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-              {filteredAssets.map((asset) => {
+              {renderedAssets.map((asset) => {
                 const selected = selectedUrls.includes(asset.url)
                 return (
                   <div
