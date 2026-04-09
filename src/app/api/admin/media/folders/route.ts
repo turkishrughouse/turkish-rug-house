@@ -18,6 +18,12 @@ type FolderInfo = {
   count: number
 }
 
+type ProductFolderRow = {
+  sku: string | null
+  images: string | null
+  categories: Array<{ id: string }>
+}
+
 const deleteFolderSchema = z.object({
   folder: z.string().min(1, "Folder is required"),
 })
@@ -74,12 +80,121 @@ async function collectUploadFolders(rootDir: string, relative = ""): Promise<str
   return folders
 }
 
-async function listMediaFolders(): Promise<FolderInfo[]> {
+function normalizeUploadRelativePath(relativePath: string) {
+  return (relativePath || "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0 && segment !== "." && segment !== "..")
+    .join("/")
+}
+
+function toLogicalUploadRelativePath(relativePath: string) {
+  const clean = normalizeUploadRelativePath(relativePath)
+  if (!clean) return ""
+  if (clean === "_optimized") return ""
+  if (clean.startsWith("_optimized/")) {
+    return clean.slice("_optimized/".length)
+  }
+  return clean
+}
+
+function extractProductSkuFolderFromUrl(url: string, sku: string, realUploadFolders: Set<string>) {
+  const storage = getStorageProvider()
+  const relative = storage.toRelativePath(url)
+  if (!relative) return ""
+
+  const logicalRelative = toLogicalUploadRelativePath(relative)
+  if (!logicalRelative) return ""
+
+  const parts = logicalRelative.split("/").filter(Boolean)
+  parts.pop()
+  if (parts.length === 0) return ""
+
+  const skuIndex = parts.findIndex((segment) => sanitizeFolderPath(segment) === sku)
+  if (skuIndex === -1) return ""
+
+  const skuFolder = sanitizeFolderPath(parts.slice(0, skuIndex + 1).join("/"))
+  return realUploadFolders.has(skuFolder) ? skuFolder : ""
+}
+
+function findExistingSkuFolders(sku: string, uploadFolders: string[]) {
+  const matches = new Set<string>()
+
+  for (const folder of uploadFolders) {
+    const parts = sanitizeFolderPath(folder).split("/").filter(Boolean)
+    const skuIndex = parts.findIndex((segment) => segment === sku)
+    if (skuIndex === -1) continue
+    const skuFolder = parts.slice(0, skuIndex + 1).join("/")
+    if (skuFolder) matches.add(skuFolder)
+  }
+
+  return Array.from(matches).sort((a, b) => a.localeCompare(b))
+}
+
+function buildBranchSkuFolderMap(
+  products: ProductFolderRow[],
+  categoryPathMap: Map<string, string>,
+  uploadFolders: string[]
+) {
+  const realUploadFolders = new Set(uploadFolders.map((folder) => sanitizeFolderPath(folder)).filter(Boolean))
+  const branchMap = new Map<string, Set<string>>()
+
+  for (const categoryPath of categoryPathMap.values()) {
+    if (categoryPath) branchMap.set(categoryPath, new Set<string>())
+  }
+
+  for (const product of products) {
+    const normalizedSku = sanitizeFolderPath(product.sku || "")
+    if (!normalizedSku) continue
+
+    const skuFolders = new Set<string>()
+
+    for (const imageUrl of parseProductImages(product.images)) {
+      const skuFolder = extractProductSkuFolderFromUrl(imageUrl, normalizedSku, realUploadFolders)
+      if (skuFolder) skuFolders.add(skuFolder)
+    }
+
+    if (skuFolders.size === 0) {
+      for (const folder of findExistingSkuFolders(normalizedSku, uploadFolders)) {
+        skuFolders.add(folder)
+      }
+    }
+
+    if (skuFolders.size === 0) continue
+
+    for (const category of product.categories) {
+      const categoryPath = categoryPathMap.get(category.id) || ""
+      if (!categoryPath) continue
+      const existing = branchMap.get(categoryPath) || new Set<string>()
+      for (const skuFolder of skuFolders) {
+        existing.add(skuFolder)
+      }
+      branchMap.set(categoryPath, existing)
+    }
+  }
+
+  return Object.fromEntries(
+    Array.from(branchMap.entries()).map(([branch, skuFolders]) => [
+      branch,
+      Array.from(skuFolders).sort((a, b) => a.localeCompare(b)),
+    ])
+  )
+}
+
+async function listMediaFolders(): Promise<{ folders: FolderInfo[]; branchSkuFolders: Record<string, string[]> }> {
   const uploadRoot = path.join(process.cwd(), "public", "uploads")
-  const [categories, uploadFolders] = await Promise.all([
+  const [categories, products, uploadFolders] = await Promise.all([
     prisma.category.findMany({
       select: { id: true, slug: true, parentId: true },
       orderBy: { sortOrder: "asc" },
+    }),
+    prisma.product.findMany({
+      select: {
+        sku: true,
+        images: true,
+        categories: { select: { id: true } },
+      },
     }),
     collectUploadFolders(uploadRoot),
   ])
@@ -106,15 +221,18 @@ async function listMediaFolders(): Promise<FolderInfo[]> {
     markFolder(folder, 1)
   }
 
-  return Array.from(folderCounts.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([name, count]) => ({ name, count }))
+  return {
+    folders: Array.from(folderCounts.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([name, count]) => ({ name, count })),
+    branchSkuFolders: buildBranchSkuFolderMap(products, categoryPathMap, uploadFolders),
+  }
 }
 
 export async function GET() {
   try {
-    const folders = await listMediaFolders()
-    return NextResponse.json({ folders })
+    const { folders, branchSkuFolders } = await listMediaFolders()
+    return NextResponse.json({ folders, branchSkuFolders })
   } catch (error) {
     console.error("GET /api/admin/media/folders error:", error)
     return NextResponse.json({ error: "Failed to fetch folders" }, { status: 500 })

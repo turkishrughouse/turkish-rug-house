@@ -164,6 +164,7 @@ function resolveFolderRootsFromInventory(targetPath: string, folderNames: string
 export function MediaBrowser() {
   const [categories, setCategories] = useState<CategoryRow[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
+  const [branchSkuFolders, setBranchSkuFolders] = useState<Record<string, string[]>>({})
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedTopFolder, setSelectedTopFolder] = useState(ALL_TOP)
@@ -215,9 +216,10 @@ export function MediaBrowser() {
   const loadFolders = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/media/folders", { cache: "no-store" })
-      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[] })
+      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[]; branchSkuFolders?: Record<string, string[]> })
       if (!res.ok) throw new Error(json?.error || "Failed to fetch folders")
       setFolders(json?.folders || [])
+      setBranchSkuFolders(json?.branchSkuFolders || {})
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to fetch folders")
     }
@@ -301,6 +303,12 @@ export function MediaBrowser() {
 
   const resolvedSkuFolders = useMemo(() => {
     if (selectedSubfolder === ALL_SUB || selectedChildFolder) return [] as string[]
+    if (Object.prototype.hasOwnProperty.call(branchSkuFolders, selectedSubfolder)) {
+      return (branchSkuFolders[selectedSubfolder] || [])
+        .filter((folder) => realFolderNames.includes(folder))
+        .sort((a, b) => a.localeCompare(b))
+    }
+
     const candidateRoots = resolvedSubfolderRoots.length > 0 ? resolvedSubfolderRoots : resolveFolderRootsFromInventory(selectedSubfolder, folderNames)
 
     return realFolderNames
@@ -310,7 +318,7 @@ export function MediaBrowser() {
         return looksLikeProductSkuSegment(leaf)
       })
       .sort((a, b) => a.localeCompare(b))
-  }, [folderNames, realFolderNames, resolvedSubfolderRoots, selectedChildFolder, selectedSubfolder])
+  }, [branchSkuFolders, folderNames, realFolderNames, resolvedSubfolderRoots, selectedChildFolder, selectedSubfolder])
 
   const visibleSkuFolders = useMemo(() => {
     if (!normalizedSearchTerm) return resolvedSkuFolders
