@@ -22,6 +22,11 @@ type Asset = {
   source: string
   usedIn: string
   createdAt?: number
+  updatedAt?: number | string
+  uploadedAt?: number | string
+  modifiedAt?: number | string
+  timestamp?: number | string
+  sortTimestamp?: number
 }
 
 type PaginationState = {
@@ -48,8 +53,38 @@ const ALL_TOP = "__all__"
 const ALL_SUB = "__all_sub__"
 const MEDIA_PAGE_SIZE = 30
 
+function toEpochMillis(value: number | string | undefined) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0
+  }
+
+  if (typeof value === "string") {
+    const numeric = Number(value)
+    if (Number.isFinite(numeric)) return numeric
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+
+  return 0
+}
+
+function withSortTimestamp(asset: Asset): Asset {
+  const sortTimestamp =
+    toEpochMillis(asset.createdAt) ||
+    toEpochMillis(asset.updatedAt) ||
+    toEpochMillis(asset.uploadedAt) ||
+    toEpochMillis(asset.modifiedAt) ||
+    toEpochMillis(asset.timestamp) ||
+    0
+
+  return {
+    ...asset,
+    sortTimestamp,
+  }
+}
+
 function compareAssetsNewestFirst(a: Asset, b: Asset) {
-  return (b.createdAt || 0) - (a.createdAt || 0) || a.name.localeCompare(b.name) || a.url.localeCompare(b.url)
+  return (b.sortTimestamp || 0) - (a.sortTimestamp || 0) || b.name.localeCompare(a.name) || b.url.localeCompare(a.url)
 }
 
 function prettifyAssetName(asset: Asset) {
@@ -201,7 +236,7 @@ export function MediaBrowser() {
       const res = await fetch(`/api/admin/media?${assetQuery}`, { cache: "no-store" })
       const json = await res.json().catch(() => null as null | { error?: string; assets?: Asset[]; pagination?: PaginationState })
       if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
-      setAssets([...(json?.assets || [])].sort(compareAssetsNewestFirst))
+      setAssets((json?.assets || []).map(withSortTimestamp))
       setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
       if (json?.pagination?.page && json.pagination.page !== assetPage) {
         setAssetPage(json.pagination.page)
