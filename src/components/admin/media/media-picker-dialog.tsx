@@ -376,17 +376,6 @@ export function MediaPickerDialog({
 
   useEffect(() => {
     if (!open || !foldersLoaded) return
-    if (activeFolder === "all" && !selectedChildFolder) {
-      setAssets([])
-      setPagination({
-        page: 1,
-        limit: MEDIA_PAGE_SIZE,
-        totalItems: 0,
-        totalPages: 1,
-      })
-      setLoading(false)
-      return
-    }
     void loadAssets()
   }, [activeFolder, foldersLoaded, loadAssets, open, selectedChildFolder])
 
