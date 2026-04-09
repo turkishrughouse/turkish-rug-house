@@ -45,9 +45,11 @@ type ProductWithRelations = Omit<Product, "price" | "compareAtPrice" | "sku"> & 
 }
 
 type FilterOption = {
+    id?: string
     slug?: string
     title?: string
     name?: string
+    parentId?: string | null
     productCount?: number
 }
 
@@ -165,6 +167,30 @@ export function ProductList({
     const inTrashView = (filters.status || "all") === "trash"
     const formattedSizeFilter = formatCmSizeWithFeet(sizeFilter)
     const currentListUrl = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`
+    const orderedCategoryOptions = useMemo(() => {
+        const categories = filterOptions.categories.map((category, index) => ({
+            ...category,
+            _index: index,
+        }))
+        const childrenByParent = new Map<string | null, Array<(typeof categories)[number]>>()
+
+        for (const category of categories) {
+            const key = category.parentId ?? null
+            const list = childrenByParent.get(key) || []
+            list.push(category)
+            childrenByParent.set(key, list)
+        }
+
+        const flatten = (parentId: string | null, level: number): Array<FilterOption & { level: number }> => {
+            const rows = (childrenByParent.get(parentId) || []).sort((a, b) => a._index - b._index)
+            return rows.flatMap((category) => [
+                { ...category, level },
+                ...flatten(category.id || null, level + 1),
+            ])
+        }
+
+        return flatten(null, 0)
+    }, [filterOptions.categories])
 
     useEffect(() => {
         if (typeof window === "undefined") return
@@ -657,9 +683,9 @@ export function ProductList({
                         className="h-10 w-[250px] rounded-sm border border-[#8c8f94] bg-white px-2.5 text-[13px] text-slate-700"
                     >
                         <option value="">{tx("Select a category", "Kategori seç")}</option>
-                        {filterOptions.categories.map((category) => (
+                        {orderedCategoryOptions.map((category) => (
                             <option key={category.slug || category.title} value={category.slug || ""}>
-                                {`${category.title} (${category.productCount ?? 0})`}
+                                {`${"\u00A0\u00A0".repeat(category.level)}${category.title} (${category.productCount ?? 0})`}
                             </option>
                         ))}
                     </select>

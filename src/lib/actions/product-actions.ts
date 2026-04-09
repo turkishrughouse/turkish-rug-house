@@ -1579,7 +1579,12 @@ export async function getProductOptions(input?: { ensureDynamicAttributes?: bool
     })
 
     const [categories, types, styles, colors, sizes, ages, materials, categoriesWithProducts, attributeGroups] = await Promise.all([
-        db.category.findMany(),
+        db.category.findMany({
+            orderBy: [
+                { sortOrder: "asc" },
+                { title: "asc" },
+            ],
+        }),
         db.type.findMany(),
         db.style.findMany(),
         db.color.findMany(),
