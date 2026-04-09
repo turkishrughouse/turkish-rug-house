@@ -32,6 +32,19 @@ type PaginationState = {
   totalPages: number
 }
 
+type CategoryRow = {
+  id: string
+  title: string
+  slug: string
+  parentId: string | null
+}
+
+type CategoryOption = {
+  id: string
+  label: string
+  value: string
+}
+
 type TabKey = "upload" | "library"
 
 type MediaPickerDialogProps = {
@@ -120,6 +133,51 @@ function resolveProductUploadFolder(baseFolder: string, sku: string) {
   return `${cleanFolder}/${cleanSku}`
 }
 
+function buildCategoryOptions(categories: CategoryRow[]) {
+  const byId = new Map(categories.map((category) => [category.id, category]))
+  const childrenByParent = new Map<string | null, CategoryRow[]>()
+  const pathById = new Map<string, string>()
+
+  for (const category of categories) {
+    const key = category.parentId || null
+    const list = childrenByParent.get(key) || []
+    list.push(category)
+    childrenByParent.set(key, list)
+  }
+
+  const resolvePath = (id: string): string => {
+    const cached = pathById.get(id)
+    if (cached) return cached
+    const current = byId.get(id)
+    if (!current) return ""
+    const parentPath = current.parentId ? resolvePath(current.parentId) : ""
+    const nextPath = parentPath ? `${parentPath}/${current.slug}` : current.slug
+    pathById.set(id, nextPath)
+    return nextPath
+  }
+
+  const topOptions = (childrenByParent.get(null) || []).map<CategoryOption>((category) => ({
+    id: category.id,
+    label: category.title,
+    value: resolvePath(category.id),
+  }))
+
+  const subOptionsByTop = new Map<string, CategoryOption[]>()
+  for (const topOption of topOptions) {
+    const directChildren = (childrenByParent.get(topOption.id) || []).map<CategoryOption>((category) => ({
+      id: category.id,
+      label: category.title,
+      value: resolvePath(category.id),
+    }))
+    subOptionsByTop.set(topOption.value, directChildren)
+  }
+
+  return {
+    topOptions,
+    subOptionsByTop,
+  }
+}
+
 export function MediaPickerDialog({
   open,
   onOpenChange,
@@ -131,12 +189,14 @@ export function MediaPickerDialog({
   const [tab, setTab] = useState<TabKey>("library")
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [categories, setCategories] = useState<CategoryRow[]>([])
   const [activeFolder, setActiveFolder] = useState("all")
   const [activeSubfolder, setActiveSubfolder] = useState("all")
   const [selectedChildFolder, setSelectedChildFolder] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [uploadFolder, setUploadFolder] = useState("categories")
   const [folders, setFolders] = useState<Folder[]>([])
+  const [branchSkuFolders, setBranchSkuFolders] = useState<Record<string, string[]>>({})
   const [assets, setAssets] = useState<Asset[]>([])
   const [selectedUrls, setSelectedUrls] = useState<string[]>([])
   const [creatingFolder, setCreatingFolder] = useState(false)
@@ -173,11 +233,79 @@ export function MediaPickerDialog({
   }, [productMeta?.categoryFolderPath, productMeta?.sku])
 
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
+  const categoryTree = useMemo(() => buildCategoryOptions(categories), [categories])
+
+  const topFolders = useMemo(
+    () => categoryTree.topOptions.map((option) => ({ name: option.value, count: 0 })),
+    [categoryTree.topOptions]
+  )
+
+  const topFolderLabels = useMemo(
+    () => new Map(categoryTree.topOptions.map((option) => [option.value, option.label])),
+    [categoryTree.topOptions]
+  )
+
+  const subfolders = useMemo(() => {
+    if (activeFolder === "all") return [] as string[]
+    return (categoryTree.subOptionsByTop.get(activeFolder) || []).map((option) => option.value)
+  }, [activeFolder, categoryTree.subOptionsByTop])
+
+  const subfolderLabels = useMemo(
+    () =>
+      new Map(
+        Array.from(categoryTree.subOptionsByTop.values()).flatMap((options) => options.map((option) => [option.value, option.label] as const))
+      ),
+    [categoryTree.subOptionsByTop]
+  )
+
+  const categoryBranchSkuFolders = useMemo(() => {
+    if (activeSubfolder === "all") return [] as string[]
+    return branchSkuFolders[activeSubfolder] || []
+  }, [activeSubfolder, branchSkuFolders])
 
   const usesSkuFolders = useMemo(() => {
     if (activeSubfolder === "all") return false
+    if (categoryBranchSkuFolders.length > 0) return true
     return shouldUseProductSkuChildFolders(activeSubfolder)
-  }, [activeSubfolder])
+  }, [activeSubfolder, categoryBranchSkuFolders])
+
+  const loadCategories = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/categories", { cache: "no-store" })
+      const json = await res.json().catch(() => null as null | { error?: string } | CategoryRow[])
+      if (!res.ok) {
+        const errorMessage = !Array.isArray(json) && json?.error ? json.error : "Failed to fetch categories"
+        throw new Error(errorMessage)
+      }
+      setCategories(
+        Array.isArray(json)
+          ? json.map((category) => ({
+              id: category.id,
+              title: category.title,
+              slug: category.slug,
+              parentId: category.parentId ?? null,
+            }))
+          : []
+      )
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to fetch categories")
+    }
+  }, [])
+
+  const loadFolders = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/media/folders", { cache: "no-store" })
+      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[]; branchSkuFolders?: Record<string, string[]> })
+      if (!res.ok) throw new Error(json?.error || "Failed to fetch folders")
+      const nextFolders: Folder[] = json?.folders ?? []
+      setFolders(nextFolders)
+      setBranchSkuFolders(json?.branchSkuFolders || {})
+      return { folders: nextFolders }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to fetch folders")
+      return null
+    }
+  }, [])
 
   const assetQuery = useMemo(() => {
     const params = new URLSearchParams()
@@ -185,27 +313,33 @@ export function MediaPickerDialog({
     params.set("limit", String(MEDIA_PAGE_SIZE))
     if (normalizedSearchTerm) params.set("search", normalizedSearchTerm)
 
-    const selectedPath =
-      selectedChildFolder ||
-      (activeSubfolder !== "all" ? activeSubfolder : activeFolder !== "all" ? activeFolder : "")
     const isAllCategoriesRoot = activeFolder === "all" && activeSubfolder === "all" && !selectedChildFolder
-    const isLeafFolder = Boolean(selectedPath) && !shouldUseProductSkuChildFolders(selectedPath)
     const isCategoryRootBrowseState = activeFolder !== "all" && activeSubfolder === "all" && !selectedChildFolder
-    const isSubcategoryBrowseState = Boolean(selectedPath) && !isLeafFolder && !isCategoryRootBrowseState
+    const isSubcategoryBrowseState = activeSubfolder !== "all" && !selectedChildFolder && categoryBranchSkuFolders.length > 0
+    const isLeafFolder = Boolean(selectedChildFolder)
 
     let finalRequestFolder = ""
     let finalFolderMode = ""
 
     if (!isAllCategoriesRoot) {
       if (isLeafFolder) {
-        finalRequestFolder = selectedPath
+        finalRequestFolder = selectedChildFolder
         finalFolderMode = "exact"
-      } else {
+      } else if (isSubcategoryBrowseState) {
         finalRequestFolder = BROWSE_ONLY_FOLDER
         finalFolderMode = "prefix"
+      } else if (activeSubfolder !== "all") {
+        finalRequestFolder = activeSubfolder
+        finalFolderMode = "prefix"
+      } else if (isCategoryRootBrowseState) {
+        finalRequestFolder = activeFolder
+        finalFolderMode = "prefix"
       }
-      params.set("folder", finalRequestFolder)
-      params.set("folderMode", finalFolderMode)
+
+      if (finalRequestFolder) {
+        params.set("folder", finalRequestFolder)
+        params.set("folderMode", finalFolderMode)
+      }
     }
 
     console.info("[media-picker-dialog] asset request", {
@@ -219,21 +353,7 @@ export function MediaPickerDialog({
       isSubcategoryBrowseState,
     })
     return params.toString()
-  }, [activeFolder, activeSubfolder, assetPage, normalizedSearchTerm, selectedChildFolder])
-
-  const loadFolders = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/media/folders", { cache: "no-store" })
-      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[] })
-      if (!res.ok) throw new Error(json?.error || "Failed to fetch folders")
-      const nextFolders: Folder[] = json?.folders ?? []
-      setFolders(nextFolders)
-      return { folders: nextFolders }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to fetch folders")
-      return null
-    }
-  }, [])
+  }, [activeFolder, activeSubfolder, assetPage, categoryBranchSkuFolders.length, normalizedSearchTerm, selectedChildFolder])
 
   const loadAssets = useCallback(async () => {
     setLoading(true)
@@ -258,6 +378,11 @@ export function MediaPickerDialog({
       setLoading(false)
     }
   }, [assetPage, assetQuery])
+
+  useEffect(() => {
+    if (!open) return
+    void loadCategories()
+  }, [loadCategories, open])
 
   useEffect(() => {
     if (!open) return
@@ -326,19 +451,6 @@ export function MediaPickerDialog({
     }
   }, [open])
 
-  const directSubfolders = useMemo(() => {
-    if (activeFolder === "all") return [] as string[]
-    const prefix = `${activeFolder}/`
-    return folders
-      .map((folder) => folder.name)
-      .filter((name) => name.startsWith(prefix))
-      .map((name) => name.slice(prefix.length))
-      .filter((rest) => rest.length > 0 && !rest.includes("/"))
-      .filter((leaf) => !looksLikeProductSkuSegment(leaf))
-      .map((leaf) => `${activeFolder}/${leaf}`)
-      .sort((a, b) => a.localeCompare(b))
-  }, [activeFolder, folders])
-
   const currentPath = useMemo(() => {
     if (selectedChildFolder) return selectedChildFolder
     if (activeSubfolder !== "all") return activeSubfolder
@@ -364,23 +476,16 @@ export function MediaPickerDialog({
     })
   }, [hiddenDeletedUrls, uniqueAssets])
 
-  const topFolders = useMemo(() => {
-    const names = new Set<string>()
-    for (const folder of folders) {
-      const top = folder.name.split("/")[0] || folder.name
-      if (top) names.add(top)
-    }
-    const normalFolders = Array.from(names).map((name) => ({ name, count: 0 })).sort((a, b) => a.name.localeCompare(b.name))
-    return [{ name: "all", count: pagination.totalItems }, ...normalFolders]
-  }, [folders, pagination.totalItems])
-
   useEffect(() => {
     if (!open || !foldersLoaded) return
     void loadAssets()
-  }, [activeFolder, foldersLoaded, loadAssets, open, selectedChildFolder])
+  }, [activeFolder, activeSubfolder, foldersLoaded, loadAssets, open, selectedChildFolder])
 
   const childFolders = useMemo(() => {
     if (activeSubfolder === "all") return [] as string[]
+    if (categoryBranchSkuFolders.length > 0) {
+      return [...categoryBranchSkuFolders].sort((a, b) => a.localeCompare(b))
+    }
     const prefix = `${activeSubfolder}/`
     return folders
       .map((folder) => folder.name)
@@ -389,40 +494,29 @@ export function MediaPickerDialog({
       .filter((rest) => rest.length > 0 && !rest.includes("/"))
       .map((leaf) => `${activeSubfolder}/${leaf}`)
       .sort((a, b) => a.localeCompare(b))
-  }, [activeSubfolder, folders])
+  }, [activeSubfolder, categoryBranchSkuFolders, folders])
 
   const currentLevelFolders = useMemo(() => {
     if (selectedChildFolder) return [] as string[]
     if (activeSubfolder !== "all") return childFolders
-    return directSubfolders
-  }, [activeSubfolder, childFolders, directSubfolders, selectedChildFolder])
+    return subfolders
+  }, [activeSubfolder, childFolders, selectedChildFolder, subfolders])
 
   const searchableFolders = useMemo(() => {
-    const allFolderNames = folders.map((folder) => folder.name)
-
     if (selectedChildFolder) {
-      const prefix = `${selectedChildFolder}/`
-      return allFolderNames
-        .filter((name) => name.startsWith(prefix))
-        .sort((a, b) => a.localeCompare(b))
+      return [] as string[]
     }
 
     if (activeSubfolder !== "all") {
-      const prefix = `${activeSubfolder}/`
-      return allFolderNames
-        .filter((name) => name.startsWith(prefix))
-        .sort((a, b) => a.localeCompare(b))
+      return childFolders
     }
 
     if (activeFolder !== "all") {
-      const prefix = `${activeFolder}/`
-      return allFolderNames
-        .filter((name) => name.startsWith(prefix))
-        .sort((a, b) => a.localeCompare(b))
+      return subfolders
     }
 
-    return allFolderNames.sort((a, b) => a.localeCompare(b))
-  }, [activeFolder, activeSubfolder, folders, selectedChildFolder])
+    return [] as string[]
+  }, [activeFolder, activeSubfolder, childFolders, selectedChildFolder, subfolders])
 
   const visibleCurrentLevelFolders = useMemo(() => {
     if (!normalizedSearchTerm) return currentLevelFolders
@@ -451,7 +545,7 @@ export function MediaPickerDialog({
       } else if (activeSubfolder === "all") {
         const inTopFolder =
           asset.folder === activeFolder ||
-          (normalizedSearchTerm.length > 0 && asset.folder.startsWith(`${activeFolder}/`))
+          asset.folder.startsWith(`${activeFolder}/`)
         if (!inTopFolder) return false
       } else if (usesSkuFolders) {
         return false
@@ -1046,11 +1140,9 @@ export function MediaPickerDialog({
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="all">All media items</SelectItem>
-                            {topFolders
-                              .filter((folder) => folder.name !== "all")
-                              .map((folder) => (
+                            {topFolders.map((folder) => (
                                 <SelectItem key={folder.name} value={folder.name}>
-                                  {formatFolderLabel(folder.name)}
+                                  {topFolderLabels.get(folder.name) || formatFolderLabel(folder.name)}
                                 </SelectItem>
                               ))}
                           </SelectContent>
@@ -1073,9 +1165,9 @@ export function MediaPickerDialog({
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="all">All subcategories</SelectItem>
-                            {directSubfolders.map((folder) => (
+                            {subfolders.map((folder) => (
                               <SelectItem key={folder} value={folder}>
-                                {formatFolderLabel(folder.split("/").pop() || folder)}
+                                {subfolderLabels.get(folder) || formatFolderLabel(folder.split("/").pop() || folder)}
                               </SelectItem>
                             ))}
                           </SelectContent>
