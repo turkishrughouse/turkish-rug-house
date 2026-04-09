@@ -76,17 +76,10 @@ async function collectUploadFolders(rootDir: string, relative = ""): Promise<str
 
 async function listMediaFolders(): Promise<FolderInfo[]> {
   const uploadRoot = path.join(process.cwd(), "public", "uploads")
-  const [categories, products, uploadFolders] = await Promise.all([
+  const [categories, uploadFolders] = await Promise.all([
     prisma.category.findMany({
       select: { id: true, slug: true, parentId: true },
       orderBy: { sortOrder: "asc" },
-    }),
-    prisma.product.findMany({
-      where: { sku: { not: null } },
-      select: {
-        sku: true,
-        categories: { select: { id: true } },
-      },
     }),
     collectUploadFolders(uploadRoot),
   ])
@@ -101,16 +94,6 @@ async function listMediaFolders(): Promise<FolderInfo[]> {
 
   for (const categoryPath of categoryPathMap.values()) {
     if (categoryPath) folderNames.add(categoryPath)
-  }
-
-  for (const product of products) {
-    const sku = sanitizeFolderPath(product.sku || "")
-    if (!sku) continue
-    for (const category of product.categories) {
-      const categoryPath = categoryPathMap.get(category.id) || ""
-      if (!categoryPath) continue
-      folderNames.add(`${categoryPath}/${sku}`)
-    }
   }
 
   for (const folder of uploadFolders) {

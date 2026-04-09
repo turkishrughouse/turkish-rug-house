@@ -158,6 +158,7 @@ export function MediaBrowser() {
     totalPages: 1,
   })
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const latestAssetRequestRef = useRef(0)
 
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
   const categoryTree = useMemo(() => buildCategoryOptions(categories), [categories])
@@ -230,20 +231,34 @@ export function MediaBrowser() {
     [categoryTree.topOptions]
   )
 
+  const resetToRoot = useCallback(() => {
+    setSelectedTopFolder(ALL_TOP)
+    setSelectedSubfolder(ALL_SUB)
+    setSelectedChildFolder("")
+    setAssetPage(1)
+    setSelectedUrls([])
+    setPreviewAsset(null)
+  }, [])
+
   const loadAssets = useCallback(async () => {
+    const requestId = latestAssetRequestRef.current + 1
+    latestAssetRequestRef.current = requestId
     setLoading(true)
     try {
       const res = await fetch(`/api/admin/media?${assetQuery}`, { cache: "no-store" })
       const json = await res.json().catch(() => null as null | { error?: string; assets?: Asset[]; pagination?: PaginationState })
       if (!res.ok) throw new Error(json?.error || "Failed to fetch media")
+      if (requestId !== latestAssetRequestRef.current) return
       setAssets((json?.assets || []).map(withSortTimestamp))
       setPagination(json?.pagination || { page: 1, limit: MEDIA_PAGE_SIZE, totalItems: 0, totalPages: 1 })
       if (json?.pagination?.page && json.pagination.page !== assetPage) {
         setAssetPage(json.pagination.page)
       }
     } catch (error) {
+      if (requestId !== latestAssetRequestRef.current) return
       toast.error(error instanceof Error ? error.message : "Failed to fetch media")
     } finally {
+      if (requestId !== latestAssetRequestRef.current) return
       setLoading(false)
     }
   }, [assetPage, assetQuery])
@@ -266,20 +281,6 @@ export function MediaBrowser() {
   )
 
   useEffect(() => {
-    setSelectedSubfolder(ALL_SUB)
-    setSelectedChildFolder("")
-    setSearchTerm("")
-    setSelectedUrls([])
-  }, [selectedTopFolder])
-
-  useEffect(() => {
-    setSelectedChildFolder("")
-    setAssetPage(1)
-    setSearchTerm("")
-    setSelectedUrls([])
-  }, [selectedSubfolder])
-
-  useEffect(() => {
     setAssetPage(1)
     setSelectedUrls([])
     setPreviewAsset(null)
@@ -288,39 +289,53 @@ export function MediaBrowser() {
   useEffect(() => {
     if (selectedTopFolder === ALL_TOP) return
     if (topFolders.includes(selectedTopFolder)) return
-    setSelectedTopFolder(ALL_TOP)
-    setSelectedSubfolder(ALL_SUB)
-  }, [selectedTopFolder, topFolders])
+    resetToRoot()
+  }, [resetToRoot, selectedTopFolder, topFolders])
 
   useEffect(() => {
     if (selectedSubfolder === ALL_SUB) return
     if (subfolders.includes(selectedSubfolder)) return
     setSelectedSubfolder(ALL_SUB)
+    setSelectedChildFolder("")
+    setAssetPage(1)
+    setSelectedUrls([])
+    setPreviewAsset(null)
   }, [selectedSubfolder, subfolders])
 
-  const directSkuFolders = useMemo(() => {
+  const folderNames = useMemo(
+    () => Array.from(new Set(folders.map((folder) => folder.name).filter(Boolean))),
+    [folders]
+  )
+
+  const resolvedSkuFolders = useMemo(() => {
     if (selectedSubfolder === ALL_SUB || selectedChildFolder) return [] as string[]
-    const prefix = `${selectedSubfolder}/`
-    return folders
-      .map((folder) => folder.name)
-      .filter((name) => name.startsWith(prefix))
-      .map((name) => name.slice(prefix.length))
-      .filter((rest) => rest.length > 0 && !rest.includes("/"))
-      .filter((leaf) => looksLikeProductSkuSegment(leaf))
-      .map((leaf) => `${selectedSubfolder}/${leaf}`)
+
+    const subfolderSegments = selectedSubfolder.split("/").filter(Boolean)
+    const subfolderLeaf = subfolderSegments[subfolderSegments.length - 1] || ""
+
+    return folderNames
+      .filter((folder) => {
+        const parts = folder.split("/").filter(Boolean)
+        const leaf = parts[parts.length - 1] || ""
+        if (!looksLikeProductSkuSegment(leaf)) return false
+        if (folder.startsWith(`${selectedSubfolder}/`)) return true
+        if (!subfolderLeaf) return false
+        const parent = parts.slice(0, -1)
+        return parent.includes(subfolderLeaf)
+      })
       .sort((a, b) => a.localeCompare(b))
-  }, [folders, selectedChildFolder, selectedSubfolder])
+  }, [folderNames, selectedChildFolder, selectedSubfolder])
 
   const visibleSkuFolders = useMemo(() => {
-    if (!normalizedSearchTerm) return directSkuFolders
-    return directSkuFolders.filter((folder) => {
+    if (!normalizedSearchTerm) return resolvedSkuFolders
+    return resolvedSkuFolders.filter((folder) => {
       const leaf = folder.split("/").pop() || folder
       return folder.toLowerCase().includes(normalizedSearchTerm) || leaf.toLowerCase().includes(normalizedSearchTerm)
     })
-  }, [directSkuFolders, normalizedSearchTerm])
+  }, [normalizedSearchTerm, resolvedSkuFolders])
 
   const isAllCategoriesRoot = selectedTopFolder === ALL_TOP && selectedSubfolder === ALL_SUB && !selectedChildFolder
-  const showsSkuFolderCards = !isAllCategoriesRoot && selectedSubfolder !== ALL_SUB && !selectedChildFolder && directSkuFolders.length > 0
+  const showsSkuFolderCards = !isAllCategoriesRoot && selectedSubfolder !== ALL_SUB && !selectedChildFolder && resolvedSkuFolders.length > 0
 
   const filteredAssets = useMemo(() => {
     const topPrefix = selectedTopFolder !== ALL_TOP ? selectedTopFolder : ""
@@ -483,8 +498,16 @@ export function MediaBrowser() {
             <div className="flex flex-1 flex-col gap-3 lg:flex-row lg:items-center">
               <div className="grid gap-3 sm:grid-cols-[260px_260px_minmax(220px,1fr)_auto]">
                 <Select value={selectedTopFolder} onValueChange={(value) => {
+                  if (value === ALL_TOP) {
+                    resetToRoot()
+                    return
+                  }
                   setSelectedTopFolder(value)
+                  setSelectedSubfolder(ALL_SUB)
                   setSelectedChildFolder("")
+                  setAssetPage(1)
+                  setSelectedUrls([])
+                  setPreviewAsset(null)
                 }}>
                   <SelectTrigger className="h-12 border-[#cfd9e4] bg-white text-[15px]">
                     <SelectValue placeholder="Ana sayfalar" />
@@ -504,6 +527,9 @@ export function MediaBrowser() {
                     onValueChange={(value) => {
                       setSelectedSubfolder(value)
                       setSelectedChildFolder("")
+                      setAssetPage(1)
+                      setSelectedUrls([])
+                      setPreviewAsset(null)
                     }}
                     disabled={selectedTopFolder === ALL_TOP}
                   >

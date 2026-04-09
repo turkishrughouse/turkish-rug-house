@@ -389,6 +389,10 @@ function folderMatchesContext(assetFolder: string, targetFolder: string, mode: F
   return assetFolder === targetFolder
 }
 
+function compareAggregatedMediaAssets(a: AggregatedMediaAsset, b: AggregatedMediaAsset) {
+  return b.createdAt - a.createdAt || b.name.localeCompare(a.name) || b.url.localeCompare(a.url)
+}
+
 async function listUploadFilesInFolder(rootDir: string, relative = "", recursive = false): Promise<MediaAsset[]> {
   const storage = getStorageProvider()
   const current = path.join(rootDir, relative)
@@ -587,7 +591,7 @@ export async function GET(req: NextRequest) {
 
     const uploadedFiles = hasScopedFolder
       ? await listUploadFilesInFolder(uploadRoot, folder, folderMode === "prefix")
-      : []
+      : await listUploadFilesInFolder(uploadRoot, "", true)
     const uploadLookup = buildUploadLookup(uploadedFiles)
 
     const assets: MediaAsset[] = [...uploadedFiles]
@@ -744,7 +748,7 @@ export async function GET(req: NextRequest) {
     }))
 
     const sortedAssets = uniqueAssets
-      .sort((a, b) => b.createdAt - a.createdAt || a.name.localeCompare(b.name))
+      .sort(compareAggregatedMediaAssets)
       .filter((asset) => {
         if (folder) {
           const inFolder = folderMode === "prefix"

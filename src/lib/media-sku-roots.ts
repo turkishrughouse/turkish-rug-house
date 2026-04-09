@@ -21,7 +21,8 @@ export function normalizeFolderPath(input: string) {
 
 export function looksLikeProductSkuSegment(value: string) {
   const clean = (value || "").trim()
-  return /[0-9]/.test(clean) && /^[A-Z0-9-]{6,}$/i.test(clean)
+  if (/^\d{5,}$/i.test(clean)) return true
+  return /[0-9]/.test(clean) && /^[A-Z0-9-]{5,}$/i.test(clean)
 }
 
 export function isProductSkuFolderPath(folderPath: string) {
