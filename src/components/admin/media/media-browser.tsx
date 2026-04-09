@@ -409,6 +409,7 @@ export function MediaBrowser() {
   }, [filteredAssets, showsSkuFolderCards])
 
   const allFilteredSelected = renderedAssets.length > 0 && renderedAssets.every((asset) => selectedUrls.includes(asset.url))
+  const hasSelectedFolderCard = showsSkuFolderCards && Boolean(selectedFolderCard)
 
   const toggleSelectAll = () => {
     if (renderedAssets.length === 0) return
@@ -524,6 +525,37 @@ export function MediaBrowser() {
     }
   }
 
+  const deleteSelectedFolder = async () => {
+    if (!selectedFolderCard) return
+    if (!window.confirm(`"${selectedFolderCard}" klasoru silinsin mi?`)) return
+
+    setDeleting(true)
+    try {
+      const res = await fetch("/api/admin/media/folders", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folder: selectedFolderCard }),
+      })
+      const json = await res.json().catch(() => null as null | { error?: string })
+      if (!res.ok) throw new Error(json?.error || "Delete failed")
+      toast.success("Klasor silindi")
+      setSelectedFolderCard("")
+      await Promise.all([loadFolders(), loadAssets()])
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Delete failed")
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const deleteCurrentSelection = async () => {
+    if (hasSelectedFolderCard) {
+      await deleteSelectedFolder()
+      return
+    }
+    await deleteSelected()
+  }
+
   return (
     <>
       <Card className="border border-[#dce3ed] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
@@ -607,8 +639,8 @@ export function MediaBrowser() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={deleteSelected}
-                disabled={deleting || selectedUrls.length === 0}
+                onClick={() => void deleteCurrentSelection()}
+                disabled={deleting || (!hasSelectedFolderCard && selectedUrls.length === 0)}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Sil
