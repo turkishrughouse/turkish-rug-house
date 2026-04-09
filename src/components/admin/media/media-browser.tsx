@@ -11,9 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { isManagedUploadUrl } from "@/lib/storage/url"
 import { prettifyAdminMediaLabel } from "@/lib/admin/media-labels"
-import { looksLikeProductSkuSegment } from "@/lib/media-sku-roots"
 
-type Folder = { name: string; count: number }
 type Asset = {
   id: string
   url: string
@@ -31,64 +29,74 @@ type PaginationState = {
   totalPages: number
 }
 
+type CategoryRow = {
+  id: string
+  title: string
+  slug: string
+  parentId: string | null
+}
+
+type CategoryOption = {
+  id: string
+  label: string
+  value: string
+}
+
 const ALL_TOP = "__all__"
 const ALL_SUB = "__all_sub__"
 const MEDIA_PAGE_SIZE = 30
-const FOLDER_LABELS: Record<string, string> = {
-  "by-type": "By Type",
-  "by-style": "By Style",
-  "by-size": "By Size",
-  "by-color": "By Color",
-  "by-age": "By Age",
-  "by-area": "By Area",
-  "cushion-covers": "Cushion Covers",
-  categories: "Categories",
-  pages: "Pages",
-  profile: "Profile",
-}
-
-const INTERNAL_MEDIA_ROOTS = new Set(["cache", ".cache", "categories", "collections", "pages", "profile", "learn"])
-
-function folderLabel(value: string) {
-  const raw = value.trim()
-  if (!raw) return value
-  const direct = FOLDER_LABELS[raw]
-  if (direct) return direct
-  return raw
-    .split("-")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ")
-}
 
 function prettifyAssetName(asset: Asset) {
   return prettifyAdminMediaLabel(asset)
 }
 
-function buildCategoryTree(folderNames: string[]) {
-  const subfoldersByTop = new Map<string, Set<string>>()
+function buildCategoryOptions(categories: CategoryRow[]) {
+  const byId = new Map(categories.map((category) => [category.id, category]))
+  const childrenByParent = new Map<string | null, CategoryRow[]>()
+  const pathById = new Map<string, string>()
 
-  for (const folderName of folderNames) {
-    const parts = folderName.split("/").filter(Boolean)
-    const top = parts[0] || ""
-    const directChild = parts[1] || ""
-    if (!top || INTERNAL_MEDIA_ROOTS.has(top)) continue
+  for (const category of categories) {
+    const key = category.parentId || null
+    const list = childrenByParent.get(key) || []
+    list.push(category)
+    childrenByParent.set(key, list)
+  }
 
-    if (!subfoldersByTop.has(top)) subfoldersByTop.set(top, new Set())
-    if (!directChild || looksLikeProductSkuSegment(directChild)) continue
-    subfoldersByTop.get(top)?.add(`${top}/${directChild}`)
+  const resolvePath = (id: string): string => {
+    const cached = pathById.get(id)
+    if (cached) return cached
+    const current = byId.get(id)
+    if (!current) return ""
+    const parentPath = current.parentId ? resolvePath(current.parentId) : ""
+    const nextPath = parentPath ? `${parentPath}/${current.slug}` : current.slug
+    pathById.set(id, nextPath)
+    return nextPath
+  }
+
+  const topOptions = (childrenByParent.get(null) || []).map<CategoryOption>((category) => ({
+    id: category.id,
+    label: category.title,
+    value: resolvePath(category.id),
+  }))
+
+  const subOptionsByTop = new Map<string, CategoryOption[]>()
+  for (const topOption of topOptions) {
+    const directChildren = (childrenByParent.get(topOption.id) || []).map<CategoryOption>((category) => ({
+      id: category.id,
+      label: category.title,
+      value: resolvePath(category.id),
+    }))
+    subOptionsByTop.set(topOption.value, directChildren)
   }
 
   return {
-    topFolders: Array.from(subfoldersByTop.keys()),
-    subfoldersByTop: new Map(
-      Array.from(subfoldersByTop.entries()).map(([top, children]) => [top, Array.from(children)])
-    ),
+    topOptions,
+    subOptionsByTop,
   }
 }
 
 export function MediaBrowser() {
-  const [folders, setFolders] = useState<Folder[]>([])
+  const [categories, setCategories] = useState<CategoryRow[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedTopFolder, setSelectedTopFolder] = useState(ALL_TOP)
@@ -106,11 +114,10 @@ export function MediaBrowser() {
     totalItems: 0,
     totalPages: 1,
   })
-  const [foldersLoaded, setFoldersLoaded] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
-  const categoryTree = useMemo(() => buildCategoryTree(folders.map((folder) => folder.name)), [folders])
+  const categoryTree = useMemo(() => buildCategoryOptions(categories), [categories])
 
   const assetQuery = useMemo(() => {
     const params = new URLSearchParams()
@@ -129,24 +136,37 @@ export function MediaBrowser() {
     return params.toString()
   }, [assetPage, normalizedSearchTerm, selectedSubfolder, selectedTopFolder])
 
-  const loadFolders = useCallback(async () => {
+  const loadCategories = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/media/folders", { cache: "no-store" })
-      const json = await res.json().catch(() => null as null | { error?: string; folders?: Folder[] })
-      if (!res.ok) throw new Error(json?.error || "Failed to fetch folders")
-      setFolders(json?.folders || [])
+      const res = await fetch("/api/admin/categories", { cache: "no-store" })
+      const json = await res.json().catch(() => null as null | { error?: string } | CategoryRow[])
+      if (!res.ok) {
+        const errorMessage = !Array.isArray(json) && json?.error ? json.error : "Failed to fetch categories"
+        throw new Error(errorMessage)
+      }
+      setCategories(Array.isArray(json) ? json.map((category) => ({
+        id: category.id,
+        title: category.title,
+        slug: category.slug,
+        parentId: category.parentId ?? null,
+      })) : [])
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to fetch folders")
+      toast.error(error instanceof Error ? error.message : "Failed to fetch categories")
     }
   }, [])
 
   useEffect(() => {
-    void loadFolders().finally(() => setFoldersLoaded(true))
-  }, [loadFolders])
+    void loadCategories()
+  }, [loadCategories])
 
   const topFolders = useMemo(
-    () => [...categoryTree.topFolders].sort((a, b) => folderLabel(a).localeCompare(folderLabel(b))),
-    [categoryTree.topFolders]
+    () => categoryTree.topOptions.map((option) => option.value),
+    [categoryTree.topOptions]
+  )
+
+  const topFolderLabels = useMemo(
+    () => new Map(categoryTree.topOptions.map((option) => [option.value, option.label])),
+    [categoryTree.topOptions]
   )
 
   const loadAssets = useCallback(async () => {
@@ -168,16 +188,21 @@ export function MediaBrowser() {
   }, [assetPage, assetQuery])
 
   useEffect(() => {
-    if (!foldersLoaded) return
     void loadAssets()
-  }, [foldersLoaded, loadAssets, selectedSubfolder, selectedTopFolder])
+  }, [loadAssets, selectedSubfolder, selectedTopFolder])
 
   const subfolders = useMemo(() => {
     if (selectedTopFolder === ALL_TOP) return [] as string[]
-    return (categoryTree.subfoldersByTop.get(selectedTopFolder) || [])
-      .slice()
-      .sort((a, b) => folderLabel(a).localeCompare(folderLabel(b)))
-  }, [categoryTree.subfoldersByTop, selectedTopFolder])
+    return (categoryTree.subOptionsByTop.get(selectedTopFolder) || []).map((option) => option.value)
+  }, [categoryTree.subOptionsByTop, selectedTopFolder])
+
+  const subfolderLabels = useMemo(
+    () =>
+      new Map(
+        Array.from(categoryTree.subOptionsByTop.values()).flatMap((options) => options.map((option) => [option.value, option.label] as const))
+      ),
+    [categoryTree.subOptionsByTop]
+  )
 
   useEffect(() => {
     setSelectedSubfolder(ALL_SUB)
@@ -258,7 +283,7 @@ export function MediaBrowser() {
         if (!res.ok) throw new Error(json?.error || "Upload failed")
       }
       toast.success(`${list.length} dosya eklendi`)
-      await Promise.all([loadFolders(), loadAssets()])
+      await loadAssets()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Upload failed")
     } finally {
@@ -297,7 +322,7 @@ export function MediaBrowser() {
       }
       toast.success(`${uploadOnly.length} fotograf eklendi`)
       setSelectedUrls([])
-      await Promise.all([loadFolders(), loadAssets()])
+      await loadAssets()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Move failed")
     } finally {
@@ -323,7 +348,7 @@ export function MediaBrowser() {
       toast.success(`${selectedUrls.length} fotograf silindi`)
       setSelectedUrls([])
       setPreviewAsset(null)
-      await Promise.all([loadFolders(), loadAssets()])
+      await loadAssets()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Delete failed")
     } finally {
@@ -346,7 +371,7 @@ export function MediaBrowser() {
                     <SelectItem value={ALL_TOP}>All categories</SelectItem>
                     {topFolders.map((folder) => (
                       <SelectItem key={folder} value={folder}>
-                        {folderLabel(folder)}
+                        {topFolderLabels.get(folder) || folder}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -366,7 +391,7 @@ export function MediaBrowser() {
                     <SelectItem value={ALL_SUB}>All subcategories</SelectItem>
                     {subfolders.map((folder) => (
                       <SelectItem key={folder} value={folder}>
-                        {folderLabel(folder.split("/").pop() || folder)}
+                        {subfolderLabels.get(folder) || folder}
                       </SelectItem>
                     ))}
                   </SelectContent>
