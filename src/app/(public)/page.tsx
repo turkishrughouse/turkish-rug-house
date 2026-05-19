@@ -396,9 +396,6 @@ export default async function HomePage() {
               className="h-full min-h-[420px] w-full object-cover"
             />
             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 via-black/20 to-transparent px-6 pb-6 pt-16 text-white sm:px-8 sm:pb-8">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-white/80">
-                {heroBanner ? "Hero Banner" : "Collector’s Edit"}
-              </p>
               <p className="mt-3 max-w-md font-serif text-2xl leading-tight sm:text-3xl">
                 {heroBanner?.title ||
                   "A refined selection of vintage and handmade rugs chosen for depth, rarity, and room-defining presence."}
