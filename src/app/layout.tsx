@@ -10,6 +10,9 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: settings.defaultMetaTitle,
     description: settings.defaultMetaDescription,
+    other: {
+      "p:domain_verify": "9cad51ca50d7db4b0a1dc9be60486f01",
+    },
     robots: {
       index: true,
       follow: true,
