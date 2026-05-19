@@ -27,7 +27,7 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Edit2, Trash2, Folder, FolderOpen, ChevronRight, ChevronDown, Check, X } from "lucide-react"
+import { Edit2, Trash2, Folder, FolderOpen, ChevronRight, ChevronDown, Check, X, Eye, EyeOff } from "lucide-react"
 import { toast } from "sonner"
 import { SortableTree, FlatItem } from "@/components/admin/sortable-tree"
 import { Switch } from "@/components/ui/switch"
@@ -42,6 +42,7 @@ type Category = {
     parentId: string | null
     description: string | null
     image: string | null
+    isVisible: boolean
     _count?: { products: number }
     featuredPreview?: Array<{ id: string; title: string; image: string | null }>
     featuredCount?: number
@@ -152,6 +153,13 @@ const buildTree = (flatCategories: Category[]): Category[] => {
 
     return withAggregatedCounts(roots)
 }
+
+const updateCategoryInTree = (items: Category[], id: string, update: Partial<Category>): Category[] =>
+    items.map((cat) =>
+        cat.id === id
+            ? { ...cat, ...update }
+            : { ...cat, children: cat.children ? updateCategoryInTree(cat.children, id, update) : cat.children }
+    )
 
 const collectParentIds = (items: Category[]): string[] => {
     const ids: string[] = []
@@ -506,6 +514,24 @@ export default function CategoriesPage() {
         }
     }
 
+    // Visibility Toggle Handler (optimistic)
+    const handleToggleVisibility = async (id: string, currentVisibility: boolean) => {
+        const newVisibility = !currentVisibility
+        setCategories((prev) => updateCategoryInTree(prev, id, { isVisible: newVisibility }))
+        try {
+            const res = await fetch(`/api/admin/categories/${id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ isVisible: newVisibility }),
+            })
+            if (!res.ok) throw new Error("Failed")
+            toast.success(newVisibility ? "Category is now visible" : "Category hidden from frontend")
+        } catch {
+            setCategories((prev) => updateCategoryInTree(prev, id, { isVisible: currentVisibility }))
+            toast.error("Failed to update visibility")
+        }
+    }
+
     // Bulk Handlers
     const flatList = flattenCategories(categories)
     const allIds = flatList.map(c => c.id)
@@ -824,6 +850,7 @@ export default function CategoriesPage() {
                                             onToggle={toggleSelection}
                                             onDelete={handleDelete}
                                             onEdit={handleEdit}
+                                            onToggleVisibility={handleToggleVisibility}
                                             collapsedIds={collapsedIds}
                                             onToggleCollapse={toggleCollapse}
                                         />
@@ -971,12 +998,12 @@ function BulkParentModal({ open, onOpenChange, categories, selectedIds, onConfir
 }
 
 // --- Recursive Row Renderer ---
-function CategoryTreeList({ categories, selectedIds, onToggle, onDelete, onEdit, collapsedIds, onToggleCollapse, level = 0 }: any) {
+function CategoryTreeList({ categories, selectedIds, onToggle, onDelete, onEdit, onToggleVisibility, collapsedIds, onToggleCollapse, level = 0 }: any) {
     return (
         <>
             {categories.map((cat: Category) => (
                 <React.Fragment key={cat.id}>
-                    <TableRow className={`group transition-colors ${selectedIds.has(cat.id) ? 'bg-teal-50 hover:bg-teal-100/50' : 'hover:bg-slate-50'}`}>
+                    <TableRow className={`group transition-colors ${!cat.isVisible ? 'opacity-50' : ''} ${selectedIds.has(cat.id) ? 'bg-teal-50 hover:bg-teal-100/50' : 'hover:bg-slate-50'}`}>
                         <TableCell>
                             <Checkbox
                                 checked={selectedIds.has(cat.id)}
@@ -1028,6 +1055,15 @@ function CategoryTreeList({ categories, selectedIds, onToggle, onDelete, onEdit,
                                 <Button
                                     variant="ghost"
                                     size="icon"
+                                    className={`h-8 w-8 ${cat.isVisible ? 'text-slate-400 hover:text-slate-600 hover:bg-slate-100' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100'}`}
+                                    onClick={() => onToggleVisibility(cat.id, cat.isVisible)}
+                                    title={cat.isVisible ? "Hide from frontend" : "Show on frontend"}
+                                >
+                                    {cat.isVisible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
                                     className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                                     onClick={() => onEdit(cat)}
                                 >
@@ -1052,6 +1088,7 @@ function CategoryTreeList({ categories, selectedIds, onToggle, onDelete, onEdit,
                             onToggle={onToggle}
                             onDelete={onDelete}
                             onEdit={onEdit}
+                            onToggleVisibility={onToggleVisibility}
                             collapsedIds={collapsedIds}
                             onToggleCollapse={onToggleCollapse}
                             level={level + 1}

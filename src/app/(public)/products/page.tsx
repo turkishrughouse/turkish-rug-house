@@ -56,7 +56,7 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
 
   const [{ products }, categoryCounters, styleCounters, colorCounters, sizeCounters] = await Promise.all([
     getProducts(1, 36, query, "published", sort, undefined, filters),
-    prisma.category.findMany({ select: { id: true, slug: true, title: true, _count: { select: { products: { where: facetBaseWhere } } } } }),
+    prisma.category.findMany({ where: { isVisible: true }, select: { id: true, slug: true, title: true, _count: { select: { products: { where: facetBaseWhere } } } } }),
     prisma.style.findMany({ select: { id: true, slug: true, name: true, _count: { select: { products: { where: facetBaseWhere } } } } }),
     prisma.color.findMany({ select: { id: true, slug: true, name: true, hex: true, _count: { select: { products: { where: facetBaseWhere } } } } }),
     prisma.size.findMany({ select: { id: true, slug: true, name: true, _count: { select: { products: { where: facetBaseWhere } } } } }),

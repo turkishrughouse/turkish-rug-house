@@ -105,6 +105,7 @@ export async function getPublicMenu(locationOrSlug: string): Promise<PublicMenuN
 
 export async function getPublicCategoryTreeMenu(): Promise<PublicMenuNode[]> {
   const categories = await prisma.category.findMany({
+    where: { isVisible: true },
     orderBy: [{ sortOrder: "asc" }, { title: "asc" }],
     select: {
       id: true,

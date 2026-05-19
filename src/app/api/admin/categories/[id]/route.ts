@@ -10,6 +10,7 @@ const categoryUpdateSchema = z.object({
     parentId: z.string().optional().nullable(),
     description: z.string().optional(),
     image: z.string().optional(),
+    isVisible: z.boolean().optional(),
 })
 
 // GET /api/admin/categories/[id]
@@ -91,7 +92,8 @@ export async function PATCH(
                 slug: data.slug,
                 description: data.description,
                 parentId: data.parentId === "" ? null : data.parentId,
-                image: data.image
+                image: data.image,
+                isVisible: data.isVisible,
             }
         })
 

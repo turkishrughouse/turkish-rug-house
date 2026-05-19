@@ -18,6 +18,7 @@ type PublicCategoryNode = {
 export async function GET() {
     try {
         const categories = await prisma.category.findMany({
+            where: { isVisible: true },
             select: {
                 id: true,
                 slug: true,

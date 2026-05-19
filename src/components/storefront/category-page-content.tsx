@@ -205,7 +205,7 @@ export async function renderCategoryPage({
     }),
   ])
 
-  if (!category) notFound()
+  if (!category || !category.isVisible) notFound()
 
   const filterableAttributeGroups = options.attributeGroups.filter((group: any) => group.isFilterable && group.isActive)
   const selectedAttributeFilters = Object.fromEntries(

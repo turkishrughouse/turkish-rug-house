@@ -272,6 +272,7 @@ model Category {
   sortOrder   Int      @default(0)
   description String?
   image       String?
+  isVisible   Boolean  @default(true)
   parentId    String?
   parent      Category? @relation("CategoryHierarchy", fields: [parentId], references: [id])
   children    Category[] @relation("CategoryHierarchy")

@@ -60,6 +60,7 @@ export async function GET(request: Request) {
 
         if (tree === "true") {
             const categories = await prisma.category.findMany({
+                where: { isVisible: true },
                 select: {
                     id: true,
                     slug: true,
@@ -81,6 +82,7 @@ export async function GET(request: Request) {
         }
 
         const categories = await prisma.category.findMany({
+            where: { isVisible: true },
             include: {
                 parent: true,
                 _count: {

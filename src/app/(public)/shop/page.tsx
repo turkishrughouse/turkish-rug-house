@@ -91,6 +91,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
   const [{ products, metadata }, categoryCounters] = await Promise.all([
     getProducts(page, limitValue, query, "published", sort, undefined, filters),
     prisma.category.findMany({
+      where: { isVisible: true },
       select: {
         id: true,
         slug: true,
