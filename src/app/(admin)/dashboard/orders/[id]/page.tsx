@@ -123,9 +123,9 @@ export default async function OrderDetailPage({ params }: PageProps) {
                 <div><span className="font-medium text-slate-900">Payment method:</span> {order.details.paymentMethod || "-"}</div>
                 <div><span className="font-medium text-slate-900">Payment provider:</span> {order.details.paymentProvider || "-"}</div>
                 <div><span className="font-medium text-slate-900">Payment status:</span> {order.details.paymentStatus || "PENDING"}</div>
-                <div><span className="font-medium text-slate-900">Payment session ID:</span> {order.details.paymentSessionId || "-"}</div>
-                <div><span className="font-medium text-slate-900">Payment intent ID:</span> {order.details.paymentIntentId || "-"}</div>
-                <div><span className="font-medium text-slate-900">Last webhook event:</span> {order.details.paymentLastEventId || "-"}</div>
+                <div className="break-all"><span className="font-medium text-slate-900">Payment session ID:</span> {order.details.paymentSessionId || "-"}</div>
+                <div className="break-all"><span className="font-medium text-slate-900">Payment intent ID:</span> {order.details.paymentIntentId || "-"}</div>
+                <div className="break-all"><span className="font-medium text-slate-900">Last webhook event:</span> {order.details.paymentLastEventId || "-"}</div>
                 <div><span className="font-medium text-slate-900">Tracked webhook events:</span> {recentWebhookEvents.length}</div>
                 <div><span className="font-medium text-slate-900">Order status:</span> {order.status}</div>
               </CardContent>
@@ -147,7 +147,7 @@ export default async function OrderDetailPage({ params }: PageProps) {
               <CardContent className="space-y-2 text-sm">
                 <div><span className="font-medium text-slate-900">Shipping method:</span> {order.details.shippingMethod || "-"}</div>
                 <div><span className="font-medium text-slate-900">Shipping status:</span> {order.shipmentStatus}</div>
-                <div><span className="font-medium text-slate-900">Tracking number:</span> {order.trackingNumber || "-"}</div>
+                <div className="break-all"><span className="font-medium text-slate-900">Tracking number:</span> {order.trackingNumber || "-"}</div>
                 <div className="space-y-1">
                   <div className="font-medium text-slate-900">Shipping address</div>
                   {addressLines.length === 0 ? <div className="text-slate-500">No shipping address captured.</div> : addressLines.map((line) => <div key={line}>{line}</div>)}
