@@ -408,6 +408,50 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* Trust Bar */}
+      <div className="border-y border-slate-200 bg-white">
+        <div className="container mx-auto px-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4">
+            <div className="flex items-center justify-center gap-3 border-b border-r border-slate-200 px-6 py-5 lg:border-b-0">
+              <svg className="h-7 w-7 shrink-0 text-[#0f766e]" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
+              </svg>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Free Worldwide Shipping</p>
+                <p className="text-xs text-slate-500">On all orders</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-center gap-3 border-b border-slate-200 px-6 py-5 lg:border-b-0 lg:border-r">
+              <svg className="h-7 w-7 shrink-0 text-[#0f766e]" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">30-Day Easy Returns</p>
+                <p className="text-xs text-slate-500">Hassle-free returns</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-center gap-3 border-r border-slate-200 px-6 py-5">
+              <svg className="h-7 w-7 shrink-0 text-[#0f766e]" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.05 4.575a1.575 1.575 0 10-3.15 0v3m3.15-3v-1.5a1.575 1.575 0 013.15 0v1.5m-3.15 0l.075 5.925m3.075.75V4.575m0 0a1.575 1.575 0 013.15 0V15M6.9 7.575a1.575 1.575 0 10-3.15 0v8.175a6.75 6.75 0 006.75 6.75h2.018a5.25 5.25 0 003.712-1.538l1.732-1.732a5.25 5.25 0 001.538-3.712l-.001-1.029" />
+              </svg>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">100% Handmade</p>
+                <p className="text-xs text-slate-500">Authentic Anatolian craft</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-center gap-3 px-6 py-5">
+              <svg className="h-7 w-7 shrink-0 text-[#0f766e]" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+              </svg>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">500+ Unique Rugs</p>
+                <p className="text-xs text-slate-500">One-of-a-kind pieces</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <section className="container mx-auto px-4 py-14">
         <div className="mb-8 flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
@@ -439,6 +483,27 @@ export default async function HomePage() {
           bottomLeft: siteSettings.categoryCardRadiusBottomLeft,
         }}
       />
+
+      {/* Shop by Size */}
+      <section className="container mx-auto px-4 py-12">
+        <div className="mb-8 text-center">
+          <p className="inline-block rounded-full bg-[#0f766e]/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-[#0f766e]">
+            Find Your Size
+          </p>
+          <h2 className="mt-3 font-serif text-4xl leading-none text-slate-900">Shop by Size</h2>
+        </div>
+        <div className="flex flex-wrap justify-center gap-3">
+          {["2x3", "3x5", "4x6", "5x8", "6x9", "8x10", "9x12", "Runner"].map((size) => (
+            <Link
+              key={size}
+              href={`/shop?size=${size}`}
+              className="rounded-full border border-slate-300 px-6 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-900 hover:bg-slate-900 hover:text-white"
+            >
+              {size}
+            </Link>
+          ))}
+        </div>
+      </section>
 
       <section className="container mx-auto px-4 py-14">
         <div className="mb-8 flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
@@ -533,6 +598,50 @@ export default async function HomePage() {
           title={promoSections[1]?.title || "Final Selection"}
           currencySettings={currencySettings}
         />
+      </section>
+
+      {/* Testimonials */}
+      <section className="bg-[#f5f0e6] py-16">
+        <div className="container mx-auto px-4">
+          <div className="mb-10 text-center">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#0f766e]">Customer Stories</p>
+            <h2 className="mt-3 font-serif text-4xl leading-none text-slate-900">What Our Customers Say</h2>
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              {
+                quote: "Absolutely stunning rug. The quality is incredible and it looks even better in person. Shipped fast to Texas!",
+                name: "Sarah M.",
+                location: "Texas 🇺🇸",
+              },
+              {
+                quote: "I've bought two rugs from Turkish Rug House now. Each one is truly one of a kind. Highly recommend!",
+                name: "James R.",
+                location: "California 🇺🇸",
+              },
+              {
+                quote: "Beautiful craftsmanship. The rug arrived perfectly packed and the colors are exactly as shown.",
+                name: "Emily K.",
+                location: "New York 🇺🇸",
+              },
+            ].map((testimonial) => (
+              <div key={testimonial.name} className="rounded-2xl bg-white p-7 shadow-sm">
+                <div className="flex gap-0.5 text-amber-400">
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <svg key={i} className="h-4 w-4 fill-current" viewBox="0 0 20 20">
+                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                    </svg>
+                  ))}
+                </div>
+                <p className="mt-4 text-sm leading-7 text-slate-600">&ldquo;{testimonial.quote}&rdquo;</p>
+                <div className="mt-5 border-t border-slate-100 pt-4">
+                  <p className="text-sm font-semibold text-slate-900">{testimonial.name}</p>
+                  <p className="text-xs text-slate-500">{testimonial.location}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </section>
 
       <RecentlyViewedSection
