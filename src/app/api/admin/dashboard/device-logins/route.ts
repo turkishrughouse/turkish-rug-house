@@ -13,7 +13,7 @@ export async function GET() {
   const admin = await requireAdminUser()
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const items = getLiveVisitorDeviceEvents(60 * 60 * 1000, 60)
+  const items = await getLiveVisitorDeviceEvents(60 * 60 * 1000, 60)
 
   const browserCounts = new Map<string, number>()
   const deviceCounts = new Map<string, number>()

@@ -1,3 +1,5 @@
+import { prisma } from "@/lib/db"
+
 type LiveVisitorInput = {
   actorKey: string
   countryCode?: string | null
@@ -67,7 +69,8 @@ type LiveVisitorDeviceEvent = {
 
 const UNKNOWN_COUNTRY = "Unknown"
 const DEFAULT_ACTION = "Site visit"
-const ACTIVE_WINDOW_MS = 15 * 60 * 1000
+const ACTIVE_WINDOW_MS = 60 * 60 * 1000   // 1 hour — long enough for abandoned-cart 30-min threshold
+const DB_TTL_MS = 30 * 60 * 1000           // 30-min DB TTL for cold-start recovery
 
 const COUNTRY_CODE_TO_NAME: Record<string, string> = {
   TR: "Turkey",
@@ -88,17 +91,17 @@ const COUNTRY_CODE_TO_NAME: Record<string, string> = {
   SA: "Saudi Arabia",
 }
 
-function getStore(): LiveStore {
-  const globalWithStore = globalThis as typeof globalThis & {
-    __rughouseLiveVisitorStore?: LiveStore
-  }
+type GlobalWithStore = typeof globalThis & {
+  __rughouseLiveVisitorStore?: LiveStore
+  __rughouseLiveVisitorHydration?: Promise<void>
+}
 
-  if (!globalWithStore.__rughouseLiveVisitorStore) {
-    globalWithStore.__rughouseLiveVisitorStore = {
-      visitors: new Map<string, LiveVisitorRecord>(),
-    }
+function getStore(): LiveStore {
+  const g = globalThis as GlobalWithStore
+  if (!g.__rughouseLiveVisitorStore) {
+    g.__rughouseLiveVisitorStore = { visitors: new Map<string, LiveVisitorRecord>() }
   }
-  return globalWithStore.__rughouseLiveVisitorStore
+  return g.__rughouseLiveVisitorStore
 }
 
 function normalizeCountryCode(value: string | null | undefined) {
@@ -166,6 +169,75 @@ function detectDevice(userAgent: string) {
   return "Other"
 }
 
+async function hydrateFromDb(): Promise<void> {
+  try {
+    const cutoff = new Date(Date.now() - DB_TTL_MS)
+    const rows = await prisma.liveVisitorRecord.findMany({
+      where: { updatedAt: { gte: cutoff } },
+    })
+    const store = getStore()
+    for (const row of rows) {
+      if (store.visitors.has(row.actorKey)) continue
+      store.visitors.set(row.actorKey, {
+        actorKey: row.actorKey,
+        countryCode: row.countryCode,
+        countryName: row.countryName,
+        customerName: row.customerName,
+        action: row.action,
+        lastAt: row.updatedAt.toISOString(),
+        browser: row.browser,
+        device: row.device,
+        currentPath: row.currentPath ?? undefined,
+        currentPageTitle: undefined,
+        lastHoverLabel: undefined,
+        lastHoverType: undefined,
+        pages: new Map(),
+      })
+    }
+  } catch {
+    // DB errors must not break the in-memory store
+  }
+}
+
+function ensureHydrated(): Promise<void> {
+  const g = globalThis as GlobalWithStore
+  if (!g.__rughouseLiveVisitorHydration) {
+    g.__rughouseLiveVisitorHydration = hydrateFromDb()
+  }
+  return g.__rughouseLiveVisitorHydration
+}
+
+function persistToDb(record: LiveVisitorRecord): void {
+  const cutoff = new Date(Date.now() - DB_TTL_MS)
+  void Promise.all([
+    prisma.liveVisitorRecord.upsert({
+      where: { actorKey: record.actorKey },
+      update: {
+        countryCode: record.countryCode,
+        countryName: record.countryName,
+        customerName: record.customerName,
+        action: record.action,
+        browser: record.browser,
+        device: record.device,
+        currentPath: record.currentPath ?? null,
+      },
+      create: {
+        actorKey: record.actorKey,
+        countryCode: record.countryCode,
+        countryName: record.countryName,
+        customerName: record.customerName,
+        action: record.action,
+        browser: record.browser,
+        device: record.device,
+        currentPath: record.currentPath ?? null,
+      },
+    }),
+    prisma.liveVisitorRecord.deleteMany({ where: { updatedAt: { lt: cutoff } } }),
+  ]).catch(() => {})
+}
+
+const isCartAction = (a: string) => a.toLowerCase().startsWith("added to cart")
+
 export function trackLiveVisitorActivity(input: LiveVisitorInput) {
   if (!input.actorKey) return
   const now = input.at || new Date()
@@ -200,7 +272,13 @@ export function trackLiveVisitorActivity(input: LiveVisitorInput) {
   record.countryCode = resolvedCountryCode
   record.countryName = countryName
   if (input.customerName?.trim()) record.customerName = input.customerName.trim()
-  if (input.action?.trim()) record.action = input.action.trim()
+
+  // Preserve "Added to cart" action — only a new cart action or a non-cart current action allows overwrite
+  const newAction = input.action?.trim()
+  if (newAction && (isCartAction(newAction) || !isCartAction(record.action))) {
+    record.action = newAction
+  }
+
   if (userAgent) {
     record.browser = detectBrowser(userAgent)
     record.device = detectDevice(userAgent)
@@ -250,9 +328,11 @@ export function trackLiveVisitorActivity(input: LiveVisitorInput) {
   }
 
   store.visitors.set(input.actorKey, record)
+  persistToDb(record)
 }
 
-export function getLiveVisitorDeviceEvents(windowMs = ACTIVE_WINDOW_MS, limit = 120): LiveVisitorDeviceEvent[] {
+export async function getLiveVisitorDeviceEvents(windowMs = ACTIVE_WINDOW_MS, limit = 120): Promise<LiveVisitorDeviceEvent[]> {
+  await ensureHydrated()
   cleanupExpired(Date.now(), windowMs)
   const now = Date.now()
   const store = getStore()
@@ -270,7 +350,7 @@ export function getLiveVisitorDeviceEvents(windowMs = ACTIVE_WINDOW_MS, limit = 
         browser: record.browser || "Other",
         device: record.device || "Other",
         countryName: record.countryName || UNKNOWN_COUNTRY,
-        currentPath: latestPage?.path,
+        currentPath: latestPage?.path ?? record.currentPath,
         createdAt: record.lastAt,
       }
     })
@@ -278,7 +358,8 @@ export function getLiveVisitorDeviceEvents(windowMs = ACTIVE_WINDOW_MS, limit = 
     .slice(0, limit)
 }
 
-export function getLiveVisitorEvents(windowMs = ACTIVE_WINDOW_MS, limit = 120): LiveEvent[] {
+export async function getLiveVisitorEvents(windowMs = ACTIVE_WINDOW_MS, limit = 120): Promise<LiveEvent[]> {
+  await ensureHydrated()
   cleanupExpired(Date.now(), windowMs)
   const now = Date.now()
   const store = getStore()
@@ -297,7 +378,7 @@ export function getLiveVisitorEvents(windowMs = ACTIVE_WINDOW_MS, limit = 120): 
         countryCode: record.countryCode,
         countryName: record.countryName,
         action: record.action || DEFAULT_ACTION,
-        currentPath: latestPage?.path,
+        currentPath: latestPage?.path ?? record.currentPath,
         createdAt: record.lastAt,
       }
     })

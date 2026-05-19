@@ -178,7 +178,7 @@ export async function GET() {
       })
       .filter((item): item is NonNullable<typeof item> => Boolean(item))
 
-    const liveEvents = getLiveVisitorEvents(15 * 60 * 1000, 150)
+    const liveEvents = await getLiveVisitorEvents(15 * 60 * 1000, 150)
       .filter((event) => resolveCountry(event.countryCode))
       .map((event) => {
         const country = resolveCountry(event.countryCode)!

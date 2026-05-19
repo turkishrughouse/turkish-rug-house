@@ -495,3 +495,15 @@ model Origin {
   name     String
   products Product[]
 }
+
+model LiveVisitorRecord {
+  actorKey     String   @id
+  countryCode  String   @default("ZZ")
+  countryName  String   @default("Unknown")
+  customerName String   @default("Guest")
+  action       String   @default("Site visit")
+  browser      String   @default("Other")
+  device       String   @default("Other")
+  currentPath  String?
+  updatedAt    DateTime @updatedAt
+}

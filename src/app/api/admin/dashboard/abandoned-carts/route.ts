@@ -16,7 +16,7 @@ export async function GET() {
   const now = Date.now()
   const abandonmentWindowMs = 30 * 60 * 1000
 
-  const items = getLiveVisitorEvents(2 * 60 * 60 * 1000, 200)
+  const items = await getLiveVisitorEvents(2 * 60 * 60 * 1000, 200)
     .filter((event) => {
       const action = event.action.toLowerCase()
       if (!action.startsWith("added to cart")) return false
