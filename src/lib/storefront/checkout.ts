@@ -35,17 +35,29 @@ function roundCurrency(value: number) {
 }
 
 export function computeShippingCost(
-  settings: Pick<SiteSettings, "flatShippingRate">,
+  settings: Pick<SiteSettings, "flatShippingRate" | "autoCarrierRates" | "dhlEnabled" | "upsEnabled" | "fedexEnabled">,
   method: CheckoutShippingMethod
 ) {
   const baseRate = Math.max(0, Number(settings.flatShippingRate || 0))
-  if (method === "ups") {
+  const liveCarrierRatesEnabled = Boolean(
+    settings.autoCarrierRates && (settings.dhlEnabled || settings.upsEnabled || settings.fedexEnabled)
+  )
+
+  if (!liveCarrierRatesEnabled) {
+    return { label: "Flat rate", cost: roundCurrency(baseRate) }
+  }
+
+  if (method === "ups" && settings.upsEnabled) {
     return { label: "UPS", cost: roundCurrency(baseRate + 4) }
   }
-  if (method === "fedex") {
+  if (method === "fedex" && settings.fedexEnabled) {
     return { label: "FedEx", cost: roundCurrency(baseRate + 8) }
   }
-  return { label: "DHL", cost: roundCurrency(baseRate) }
+  if (method === "dhl" && settings.dhlEnabled) {
+    return { label: "DHL", cost: roundCurrency(baseRate) }
+  }
+
+  return { label: "Flat rate", cost: roundCurrency(baseRate) }
 }
 
 export function computeTaxAmount(
@@ -60,7 +72,7 @@ export function computeTaxAmount(
 export async function resolveCheckoutDraft(input: {
   lines: CheckoutLineInput[]
   shippingMethod: CheckoutShippingMethod
-  settings: Pick<SiteSettings, "flatShippingRate" | "enableTaxes" | "defaultCurrency">
+  settings: Pick<SiteSettings, "flatShippingRate" | "enableTaxes" | "defaultCurrency" | "autoCarrierRates" | "dhlEnabled" | "upsEnabled" | "fedexEnabled">
 }) {
   const lines = input.lines
     .map((item) => ({

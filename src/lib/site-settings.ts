@@ -231,8 +231,8 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   allowBulkPersonalDataRemoval: false,
   hideOutOfStockOnShop: false,
   showCatalogMode: "normal",
-  flatShippingRate: 20,
-  localPickupRate: 25,
+  flatShippingRate: 0,
+  localPickupRate: 0,
   checkoutEnabled: true,
   outgoingMailHost: "",
   outgoingMailPort: 465,
@@ -782,6 +782,10 @@ const getCachedSiteSettings = unstable_cache(readSiteSettings, ["site-settings"]
 
 export async function getSiteSettings(): Promise<SiteSettings> {
   return getCachedSiteSettings()
+}
+
+export async function getFreshSiteSettings(): Promise<SiteSettings> {
+  return readSiteSettings()
 }
 
 export async function saveSiteSettings(input: unknown): Promise<SiteSettings> {

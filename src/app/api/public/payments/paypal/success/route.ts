@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSiteSettings } from "@/lib/site-settings"
 import { finalizePaidOrder } from "@/lib/payment-orders"
+import { getSiteUrl } from "@/lib/site-url"
 
 async function getPayPalToken(clientId: string, clientSecret: string, sandbox: boolean) {
   const base = sandbox ? "https://api-m.sandbox.paypal.com" : "https://api-m.paypal.com"
@@ -23,12 +24,12 @@ export async function GET(req: NextRequest) {
     const orderId = req.nextUrl.searchParams.get("orderId") || ""
     const paypalOrderId = req.nextUrl.searchParams.get("token") || ""
     if (!orderId || !paypalOrderId) {
-      return NextResponse.redirect(new URL("/basket?payment=failed", req.nextUrl.origin))
+      return NextResponse.redirect(new URL("/basket?payment=failed", getSiteUrl()))
     }
 
     const settings = await getSiteSettings()
     if (!settings.paypalClientId || !settings.paypalClientSecret) {
-      return NextResponse.redirect(new URL("/basket?payment=failed", req.nextUrl.origin))
+      return NextResponse.redirect(new URL("/basket?payment=failed", getSiteUrl()))
     }
 
     const { base, token } = await getPayPalToken(settings.paypalClientId, settings.paypalClientSecret, settings.paypalMode !== "live")
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
     })
     const capture = await captureRes.json().catch(() => null as null | { status?: string })
     if (!captureRes.ok || (capture?.status !== "COMPLETED" && capture?.status !== "APPROVED")) {
-      return NextResponse.redirect(new URL(`/basket?payment=failed&order=${encodeURIComponent(orderId)}`, req.nextUrl.origin))
+      return NextResponse.redirect(new URL(`/basket?payment=failed&order=${encodeURIComponent(orderId)}`, getSiteUrl()))
     }
 
     await finalizePaidOrder({
@@ -50,8 +51,8 @@ export async function GET(req: NextRequest) {
       paymentReference: paypalOrderId,
       eventDescription: "PayPal payment captured",
     })
-    return NextResponse.redirect(new URL(`/checkout/success?order=${encodeURIComponent(orderId)}`, req.nextUrl.origin))
+    return NextResponse.redirect(new URL(`/checkout/success?order=${encodeURIComponent(orderId)}`, getSiteUrl()))
   } catch {
-    return NextResponse.redirect(new URL("/basket?payment=failed", req.nextUrl.origin))
+    return NextResponse.redirect(new URL("/basket?payment=failed", getSiteUrl()))
   }
 }

@@ -4,7 +4,7 @@ import { z } from "zod"
 import { prisma } from "@/lib/db"
 import { getSessionUser } from "@/lib/auth"
 import { checkFixedWindowRateLimit } from "@/lib/rate-limit"
-import { getSiteSettings } from "@/lib/site-settings"
+import { getFreshSiteSettings } from "@/lib/site-settings"
 import { ensureOrderDetailsColumn, saveOrderDetails } from "@/lib/order-details"
 import { nextOrderNumber } from "@/lib/payment-orders"
 import { getAddressCountryConfig } from "@/lib/location/catalog"
@@ -19,6 +19,7 @@ import {
   type CheckoutProvider,
   type CheckoutShippingMethod,
 } from "@/lib/storefront/checkout"
+import { getSiteUrl } from "@/lib/site-url"
 
 const payloadSchema = z.object({
   provider: z.enum(["stripe", "paypal", "paytr", "gpay", "applepay"]),
@@ -94,6 +95,13 @@ async function createStripeCheckout(input: {
     body.set(`line_items[${idx}][price_data][unit_amount]`, String(asMinor(input.shippingCost)))
     body.set(`line_items[${idx}][quantity]`, "1")
   }
+
+  console.info("[checkout] stripe session shipping payload", {
+    orderId: input.orderId,
+    currency: input.currency,
+    shippingCost: input.shippingCost,
+    shippingMinorAmount: asMinor(input.shippingCost),
+  })
 
   const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
     method: "POST",
@@ -253,7 +261,7 @@ export async function POST(req: NextRequest) {
     const parsed = payloadSchema.safeParse(body)
     if (!parsed.success) return NextResponse.json({ error: "Invalid payment payload" }, { status: 400 })
 
-    const settings = await getSiteSettings()
+    const settings = await getFreshSiteSettings()
     if (!settings.checkoutEnabled) return NextResponse.json({ error: "Checkout is disabled" }, { status: 400 })
 
     const sessionUser = await getSessionUser("customer")
@@ -275,7 +283,7 @@ export async function POST(req: NextRequest) {
     if (countryConfig.regionRequired && !input.regionState?.trim()) {
       return NextResponse.json({ error: `${countryConfig.regionLabel} is required for checkout` }, { status: 400 })
     }
-    const origin = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin
+    const origin = getSiteUrl()
     const clientIp = getClientIp(req) || "unknown"
     const rateLimit = checkFixedWindowRateLimit({
       scope: "checkout-init",
@@ -330,6 +338,18 @@ export async function POST(req: NextRequest) {
       })),
       shippingMethod,
       settings,
+    })
+
+    console.info("[checkout] shipping settings loaded", {
+      autoCarrierRates: settings.autoCarrierRates,
+      flatShippingRate: settings.flatShippingRate,
+      localPickupRate: settings.localPickupRate,
+      dhlEnabled: settings.dhlEnabled,
+      upsEnabled: settings.upsEnabled,
+      fedexEnabled: settings.fedexEnabled,
+      selectedShippingMethod: shippingMethod,
+      resolvedShippingLabel: draft.shippingLabel,
+      resolvedShippingCostUsd: draft.shippingCost,
     })
 
     const requestedDisplayCurrency = normalizeCurrency(input.displayCurrency || readCurrencyFromNextRequest(req) || null)
@@ -437,6 +457,13 @@ export async function POST(req: NextRequest) {
         })),
         shippingCost: displayAmounts.shipping,
         customerEmail: input.customerEmail,
+      })
+      console.info("[checkout] final shipping amount sent to stripe", {
+        orderId: order.id,
+        selectedShippingMethod: shippingMethod,
+        shippingUsd: draft.shippingCost,
+        shippingDisplayAmount: displayAmounts.shipping,
+        shippingMinorAmount: asMinor(displayAmounts.shipping),
       })
       await saveOrderDetails(order.id, {
         paymentReference: stripe.externalPaymentId || null,

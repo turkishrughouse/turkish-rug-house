@@ -1,9 +1,10 @@
 import type { MetadataRoute } from "next"
 import { prisma } from "@/lib/db"
 import { buildCategoryPathMap } from "@/lib/category-paths"
+import { getSiteUrl } from "@/lib/site-url"
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+  const baseUrl = getSiteUrl()
 
   const [products, pages, categories] = await Promise.all([
     prisma.product.findMany({

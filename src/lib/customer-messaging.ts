@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db"
 import { formatOrderCurrency, getOrderDisplaySummary, getSingleOrderDetails } from "@/lib/order-details"
 import { getSiteSettings } from "@/lib/site-settings"
 import { sendSiteEmail } from "@/lib/mailer"
+import { getSiteUrl } from "@/lib/site-url"
 
 type MessageInput = {
   kind: "SYSTEM" | "ORDER" | "DISCOUNT" | "NEW_PRODUCT" | "NEW_CATEGORY"
@@ -129,7 +130,7 @@ export async function notifyOrderUpdate(
       })
     }
 
-    const accountUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}${ctaUrl || "/account?tab=orders"}`
+    const accountUrl = `${getSiteUrl()}${ctaUrl || "/account?tab=orders"}`
     await sendSiteEmail({
       to: recipient.email,
       subject: `${title} • ${recipient.orderNumber}`,

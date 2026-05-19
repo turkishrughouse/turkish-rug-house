@@ -35,6 +35,10 @@ type PublicSettings = {
   enableTaxes?: boolean
   requirePhoneAtCheckout?: boolean
   requireAddressAtCheckout?: boolean
+  autoCarrierRates?: boolean
+  dhlEnabled?: boolean
+  upsEnabled?: boolean
+  fedexEnabled?: boolean
 }
 
 type LocationCountry = {
@@ -188,10 +192,18 @@ export default function CheckoutPage() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const res = await fetch("/api/public/settings", { cache: "force-cache" })
+        const res = await fetch("/api/public/settings?scope=checkout", { cache: "no-store" })
         if (!res.ok) return
         const data = (await res.json()) as PublicSettings
         setSettings(data)
+        console.info("[checkout-page] loaded shipping settings", {
+          autoCarrierRates: data.autoCarrierRates,
+          flatShippingRate: data.flatShippingRate,
+          localPickupRate: data.localPickupRate,
+          dhlEnabled: data.dhlEnabled,
+          upsEnabled: data.upsEnabled,
+          fedexEnabled: data.fedexEnabled,
+        })
 
         const enabledTabs: PaymentTab[] = []
         if (data.googlePayEnabled) enabledTabs.push("gpay")
@@ -313,17 +325,41 @@ export default function CheckoutPage() {
   const summary = useMemo(() => getCartSummary(items), [items])
   const bannerImage = items[0]?.image || fallbackBannerImage || "/placeholder.jpg"
   const flatRate = Math.max(0, Number(settings.flatShippingRate || 0))
-  const shippingOptions: Array<{ value: ShippingMethod; label: string; price: number }> = [
-    { value: "dhl", label: "DHL", price: flatRate },
-    { value: "ups", label: "UPS", price: flatRate + 4 },
-    { value: "fedex", label: "FedEx", price: flatRate + 8 },
-  ]
+  const liveCarrierRatesEnabled = Boolean(
+    settings.autoCarrierRates && (settings.dhlEnabled || settings.upsEnabled || settings.fedexEnabled)
+  )
+  const shippingOptions = useMemo<Array<{ value: ShippingMethod; label: string; price: number }>>(
+    () =>
+      liveCarrierRatesEnabled
+        ? [
+            ...(settings.dhlEnabled ? [{ value: "dhl" as const, label: "DHL", price: flatRate }] : []),
+            ...(settings.upsEnabled ? [{ value: "ups" as const, label: "UPS", price: flatRate + 4 }] : []),
+            ...(settings.fedexEnabled ? [{ value: "fedex" as const, label: "FedEx", price: flatRate + 8 }] : []),
+          ]
+        : [{ value: "dhl" as const, label: "Flat rate", price: flatRate }],
+    [flatRate, liveCarrierRatesEnabled, settings.dhlEnabled, settings.fedexEnabled, settings.upsEnabled]
+  )
   const selectedShipping = shippingOptions.find((option) => option.value === shippingMethod) || shippingOptions[0]
   const shippingCost = selectedShipping.price
   const shippingLabel = selectedShipping.label
   const ecoTaxAmount = 0
   const vatAmount = settings.enableTaxes ? (summary.total + shippingCost) * 0.1 : 0
   const total = summary.total + shippingCost + ecoTaxAmount + vatAmount
+
+  useEffect(() => {
+    if (shippingOptions.length === 0) return
+    if (shippingOptions.some((option) => option.value === shippingMethod)) return
+    setShippingMethod(shippingOptions[0].value)
+  }, [shippingMethod, shippingOptions])
+
+  useEffect(() => {
+    console.info("[checkout-page] selected shipping summary", {
+      selectedShippingMethod: shippingMethod,
+      selectedShippingLabel: shippingLabel,
+      finalShippingAmount: shippingCost,
+      liveCarrierRatesEnabled,
+    })
+  }, [liveCarrierRatesEnabled, shippingCost, shippingLabel, shippingMethod])
 
   const enabledPaymentTabs = useMemo(() => {
     const tabs: Array<{ value: PaymentTab; label: string; enabled: boolean }> = [

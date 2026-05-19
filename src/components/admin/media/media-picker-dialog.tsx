@@ -753,6 +753,9 @@ export function MediaPickerDialog({
       const uploadedUrls: string[] = []
       const uploadedFolders: string[] = []
       for (const [index, file] of files.entries()) {
+        if (file.type && !file.type.startsWith("image/")) {
+          throw new Error(`"${file.name}" is not a supported image type (${file.type})`)
+        }
         const formData = new FormData()
         formData.append("file", file)
         formData.append("folder", targetUploadFolder)
@@ -1107,7 +1110,7 @@ export function MediaPickerDialog({
               <p className="text-sm text-slate-700">{uploading ? "Uploading..." : "Drop files or click to select"}</p>
               <input
                 type="file"
-                accept="image/*"
+                accept=".jpg,.jpeg,.png,.webp,.avif,.gif,.bmp,.heic,.heif,.jfif"
                 multiple
                 className="hidden"
                 onChange={handleUpload}

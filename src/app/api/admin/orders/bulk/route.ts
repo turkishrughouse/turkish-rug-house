@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { applyBulkOrderAction } from "@/lib/actions/order-actions"
+import { getSiteUrl } from "@/lib/site-url"
 
 const ALLOWED_ACTIONS = new Set([
   "MARK_PAID",
@@ -14,7 +15,7 @@ const ALLOWED_ACTIONS = new Set([
 
 function buildRedirectUrl(req: NextRequest, returnTo: string, patch: Record<string, string>) {
   const safePath = returnTo.startsWith("/dashboard/orders") ? returnTo : "/dashboard/orders"
-  const url = new URL(safePath, req.nextUrl.origin)
+  const url = new URL(safePath, getSiteUrl())
   Object.entries(patch).forEach(([key, value]) => {
     url.searchParams.set(key, value)
   })
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
       })
     )
   } catch {
-    const fallback = new URL("/dashboard/orders?bulkStatus=error", req.nextUrl.origin)
+    const fallback = new URL("/dashboard/orders?bulkStatus=error", getSiteUrl())
     return seeOther(fallback)
   }
 }

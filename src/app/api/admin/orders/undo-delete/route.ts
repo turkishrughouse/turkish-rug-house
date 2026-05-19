@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { undoPendingDeletedOrders } from "@/lib/actions/order-actions"
+import { getSiteUrl } from "@/lib/site-url"
 
 function seeOther(url: URL) {
   return NextResponse.redirect(url, 303)
@@ -12,7 +13,7 @@ export async function POST(req: NextRequest) {
     const orderIds = params.getAll("orderIds").map((item) => String(item)).filter(Boolean)
     const returnTo = params.get("returnTo") || "/dashboard/orders"
     const safePath = returnTo.startsWith("/dashboard/orders") ? returnTo : "/dashboard/orders"
-    const redirectUrl = new URL(safePath, req.nextUrl.origin)
+    const redirectUrl = new URL(safePath, getSiteUrl())
 
     const result = await undoPendingDeletedOrders(orderIds)
     if (!result.success) {
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
     redirectUrl.searchParams.set("bulkAffected", String(result.affected || 0))
     return seeOther(redirectUrl)
   } catch {
-    const fallback = new URL("/dashboard/orders?bulkStatus=error", req.nextUrl.origin)
+    const fallback = new URL("/dashboard/orders?bulkStatus=error", getSiteUrl())
     return seeOther(fallback)
   }
 }

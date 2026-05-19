@@ -9,6 +9,7 @@ import { fetchCategoryPathRows, getCategoryPathById, type CategoryPathRow } from
 import { buildProductImageAlt, getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { getShippingReturnsPage } from "@/lib/storefront/shipping-returns-page"
 import { getProductVisibleAttributes } from "@/lib/product-attributes"
+import { getSiteUrl } from "@/lib/site-url"
 
 type Props = {
   params: Promise<{ slug: string }>
@@ -268,10 +269,6 @@ async function fetchRelatedProducts(input: {
   }
 
   return Array.from(collected.values())
-}
-
-function getSiteUrl() {
-  return (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/+$/, "")
 }
 
 function toAbsoluteUrl(path: string) {

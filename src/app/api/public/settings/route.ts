@@ -1,11 +1,12 @@
-import { NextResponse } from "next/server"
-import { getSiteSettings } from "@/lib/site-settings"
+import { NextRequest, NextResponse } from "next/server"
+import { getFreshSiteSettings, getSiteSettings } from "@/lib/site-settings"
 
 export const revalidate = 300
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const data = await getSiteSettings()
+    const fresh = req.nextUrl.searchParams.get("fresh") === "1" || req.nextUrl.searchParams.get("scope") === "checkout"
+    const data = fresh ? await getFreshSiteSettings() : await getSiteSettings()
     return NextResponse.json({
       siteName: data.siteName,
       defaultMetaTitle: data.defaultMetaTitle,
@@ -58,7 +59,7 @@ export async function GET() {
       fedexEnabled: data.fedexEnabled,
     }, {
       headers: {
-        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=86400",
+        "Cache-Control": fresh ? "no-store" : "public, s-maxage=300, stale-while-revalidate=86400",
       },
     })
   } catch (error) {

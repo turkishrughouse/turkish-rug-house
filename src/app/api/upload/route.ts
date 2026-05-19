@@ -13,7 +13,6 @@ import { ensureMediaRegistryTable, findMediaByChecksum, upsertMediaAsset } from 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/avif"])
 const MIN_MASTER_WIDTH = 1800
 
 function normalizeFolderFromObjectKey(value: string | null | undefined) {
@@ -79,9 +78,10 @@ export async function POST(req: NextRequest) {
                 { status: 400 }
             )
         }
-        if (!ALLOWED_MIME_TYPES.has(file.type)) {
+        const mimeOk = !file.type || file.type.startsWith("image/")
+        if (!mimeOk) {
             return NextResponse.json(
-                { error: "Unsupported file type. Allowed: JPG, PNG, WEBP, AVIF." },
+                { error: `Unsupported file type: ${file.type}. Please upload an image file.` },
                 { status: 400 }
             )
         }
