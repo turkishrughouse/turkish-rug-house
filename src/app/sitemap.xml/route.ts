@@ -136,6 +136,9 @@ export async function GET() {
     { loc: `${baseUrl}/products`, lastModified: new Date().toISOString(), changefreq: "weekly", priority: 0.7 },
     { loc: `${baseUrl}/faq`, lastModified: new Date().toISOString(), changefreq: "weekly", priority: 0.5 },
     { loc: `${baseUrl}/support`, lastModified: new Date().toISOString(), changefreq: "weekly", priority: 0.5 },
+    { loc: `${baseUrl}/info/about`, lastModified: new Date().toISOString(), changefreq: "monthly", priority: 0.6 },
+    { loc: `${baseUrl}/info/shipping`, lastModified: new Date().toISOString(), changefreq: "monthly", priority: 0.5 },
+    { loc: `${baseUrl}/info/rug-care`, lastModified: new Date().toISOString(), changefreq: "monthly", priority: 0.6 },
     ...pages.map((page) => ({
       loc: `${baseUrl}/${page.slug}`,
       lastModified: page.updatedAt.toISOString(),
