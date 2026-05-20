@@ -23,6 +23,34 @@ function toAbsoluteImageUrl(relativePath: string): string {
   return toAbsoluteSiteUrl(relativePath)
 }
 
+const DEFAULT_GOOGLE_PRODUCT_CATEGORY = "Home & Garden > Decor > Rugs"
+
+function normalizeCategoryTitle(value: string) {
+  return value.trim().toLowerCase()
+}
+
+function getGoogleProductCategory(categoryTitles: string[]) {
+  const normalizedTitles = categoryTitles.map(normalizeCategoryTitle)
+
+  if (normalizedTitles.includes("cushion covers")) {
+    return "Home & Garden > Decor > Decorative Pillows"
+  }
+
+  if (normalizedTitles.includes("runners")) {
+    return "Home & Garden > Decor > Rugs > Rug Runners"
+  }
+
+  if (
+    normalizedTitles.some((title) =>
+      ["turkish rugs", "vintage rugs", "kilims", "area rugs"].includes(title),
+    )
+  ) {
+    return DEFAULT_GOOGLE_PRODUCT_CATEGORY
+  }
+
+  return DEFAULT_GOOGLE_PRODUCT_CATEGORY
+}
+
 export async function GET() {
   const baseUrl = getSiteUrl()
 
@@ -63,6 +91,9 @@ export async function GET() {
     const availability = product.isStock && product.stockCount > 0 ? "in stock" : "out of stock"
     const price = `${Number(product.price).toFixed(2)} USD`
     const link = `${baseUrl}/product/${product.slug}`
+    const googleProductCategory = escapeXml(
+      getGoogleProductCategory(product.categories.map((category) => category.title)),
+    )
 
     const lines = [
       "    <item>",
@@ -75,7 +106,7 @@ export async function GET() {
       `      <g:price>${price}</g:price>`,
       `      <g:availability>${availability}</g:availability>`,
       `      <g:condition>new</g:condition>`,
-      `      <g:google_product_category>Home &amp; Garden &gt; Rugs</g:google_product_category>`,
+      `      <g:google_product_category>${googleProductCategory}</g:google_product_category>`,
       `      <g:brand>Turkish Rug House</g:brand>`,
       "    </item>",
     ]
