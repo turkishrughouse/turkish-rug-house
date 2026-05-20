@@ -155,24 +155,23 @@ export default async function InfoPage({ params }: Props) {
                         <div className="max-w-[640px]">
                             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8f6f4f]">About Turkish Rug House</p>
                             <h1 className="mt-5 font-serif text-4xl leading-tight md:text-5xl lg:text-6xl">
-                                Handmade Turkish rugs with lasting provenance, restraint, and character.
+                                Thirty Years of Anatolian Craft, Brought to Your Home
                             </h1>
                             <p className="mt-6 text-lg leading-8 text-slate-600">
-                                Turkish Rug House curates one-of-a-kind handmade rugs shaped by Anatolian weaving culture. Our mission is direct:
-                                present authentic pieces with clarity, respect for craftsmanship, and a level of trust suited to high-value interiors.
+                                Turkish Rug House was founded on a simple belief: that the finest handwoven rugs of Anatolia deserve to be in homes around the world. With over 30 years in the rug industry and 14 years of online experience, we source directly from artisans and weavers across every region of Turkey — from the Aegean coast to the highlands of Eastern Anatolia.
                             </p>
                             <div className="mt-8 grid gap-4 sm:grid-cols-3">
                                 <div className="rounded-2xl border border-[#e3d7c7] bg-white/80 p-4">
-                                    <div className="text-2xl font-semibold">Handmade</div>
-                                    <div className="mt-1 text-sm text-slate-500">Every piece is individually woven, not factory replicated.</div>
+                                    <div className="text-2xl font-semibold">30+</div>
+                                    <div className="mt-1 text-sm text-slate-500">Years of Experience</div>
                                 </div>
                                 <div className="rounded-2xl border border-[#e3d7c7] bg-white/80 p-4">
-                                    <div className="text-2xl font-semibold">Direct</div>
-                                    <div className="mt-1 text-sm text-slate-500">Curated with direct sourcing and close control over quality.</div>
+                                    <div className="text-2xl font-semibold">500+</div>
+                                    <div className="mt-1 text-sm text-slate-500">Unique Rugs</div>
                                 </div>
                                 <div className="rounded-2xl border border-[#e3d7c7] bg-white/80 p-4">
-                                    <div className="text-2xl font-semibold">Global</div>
-                                    <div className="mt-1 text-sm text-slate-500">Prepared for international delivery with insured shipping.</div>
+                                    <div className="text-2xl font-semibold">14</div>
+                                    <div className="mt-1 text-sm text-slate-500">Years Online</div>
                                 </div>
                             </div>
                         </div>
@@ -200,24 +199,17 @@ export default async function InfoPage({ params }: Props) {
                     <div className="grid gap-10 lg:grid-cols-2">
                         <div className="rounded-[28px] border border-[#e3d7c7] bg-white p-8 shadow-sm">
                             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8f6f4f]">Craftsmanship</p>
-                            <h2 className="mt-4 font-serif text-3xl md:text-4xl">A tradition of weaving that cannot be mass-produced</h2>
+                            <h2 className="mt-4 font-serif text-3xl md:text-4xl">Sourced Across Anatolia</h2>
                             <p className="mt-5 text-base leading-8 text-slate-600">
-                                Handmade rugs carry variation by nature: knot density, wool character, natural wear, and the rhythm of the loom.
-                                That variation is the value. Anatolian weaving tradition is not decorative nostalgia here; it is the basis of how each rug is judged, sourced, and presented.
-                            </p>
-                            <p className="mt-4 text-base leading-8 text-slate-600">
-                                Each piece remains singular. Size, dye movement, field balance, and patina give a rug its own presence in a room. That is why we treat every listing as a one-piece acquisition rather than interchangeable inventory.
+                                Every rug in our collection is handpicked from weavers and artisans spread across Turkey's most celebrated rug-making regions. From Oushak's soft floral traditions to the bold geometric kilims of Eastern Anatolia, each piece carries the character of its origin.
                             </p>
                         </div>
 
                         <div className="rounded-[28px] border border-[#e3d7c7] bg-[#f1ebe1] p-8">
                             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8f6f4f]">Story</p>
-                            <h2 className="mt-4 font-serif text-3xl md:text-4xl">Heritage, authenticity, and timeless design</h2>
+                            <h2 className="mt-4 font-serif text-3xl md:text-4xl">A Small Team, A Personal Touch</h2>
                             <p className="mt-5 text-base leading-8 text-slate-700">
-                                The brand philosophy is straightforward: respect origin, avoid noise, and let material quality speak. We focus on rugs that hold historical character while still working inside contemporary homes, hospitality spaces, and designer projects.
-                            </p>
-                            <p className="mt-4 text-base leading-8 text-slate-700">
-                                Authenticity matters more than volume. Timeless design matters more than trend. The goal is to help clients choose pieces with permanence, not short-term novelty.
+                                We are a team of three — passionate about rugs, honest about quality, and dedicated to helping you find the perfect piece. When you shop with us, you are working directly with people who know and love every rug in our collection.
                             </p>
                         </div>
                     </div>
@@ -254,20 +246,20 @@ export default async function InfoPage({ params }: Props) {
                     <div className="mx-auto grid w-full max-w-[1320px] gap-10 px-6 py-16 lg:grid-cols-[0.95fr_1.05fr]">
                         <div>
                             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8f6f4f]">Global Trust</p>
-                            <h2 className="mt-4 font-serif text-3xl md:text-4xl">A global service model built for collectible rugs</h2>
+                            <h2 className="mt-4 font-serif text-3xl md:text-4xl">Why Turkish Rug House</h2>
                         </div>
                         <div className="grid gap-6 md:grid-cols-3">
                             <div>
-                                <h3 className="text-lg font-semibold">Worldwide shipping</h3>
-                                <p className="mt-2 text-sm leading-7 text-slate-600">Orders are prepared for insured international delivery with clear communication and careful packing.</p>
+                                <h3 className="text-lg font-semibold">Direct from Artisans</h3>
+                                <p className="mt-2 text-sm leading-7 text-slate-600">We work directly with weavers across Anatolia, cutting out middlemen and ensuring fair prices and authentic pieces.</p>
                             </div>
                             <div>
-                                <h3 className="text-lg font-semibold">Curated selection</h3>
-                                <p className="mt-2 text-sm leading-7 text-slate-600">The catalog is edited for character and quality rather than inflated with generic stock.</p>
+                                <h3 className="text-lg font-semibold">One of a Kind</h3>
+                                <p className="mt-2 text-sm leading-7 text-slate-600">Every rug is unique. Once it's gone, it's gone. Our collection of 500+ rugs means you'll always find something special.</p>
                             </div>
                             <div>
-                                <h3 className="text-lg font-semibold">Direct sourcing</h3>
-                                <p className="mt-2 text-sm leading-7 text-slate-600">Direct sourcing protects provenance and keeps material quality visible at every step.</p>
+                                <h3 className="text-lg font-semibold">30 Years of Expertise</h3>
+                                <p className="mt-2 text-sm leading-7 text-slate-600">Three decades in the rug trade means we know quality when we see it. Every piece is personally selected by our team.</p>
                             </div>
                         </div>
                     </div>
