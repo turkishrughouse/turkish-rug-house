@@ -192,7 +192,7 @@ export function ContactForm({
                                     />
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label htmlFor="location" className="text-sm font-semibold">Location</label>
+                                    <label htmlFor="location" className="text-sm font-semibold">City / State</label>
                                     <input
                                         id="location"
                                         name="location"
@@ -205,7 +205,7 @@ export function ContactForm({
                             </div>
 
                             <div className="space-y-1.5">
-                                <label htmlFor="expertise" className="text-sm font-semibold">What Expertise You&apos;re Interested In *</label>
+                                <label htmlFor="expertise" className="text-sm font-semibold">How Can We Help You? *</label>
                                 <select
                                     id="expertise"
                                     name="expertise"
@@ -227,7 +227,7 @@ export function ContactForm({
                             </div>
 
                             <div className="space-y-1.5">
-                                <label htmlFor="message" className="text-sm font-semibold">Tell Us About Your Project *</label>
+                                <label htmlFor="message" className="text-sm font-semibold">Your Message *</label>
                                 <textarea
                                     id="message"
                                     name="message"
