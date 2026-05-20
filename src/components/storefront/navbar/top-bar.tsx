@@ -38,7 +38,7 @@ export function TopBar({
           ) : (
             <>
               <Link href="/info/about" className="hover:text-slate-900 transition-colors">About Us</Link>
-              <Link href="/help" className="hover:text-slate-900 transition-colors">Help</Link>
+              <Link href="/support" className="hover:text-slate-900 transition-colors">Help</Link>
               <Link href="/info/contact" className="hover:text-slate-900 transition-colors">Contact</Link>
               <Link href="/faq" className="hover:text-slate-900 transition-colors">FAQ</Link>
             </>
