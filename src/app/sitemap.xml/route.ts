@@ -132,6 +132,10 @@ export async function GET() {
       loc: `${baseUrl}/blog`,
       lastModified: new Date().toISOString(),
     },
+    { loc: `${baseUrl}/shop`, lastModified: new Date().toISOString(), changefreq: "weekly", priority: 0.7 },
+    { loc: `${baseUrl}/products`, lastModified: new Date().toISOString(), changefreq: "weekly", priority: 0.7 },
+    { loc: `${baseUrl}/faq`, lastModified: new Date().toISOString(), changefreq: "weekly", priority: 0.5 },
+    { loc: `${baseUrl}/support`, lastModified: new Date().toISOString(), changefreq: "weekly", priority: 0.5 },
     ...pages.map((page) => ({
       loc: `${baseUrl}/${page.slug}`,
       lastModified: page.updatedAt.toISOString(),
@@ -196,6 +200,8 @@ export async function GET() {
           "  <url>",
           `    <loc>${escapeXml(entry.loc)}</loc>`,
           `    <lastmod>${entry.lastModified}</lastmod>`,
+          "changefreq" in entry && entry.changefreq ? `    <changefreq>${entry.changefreq}</changefreq>` : "",
+          "priority" in entry && entry.priority != null ? `    <priority>${entry.priority}</priority>` : "",
           images,
           "  </url>",
         ]
