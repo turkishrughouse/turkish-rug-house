@@ -109,30 +109,32 @@ export async function Footer() {
     {
       title: "Shop",
       links: [
-        { label: "Shop All", href: "/shop" },
-        { label: "Shipping", href: "/info/shipping" },
-        { label: "Returns", href: "/info/returns" },
-        { label: "Collections", href: "/products" },
-        { label: "Wholesale", href: "/support" },
+        { label: "Shop All Rugs", href: "/shop" },
+        { label: "Oushak Rugs", href: "/category/oushak-rugs" },
+        { label: "Kilim Rugs", href: "/category/kilims" },
+        { label: "Vintage Rugs", href: "/category/vintage-rugs" },
+        { label: "New Arrivals", href: "/shop?sort=createdAt-desc" },
+        { label: "Collections", href: "/shop" },
+      ],
+    },
+    {
+      title: "Customer Care",
+      links: [
+        { label: "Shipping & Delivery", href: "/info/shipping" },
+        { label: "Returns & Exchanges", href: "/returns" },
+        { label: "Track Your Order", href: "/orders" },
+        { label: "FAQ", href: "/faq" },
+        { label: "Contact Us", href: "/info/contact" },
       ],
     },
     {
       title: "About",
       links: [
-        { label: "Our story", href: "/info/about" },
-        { label: "Blog", href: "/info/blog" },
-        { label: "Jobs", href: "/support" },
-        { label: "Privacy policy", href: "/info/privacy-policy" },
-        { label: "Terms and conditions", href: "/info/terms-and-conditions" },
-      ],
-    },
-    {
-      title: "Help",
-      links: [
-        { label: "Tutorials", href: "/support" },
-        { label: "Office hours", href: "/info/contact" },
-        { label: "FAQ", href: "/faq" },
-        { label: "Contact us", href: "/info/contact" },
+        { label: "Our Story", href: "/info/about" },
+        { label: "Blog", href: "/blog" },
+        { label: "Rug Care Guide", href: "/info/rug-care" },
+        { label: "Privacy Policy", href: "/info/privacy-policy" },
+        { label: "Terms & Conditions", href: "/info/terms-and-conditions" },
       ],
     },
   ]
