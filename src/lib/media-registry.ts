@@ -18,27 +18,32 @@ export type MediaRegistryRow = {
   object_key: string | null
 }
 
+let _tableEnsured: Promise<void> | null = null
+
 export async function ensureMediaRegistryTable() {
-  await prisma.$executeRaw`
-    CREATE TABLE IF NOT EXISTS "MediaAsset" (
-      "id" TEXT PRIMARY KEY,
-      "image_url" TEXT NOT NULL UNIQUE,
-      "width" INTEGER,
-      "height" INTEGER,
-      "alt" TEXT,
-      "sort_order" INTEGER NOT NULL DEFAULT 0,
-      "is_primary" INTEGER NOT NULL DEFAULT 0,
-      "variant" TEXT,
-      "master_url" TEXT,
-      "checksum" TEXT,
-      "mime_type" TEXT,
-      "size_bytes" INTEGER,
-      "storage_provider" TEXT,
-      "object_key" TEXT,
-      "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-  `
+  if (!_tableEnsured) {
+    _tableEnsured = prisma.$executeRaw`
+      CREATE TABLE IF NOT EXISTS "MediaAsset" (
+        "id" TEXT PRIMARY KEY,
+        "image_url" TEXT NOT NULL UNIQUE,
+        "width" INTEGER,
+        "height" INTEGER,
+        "alt" TEXT,
+        "sort_order" INTEGER NOT NULL DEFAULT 0,
+        "is_primary" INTEGER NOT NULL DEFAULT 0,
+        "variant" TEXT,
+        "master_url" TEXT,
+        "checksum" TEXT,
+        "mime_type" TEXT,
+        "size_bytes" INTEGER,
+        "storage_provider" TEXT,
+        "object_key" TEXT,
+        "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `.then(() => undefined)
+  }
+  return _tableEnsured
 }
 
 export async function findMediaByChecksum(checksum: string) {
