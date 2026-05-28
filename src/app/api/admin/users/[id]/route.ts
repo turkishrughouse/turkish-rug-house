@@ -43,13 +43,15 @@ export async function PATCH(
       }
     }
 
+    const hashedPassword = parsed.data.password ? await hashPassword(parsed.data.password) : undefined
+
     const updated = await prisma.user.update({
       where: { id },
       data: {
         name: parsed.data.name,
         email: parsed.data.email ? parsed.data.email.toLowerCase() : undefined,
         role: parsed.data.role,
-        password: parsed.data.password ? hashPassword(parsed.data.password) : undefined,
+        password: hashedPassword,
       },
       select: {
         id: true,

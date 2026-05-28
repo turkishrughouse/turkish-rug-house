@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -14,6 +15,8 @@ type NotificationItem = {
 }
 
 export async function GET() {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const [orders, messages, orderEvents, pages, products, menus, users, openOrderRows, unreadMessages] = await Promise.all([
       prisma.order.findMany({

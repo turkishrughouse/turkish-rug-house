@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { z } from "zod"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 const menuSchema = z.object({
     name: z.string().min(2, "Name must be at least 2 characters"),
@@ -26,6 +27,8 @@ const slugify = (text: string) => {
 
 // GET /api/admin/menus
 export async function GET() {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const menus = await prisma.menu.findMany({
             orderBy: { title: "asc" },
@@ -44,6 +47,8 @@ export async function GET() {
 
 // POST /api/admin/menus
 export async function POST(req: Request) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const body = await req.json()
         const result = menuSchema.safeParse(body)

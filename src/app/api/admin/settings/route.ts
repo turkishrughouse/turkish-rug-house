@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getSiteSettings, saveSiteSettings } from "@/lib/site-settings"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 const homePromoSectionSchema = z.object({
   id: z.string().min(1),
@@ -162,6 +163,8 @@ const settingsSchema = z.object({
 })
 
 export async function GET() {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const data = await getSiteSettings()
     return NextResponse.json(data)
@@ -172,6 +175,8 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const body = await req.json()
     const result = settingsSchema.safeParse(body)

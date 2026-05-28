@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { z } from "zod"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 const pageUpdateSchema = z.object({
     title: z.string().min(1, "Title is required").optional(),
@@ -16,6 +17,8 @@ const pageUpdateSchema = z.object({
 
 // GET /api/admin/pages/[id]
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const { id } = await params
         const page = await prisma.page.findUnique({
@@ -34,6 +37,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
 // PATCH /api/admin/pages/[id]
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const { id } = await params
         const body = await req.json()
@@ -86,6 +91,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 // DELETE /api/admin/pages/[id]
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const { id } = await params
         // Hard Delete

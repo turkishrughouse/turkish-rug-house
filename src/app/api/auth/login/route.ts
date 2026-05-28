@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/db"
 import { createSessionToken, getAuthCookieName, getSessionMaxAge, shouldUseSecureCookies } from "@/lib/auth"
-import { verifyPassword } from "@/lib/password"
+import { verifyPassword, hashPassword } from "@/lib/password"
 
 const loginSchema = z.object({
   identifier: z.string().min(1).optional(),
@@ -73,9 +73,17 @@ export async function POST(req: NextRequest) {
 
     const normalizedStoredPassword = String(user.password || "").trim()
     const normalizedPassword = password.trim()
-    const valid = verifyPassword(normalizedStoredPassword, normalizedPassword)
+    const { valid, needsRehash } = await verifyPassword(normalizedStoredPassword, normalizedPassword)
     if (!valid) {
-      return NextResponse.json({ error: "Username/email or password is incorrect" }, { status: 401 })
+      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
+    }
+    if (needsRehash) {
+      try {
+        const newHash = await hashPassword(normalizedPassword)
+        await prisma.user.update({ where: { id: user.id }, data: { password: newHash } })
+      } catch {
+        // non-fatal — login still succeeds, hash upgrades on next attempt
+      }
     }
 
     const adminRoles = new Set(["SUPER_USER", "ADMIN", "EDITOR", "MANAGER", "STAFF"])

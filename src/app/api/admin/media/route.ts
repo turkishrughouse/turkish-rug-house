@@ -12,6 +12,7 @@ import { logger } from "@/lib/logger"
 import { getStorageProvider } from "@/lib/storage/provider"
 import { getProductImageUrl, parseProductImageRecords } from "@/lib/product-images"
 import { ensureMediaRegistryTable } from "@/lib/media-registry"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -548,6 +549,8 @@ async function pruneEmptyUploadFolders(folder: string) {
 }
 
 export async function GET(req: NextRequest) {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const searchParams = req.nextUrl.searchParams
     const pageInput = Number(searchParams.get("page") || "1")
@@ -794,6 +797,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const body = await req.json()
     const parsed = createFolderSchema.safeParse(body)
@@ -834,6 +839,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const body = await req.json()
     const parsed = moveAssetSchema.safeParse(body)
@@ -900,6 +907,8 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const body = await req.json()
     const parsed = deleteAssetSchema.safeParse(body)

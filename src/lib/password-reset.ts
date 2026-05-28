@@ -85,7 +85,7 @@ export async function consumePasswordResetToken(token: string, nextPassword: str
   await prisma.user.update({
     where: { id: user.id },
     data: {
-      password: hashPassword(nextPassword),
+      password: await hashPassword(nextPassword),
       passwordResetTokenHash: null,
       passwordResetExpiresAt: null,
     },

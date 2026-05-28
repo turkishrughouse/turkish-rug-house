@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { z } from "zod"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 // --- Schemas ---
 const bulkDeleteSchema = z.object({
@@ -16,6 +17,8 @@ const bulkPatchSchema = z.object({
 })
 
 export async function DELETE(request: Request) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const body = await request.json()
         const result = bulkDeleteSchema.safeParse(body)
@@ -74,6 +77,8 @@ export async function DELETE(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const body = await request.json()
         const result = bulkPatchSchema.safeParse(body)

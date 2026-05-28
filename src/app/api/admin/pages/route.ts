@@ -3,12 +3,15 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { Prisma } from "@prisma/client"
 import { z } from "zod"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 export const dynamic = 'force-dynamic'
 
 // GET /api/admin/pages
 // Query Params: page, limit, status, search
 export async function GET(req: NextRequest) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const { searchParams } = new URL(req.url)
         const page = parseInt(searchParams.get("page") || "1")
@@ -72,6 +75,8 @@ const pageCreateSchema = z.object({
 
 // POST /api/admin/pages
 export async function POST(req: NextRequest) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const body = await req.json()
 

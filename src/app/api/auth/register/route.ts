@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
       data: {
         name: parsed.data.name.trim(),
         email,
-        password: hashPassword(password),
+        password: await hashPassword(password),
         role: "CUSTOMER",
         provider: "LOCAL",
         emailVerifiedAt: new Date(),

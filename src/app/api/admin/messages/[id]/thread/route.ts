@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 function parseMetadata(raw: string | null | undefined) {
   if (!raw) return {}
@@ -20,6 +21,8 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   const { id } = await params
   const anchor = await prisma.message.findUnique({
     where: { id },

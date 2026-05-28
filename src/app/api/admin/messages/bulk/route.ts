@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { messageBulkActionSchema } from "@/lib/validations/message"
 import { addBlockedSenders, removeBlockedSenders } from "@/lib/message-blocklist"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 export const dynamic = "force-dynamic"
 
@@ -87,6 +88,8 @@ async function upsertReviewMessage(messageId: string, review: ReviewInfo, data: 
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const body = await req.json()
     const parsed = messageBulkActionSchema.safeParse(body)

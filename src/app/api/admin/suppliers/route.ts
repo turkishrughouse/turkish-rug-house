@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { getSupplierIdentityKey, normalizeSupplierRecord } from "@/lib/supplier-prefix"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 import {
   ensureSupplierRegistrySeeded,
   getSupplierSummaries,
@@ -11,6 +12,8 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 export async function GET() {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const suppliers = await getSupplierSummaries()
     return NextResponse.json({ suppliers })
@@ -21,6 +24,8 @@ export async function GET() {
 }
 
 export async function PATCH(req: Request) {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const body = await req.json().catch(() => ({}))
     const original = normalizeSupplierRecord(body?.original)

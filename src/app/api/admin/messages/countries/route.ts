@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const customerMessages = await prisma.message.findMany({
       where: {

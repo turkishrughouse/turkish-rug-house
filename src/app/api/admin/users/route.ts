@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
         name: parsed.data.name,
         email: parsed.data.email.toLowerCase(),
         role: parsed.data.role,
-        password: hashPassword(parsed.data.password),
+        password: await hashPassword(parsed.data.password),
       },
       select: {
         id: true,

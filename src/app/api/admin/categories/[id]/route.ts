@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { z } from "zod"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 const categoryUpdateSchema = z.object({
     title: z.string().min(1, "Title is required").optional(),
@@ -18,6 +19,8 @@ export async function GET(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const { id } = await params
         const category = await prisma.category.findUnique({
@@ -41,6 +44,8 @@ export async function PATCH(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const { id } = await params
         const body = await request.json()
@@ -114,6 +119,8 @@ export async function DELETE(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const { id } = await params
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { applyBulkOrderAction } from "@/lib/actions/order-actions"
 import { getSiteUrl } from "@/lib/site-url"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 const ALLOWED_ACTIONS = new Set([
   "MARK_PAID",
@@ -27,6 +28,8 @@ function seeOther(url: URL) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const raw = await req.text()
     const params = new URLSearchParams(raw)

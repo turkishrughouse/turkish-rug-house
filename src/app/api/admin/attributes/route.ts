@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { ensureDynamicAttributeTables, getAttributeGroups } from "@/lib/product-attributes"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 function slugify(input: string) {
   return input
@@ -12,6 +13,8 @@ function slugify(input: string) {
 }
 
 export async function GET() {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     await ensureDynamicAttributeTables()
     const groups = await getAttributeGroups({ activeOnly: true })
@@ -37,6 +40,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     await ensureDynamicAttributeTables()
     const body = await req.json()

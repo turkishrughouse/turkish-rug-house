@@ -178,7 +178,7 @@ async function createPayPalOrder(input: {
 }
 
 async function createPayTRToken(input: {
-  settings: Awaited<ReturnType<typeof getSiteSettings>>
+  settings: Awaited<ReturnType<typeof getFreshSiteSettings>>
   origin: string
   orderId: string
   amount: number

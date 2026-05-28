@@ -185,7 +185,7 @@ export async function PATCH(req: NextRequest) {
     } = {}
     if (nextName !== undefined) userData.name = nextName
     if (data.email !== undefined) userData.email = data.email
-    if (data.newPassword) userData.password = hashPassword(data.newPassword)
+    if (data.newPassword) userData.password = await hashPassword(data.newPassword)
 
     const profileData: {
       avatarUrl?: string

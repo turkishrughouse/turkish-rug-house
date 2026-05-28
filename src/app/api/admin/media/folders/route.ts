@@ -9,6 +9,7 @@ import { ensureMediaRegistryTable } from "@/lib/media-registry"
 import { isProductSkuFolderPath } from "@/lib/media-sku-roots"
 import { parseProductImages } from "@/lib/product-images"
 import { getStorageProvider } from "@/lib/storage/provider"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -230,6 +231,8 @@ async function listMediaFolders(): Promise<{ folders: FolderInfo[]; branchSkuFol
 }
 
 export async function GET() {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const { folders, branchSkuFolders } = await listMediaFolders()
     return NextResponse.json({ folders, branchSkuFolders })
@@ -304,6 +307,8 @@ async function replaceFolderUrlReferences(oldFolder: string, nextFolder: string)
 }
 
 export async function DELETE(req: NextRequest) {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const body = await req.json().catch(() => ({}))
     const parsed = deleteFolderSchema.safeParse(body)
@@ -386,6 +391,8 @@ export async function DELETE(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const body = await req.json().catch(() => ({}))
     const parsed = renameFolderSchema.safeParse(body)
@@ -462,6 +469,8 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const body = await req.json().catch(() => ({}))
     const parsed = cloneFolderSchema.safeParse(body)

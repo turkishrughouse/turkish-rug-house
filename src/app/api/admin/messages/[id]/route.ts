@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { messageUpdateSchema } from "@/lib/validations/message"
 import { Prisma } from "@prisma/client"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 export const dynamic = "force-dynamic"
 
@@ -28,6 +29,8 @@ export async function GET(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         void req
         const { id } = await params
@@ -121,6 +124,8 @@ export async function PATCH(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const { id } = await params
         const body = await req.json()
@@ -263,6 +268,8 @@ export async function DELETE(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         void req
         const { id } = await params

@@ -1,5 +1,6 @@
-import { NextRequest } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { messageEvents } from "@/lib/message-events"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 export const dynamic = "force-dynamic"
 
@@ -8,6 +9,8 @@ export const dynamic = "force-dynamic"
  * Server-Sent Events endpoint for real-time message notifications
  */
 export async function GET(req: NextRequest) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     // Create a unique client ID
     const clientId = Math.random().toString(36).substring(7)
 

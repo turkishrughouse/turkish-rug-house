@@ -1,6 +1,7 @@
 
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 // Helper: Build Tree for Response
 function buildTree(items: any[]) {
@@ -34,6 +35,8 @@ function buildTree(items: any[]) {
 
 // GET /api/admin/menus/:id
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const { id } = await params
         const menu = await prisma.menu.findUnique({
@@ -57,6 +60,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
 // PUT /api/admin/menus/:id
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const { id } = await params
         const body = await req.json()
@@ -136,6 +141,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
 // DELETE /api/admin/menus/:id
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const { id } = await params
         await prisma.menu.delete({ where: { id } })

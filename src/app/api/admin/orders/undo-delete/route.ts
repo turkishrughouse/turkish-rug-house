@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { undoPendingDeletedOrders } from "@/lib/actions/order-actions"
 import { getSiteUrl } from "@/lib/site-url"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 function seeOther(url: URL) {
   return NextResponse.redirect(url, 303)
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const raw = await req.text()
     const params = new URLSearchParams(raw)

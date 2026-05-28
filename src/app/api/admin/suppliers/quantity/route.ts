@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAdminApiAuth()
+  if (auth instanceof NextResponse) return auth
   try {
     const body = await req.json().catch(() => ({}))
     const prefixes = Array.isArray(body?.prefixes) ? body.prefixes : []

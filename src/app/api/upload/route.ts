@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db"
 import { getStorageProvider } from "@/lib/storage/provider"
 import { processUploadImage } from "@/lib/storage/image-pipeline"
 import { ensureMediaRegistryTable, findMediaByChecksum, upsertMediaAsset } from "@/lib/media-registry"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -46,6 +47,8 @@ async function mediaRowExists(objectKey: string | null | undefined) {
 }
 
 export async function POST(req: NextRequest) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const env = getEnv()
         const contentType = req.headers.get("content-type") || ""

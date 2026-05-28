@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { messageListQuerySchema } from "@/lib/validations/message"
 import { Prisma } from "@prisma/client"
+import { requireAdminApiAuth } from "@/lib/admin-guard"
 
 export const dynamic = "force-dynamic"
 
@@ -34,6 +35,8 @@ function normalizeEmailSubject(value: string | null | undefined) {
  * List messages with filtering, search, and pagination
  */
 export async function GET(req: NextRequest) {
+    const auth = await requireAdminApiAuth()
+    if (auth instanceof NextResponse) return auth
     try {
         const { searchParams } = new URL(req.url)
 
