@@ -1,11 +1,22 @@
+const DANGEROUS_PAIRED_TAGS = ["script", "style", "iframe", "object", "embed", "form", "applet", "xml"]
+
 function stripDangerousBlocks(input: string) {
-  return input
-    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
+  return DANGEROUS_PAIRED_TAGS.reduce((acc, tag) => {
+    return acc
+      .replace(new RegExp(`<${tag}[\\s\\S]*?>[\\s\\S]*?<\\/${tag}>`, "gi"), "")
+      .replace(new RegExp(`<${tag}(?:\\s[^>]*)?\\/?>`, "gi"), "")
+  }, input)
 }
 
 function stripEventHandlers(input: string) {
   return input.replace(/\son[a-z]+="[^"]*"/gi, "").replace(/\son[a-z]+='[^']*'/gi, "")
+}
+
+function stripDangerousHrefs(input: string) {
+  return input.replace(
+    /(\s(?:href|src|action|formaction)\s*=\s*["']?)\s*(?:javascript|vbscript|data)\s*:/gi,
+    "$1#",
+  )
 }
 
 function clampFontSizeValue(rawValue: string, unit: string) {
@@ -95,7 +106,13 @@ export function normalizeRichTextHtml(input: string | null | undefined) {
   const source = (input || "").trim()
   if (!source) return ""
   const safe = normalizeStyleAttributes(
-    clampLineHeights(clampFontSizes(normalizeLegacyFontTags(stripEventHandlers(stripDangerousBlocks(source)))))
+    clampLineHeights(
+      clampFontSizes(
+        normalizeLegacyFontTags(
+          stripDangerousHrefs(stripEventHandlers(stripDangerousBlocks(source))),
+        ),
+      ),
+    ),
   )
   return safe
 }

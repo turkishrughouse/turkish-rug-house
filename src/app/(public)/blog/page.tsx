@@ -4,7 +4,7 @@ import { ArrowRight } from "lucide-react"
 import { BlogCard } from "@/components/storefront/blog-card"
 import { getAllPublishedBlogPosts } from "@/lib/blog"
 
-export const dynamic = "force-dynamic"
+export const revalidate = 300
 
 export const metadata: Metadata = {
   title: "Journal | Turkish Rug House",
@@ -38,18 +38,22 @@ export default async function BlogIndexPage() {
           </div>
 
           <div className="overflow-hidden rounded-[30px] border border-[#dde6ef] bg-[radial-gradient(circle_at_top,#e7efe7,transparent_52%),linear-gradient(135deg,#f8fafc,#eef3f7)] p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
-            <div className="grid gap-4 sm:grid-cols-3">
-              {posts.slice(0, 3).map((post, index) => (
-                <div
+            <div className="flex flex-col gap-3">
+              {posts.slice(0, 3).map((post) => (
+                <Link
                   key={post.id}
-                  className={`rounded-[22px] border border-white/70 bg-white/80 p-4 backdrop-blur ${index === 0 ? "sm:col-span-2" : ""}`}
+                  href={`/blog/${post.slug}`}
+                  className="group flex items-start justify-between gap-4 rounded-[22px] border border-white/70 bg-white/80 p-5 backdrop-blur transition-all duration-200 hover:border-[#0f766e]/30 hover:bg-white hover:shadow-[0_4px_16px_rgba(15,118,110,0.08)]"
                 >
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#0f766e]">
-                    {new Date(post.publishedAt || post.createdAt).getFullYear()}
-                  </p>
-                  <h2 className="mt-3 font-serif text-2xl leading-tight text-slate-900">{post.title}</h2>
-                  <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">{post.excerpt}</p>
-                </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#0f766e]">
+                      {new Date(post.publishedAt || post.createdAt).getFullYear()}
+                    </p>
+                    <h2 className="mt-2 line-clamp-2 font-serif text-lg leading-snug text-slate-900 transition-colors group-hover:text-[#0f766e]">{post.title}</h2>
+                    <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-500">{post.excerpt}</p>
+                  </div>
+                  <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-[#0f766e]" />
+                </Link>
               ))}
               {posts.length === 0 ? (
                 <div className="sm:col-span-3 rounded-[22px] border border-white/70 bg-white/80 p-6 text-sm text-slate-600">
@@ -94,7 +98,7 @@ export default async function BlogIndexPage() {
                   slug: post.slug,
                   excerpt: post.excerpt,
                   featuredImage: post.featuredImage,
-                  publishedAt: (post.publishedAt || post.createdAt).toISOString(),
+                  publishedAt: new Date(post.publishedAt ?? post.createdAt).toISOString(),
                 }}
               />
             ))}

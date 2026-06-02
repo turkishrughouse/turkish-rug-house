@@ -507,3 +507,15 @@ model LiveVisitorRecord {
   currentPath  String?
   updatedAt    DateTime @updatedAt
 }
+
+model CartAddEvent {
+  id           String   @id @default(cuid())
+  actorKey     String
+  customerName String   @default("Guest")
+  action       String
+  path         String?
+  createdAt    DateTime @default(now())
+
+  @@index([actorKey])
+  @@index([createdAt])
+}

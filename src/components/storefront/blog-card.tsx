@@ -6,7 +6,7 @@ import { formatBlogDate } from "@/lib/blog-shared"
 
 export function BlogCard({ post }: { post: BlogCardItem }) {
   return (
-    <article className="group overflow-hidden rounded-[26px] border border-[#dde6ef] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] transition-transform duration-300 hover:-translate-y-1">
+    <article className="group flex h-full flex-col overflow-hidden rounded-[26px] border border-[#dde6ef] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] transition-transform duration-300 hover:-translate-y-1">
       <Link href={`/blog/${post.slug}`} className="block">
         <div className="aspect-[4/3] overflow-hidden bg-[#eef3f7]">
           {post.featuredImage ? (
@@ -26,21 +26,21 @@ export function BlogCard({ post }: { post: BlogCardItem }) {
         </div>
       </Link>
 
-      <div className="space-y-4 p-6">
+      <div className="flex flex-1 flex-col gap-4 p-6">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#0f766e]">
           {formatBlogDate(post.publishedAt)}
         </p>
         <div>
           <Link href={`/blog/${post.slug}`}>
-            <h3 className="font-serif text-[1.4rem] leading-[1.15] text-slate-900 transition-colors group-hover:text-[#0f766e]">
+            <h3 className="line-clamp-2 font-serif text-[1.4rem] leading-[1.15] text-slate-900 transition-colors group-hover:text-[#0f766e]">
               {post.title}
             </h3>
           </Link>
-          <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">
+          <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">
             {post.excerpt}
           </p>
         </div>
-        <Link href={`/blog/${post.slug}`} className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900 transition-colors hover:text-[#0f766e]">
+        <Link href={`/blog/${post.slug}`} className="mt-auto inline-flex items-center gap-2 text-sm font-semibold text-slate-900 transition-colors hover:text-[#0f766e]">
           Read More
           <ArrowRight className="h-4 w-4" />
         </Link>

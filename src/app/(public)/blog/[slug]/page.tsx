@@ -37,7 +37,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description,
       type: "article",
       url: `/blog/${slug}`,
-      publishedTime: post.publishedAt?.toISOString(),
+      publishedTime: post.publishedAt ? new Date(post.publishedAt).toISOString() : undefined,
       images: post.featuredImage ? [{ url: toAbsoluteSiteUrl(post.featuredImage), alt: post.title }] : [],
     },
     twitter: {
@@ -60,8 +60,8 @@ export default async function BlogDetailPage({ params }: Props) {
     "@type": "Article",
     headline: post.title,
     description: buildBlogMetaDescription(post),
-    datePublished: post.publishedAt?.toISOString(),
-    dateModified: post.updatedAt.toISOString(),
+    datePublished: post.publishedAt ? new Date(post.publishedAt).toISOString() : undefined,
+    dateModified: new Date(post.updatedAt).toISOString(),
     image: post.featuredImage ? [toAbsoluteSiteUrl(post.featuredImage)] : [],
     mainEntityOfPage: `${getSiteUrl()}/blog/${post.slug}`,
     author: {
@@ -132,7 +132,7 @@ export default async function BlogDetailPage({ params }: Props) {
                   slug: relatedPost.slug,
                   excerpt: relatedPost.excerpt,
                   featuredImage: relatedPost.featuredImage,
-                  publishedAt: (relatedPost.publishedAt || relatedPost.createdAt).toISOString(),
+                  publishedAt: new Date(relatedPost.publishedAt ?? relatedPost.createdAt).toISOString(),
                 }}
               />
             ))}

@@ -29,6 +29,7 @@ import { toast } from "sonner"
 import { Loader2, ArrowLeft, ExternalLink, ImagePlus, Trash2, Pencil } from "lucide-react"
 import { slugify } from "@/lib/utils"
 import { MediaPickerDialog } from "@/components/admin/media/media-picker-dialog"
+import { RichTextEditor } from "@/components/admin/blog/rich-text-editor"
 import type { BlogListItem } from "@/lib/blog-shared"
 import { slugifyBlogTitle } from "@/lib/blog"
 
@@ -264,10 +265,9 @@ export function BlogForm({ initialData }: BlogFormProps) {
                                         <FormItem>
                                             <FormLabel>Content</FormLabel>
                                             <FormControl>
-                                                <Textarea
-                                                    className="min-h-[320px] bg-white border-[#dce3ed] text-slate-900 placeholder:text-slate-400"
-                                                    placeholder="Write post content..."
-                                                    {...field}
+                                                <RichTextEditor
+                                                    value={field.value || ""}
+                                                    onChange={field.onChange}
                                                 />
                                             </FormControl>
                                             <FormMessage />
