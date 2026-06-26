@@ -47,3 +47,9 @@ prisma/dev.db
 SELECT
 public/uploads/
 CLAUDE.md
+learnings.md
+.claude/
+rug_inventory_dump.sql
+rughouse.sql
+prisma/migrations/20260620000000_add_order_counter/
+prisma/migrations/20260620110342_npm_run_build/

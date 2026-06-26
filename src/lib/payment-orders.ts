@@ -3,15 +3,24 @@ import { getSingleOrderDetails, saveOrderDetails } from "@/lib/order-details"
 import { notifyOrderUpdate } from "@/lib/customer-messaging"
 import { grantReviewRightForOrder } from "@/lib/review-access"
 
+const IS_POSTGRES = process.env.DATABASE_URL?.startsWith("postgresql") ?? false
+
 export async function nextOrderNumber() {
-  const latest = await prisma.order.findFirst({
-    orderBy: { createdAt: "desc" },
-    select: { orderNumber: true },
-  })
-  const lastNumber = latest?.orderNumber
-    ? Number(String(latest.orderNumber).replace(/\D/g, ""))
-    : 0
-  const next = Number.isFinite(lastNumber) ? lastNumber + 1 : 1
+  if (IS_POSTGRES) {
+    const rows = await prisma.$queryRaw<[{ nextval: bigint }]>`
+      SELECT nextval('order_number_seq')
+    `
+    const next = Number(rows[0].nextval)
+    return `TRH-${String(next).padStart(3, "0")}`
+  }
+
+  // SQLite (dev)
+  const rows = await prisma.$queryRaw<[{ value: number }]>`
+    INSERT INTO "OrderCounter" ("id", "value") VALUES ('singleton', 1)
+    ON CONFLICT("id") DO UPDATE SET value = value + 1
+    RETURNING value
+  `
+  const next = Number(rows[0]?.value ?? 1)
   return `TRH-${String(next).padStart(3, "0")}`
 }
 
@@ -45,39 +54,12 @@ export async function finalizePaidOrder(input: {
       throw new Error("Order not found")
     }
 
-    const isAlreadyPaid = String(currentOrder.status).toUpperCase() === "PAID"
-    if (isAlreadyPaid) {
+    const terminalStatuses = ["PAID", "REFUNDED", "CANCELLED", "EXPIRED"]
+    if (terminalStatuses.includes(String(currentOrder.status).toUpperCase())) {
       return
     }
 
-    for (const item of currentOrder.items) {
-      if (!item.productId) continue
-      const decremented = await tx.product.updateMany({
-        where: {
-          id: item.productId,
-          isStock: true,
-          stockCount: { gte: item.quantity },
-        },
-        data: {
-          stockCount: { decrement: item.quantity },
-        },
-      })
-      if (decremented.count === 0) {
-        throw new Error(`Insufficient stock for ${item.title}`)
-      }
-
-      const product = await tx.product.findUnique({
-        where: { id: item.productId },
-        select: { id: true, stockCount: true, isStock: true },
-      })
-      if (product && product.stockCount <= 0 && product.isStock) {
-        await tx.product.update({
-          where: { id: product.id },
-          data: { isStock: false },
-        })
-      }
-    }
-
+    // Stock was already decremented at checkout init — only update status here.
     await tx.order.update({
       where: { id: input.orderId },
       data: { status: "PAID" },

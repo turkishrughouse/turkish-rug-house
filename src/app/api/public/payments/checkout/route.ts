@@ -7,6 +7,7 @@ import { checkFixedWindowRateLimit } from "@/lib/rate-limit"
 import { getFreshSiteSettings } from "@/lib/site-settings"
 import { ensureOrderDetailsColumn, saveOrderDetails } from "@/lib/order-details"
 import { nextOrderNumber } from "@/lib/payment-orders"
+import { reclaimExpiredOrders } from "@/lib/stock-reclaim"
 import { getAddressCountryConfig } from "@/lib/location/catalog"
 import {
   buildDisplayAmountsFromUsd,
@@ -373,35 +374,58 @@ export async function POST(req: NextRequest) {
         : Math.round(item.price * currencySnapshot.usdToEurRate * 100) / 100,
     }))
 
-    const order = await prisma.order.create({
-      data: {
-        orderNumber: await nextOrderNumber(),
-        userId: isCustomerSession ? sessionUser.id : null,
-        customerName: input.customerName,
-        customerEmail: input.customerEmail.toLowerCase(),
-        total: draft.total,
-        status: "PENDING",
-        shipmentStatus: "PENDING",
-        items: {
-          create: draft.items.map((item) => ({
-            productId: item.productId,
-            title: item.title,
-            quantity: item.quantity,
-            price: item.price,
-          })),
+    await reclaimExpiredOrders()
+
+    const orderNumber = await nextOrderNumber()
+
+    const order = await prisma.$transaction(async (tx) => {
+      // Atomically decrement stock for every item. Any item with insufficient
+      // stock causes the whole transaction to roll back (409 returned to client).
+      for (const item of draft.items) {
+        const decremented = await tx.product.updateMany({
+          where: { id: item.productId, stockCount: { gte: item.quantity } },
+          data: { stockCount: { decrement: item.quantity } },
+        })
+        if (decremented.count === 0) {
+          throw new Error(`${item.title} is no longer available`)
+        }
+        // Keep isStock in sync: mark out-of-stock if stockCount hit 0.
+        await tx.product.updateMany({
+          where: { id: item.productId, stockCount: { lte: 0 }, isStock: true },
+          data: { isStock: false },
+        })
+      }
+
+      return tx.order.create({
+        data: {
+          orderNumber,
+          userId: isCustomerSession ? sessionUser.id : null,
+          customerName: input.customerName,
+          customerEmail: input.customerEmail.toLowerCase(),
+          total: draft.total,
+          status: "PENDING",
+          shipmentStatus: "PENDING",
+          items: {
+            create: draft.items.map((item) => ({
+              productId: item.productId,
+              title: item.title,
+              quantity: item.quantity,
+              price: item.price,
+            })),
+          },
+          events: {
+            create: [
+              {
+                type: "CREATED",
+                title: "Payment initiated",
+                description: `Checkout started with ${input.provider.toUpperCase()} from IP ${clientIp}`,
+                actorType: "CUSTOMER",
+                isAdmin: false,
+              },
+            ],
+          },
         },
-        events: {
-          create: [
-            {
-              type: "CREATED",
-              title: "Payment initiated",
-              description: `Checkout started with ${input.provider.toUpperCase()} from IP ${clientIp}`,
-              actorType: "CUSTOMER",
-              isAdmin: false,
-            },
-          ],
-        },
-      },
+      })
     })
     await saveOrderDetails(order.id, {
       customerPhone: input.customerPhone?.trim() || null,

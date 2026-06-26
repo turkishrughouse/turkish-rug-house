@@ -519,3 +519,9 @@ model CartAddEvent {
   @@index([actorKey])
   @@index([createdAt])
 }
+
+model OrderCounter {
+  id    Int @id @default(1)
+  value Int @default(0)
+}
+
