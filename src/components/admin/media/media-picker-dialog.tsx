@@ -750,28 +750,46 @@ export function MediaPickerDialog({
           })
         }
       }
-      const uploadedUrls: string[] = []
-      const uploadedFolders: string[] = []
-      for (const [index, file] of files.entries()) {
+      const uploadOne = async (file: File, index: number) => {
         if (file.type && !file.type.startsWith("image/")) {
           throw new Error(`"${file.name}" is not a supported image type (${file.type})`)
         }
+
         const formData = new FormData()
         formData.append("file", file)
         formData.append("folder", targetUploadFolder)
+
         const baseName = buildUploadBaseName(productMeta?.title || "", index, files.length)
         if (baseName) formData.append("baseName", baseName)
+
         const res = await fetch("/api/upload", {
           method: "POST",
           body: formData,
         })
+
         const json = await res.json().catch(() => null as null | { success?: boolean; url?: string; error?: string })
         if (!res.ok || !json?.success || !json?.url) {
           throw new Error(json?.error || "Upload failed")
         }
-        uploadedUrls.push(json.url)
-        const resolvedFolder = extractFolderFromUploadUrl(json.url)
-        if (resolvedFolder) uploadedFolders.push(resolvedFolder)
+
+        return json.url
+      }
+
+      const uploadedUrls: string[] = []
+      const uploadedFolders: string[] = []
+      const concurrency = 2
+
+      for (let index = 0; index < files.length; index += concurrency) {
+        const batch = files.slice(index, index + concurrency)
+        const batchUrls = await Promise.all(
+          batch.map((file, batchIndex) => uploadOne(file, index + batchIndex))
+        )
+
+        for (const url of batchUrls) {
+          uploadedUrls.push(url)
+          const resolvedFolder = extractFolderFromUploadUrl(url)
+          if (resolvedFolder) uploadedFolders.push(resolvedFolder)
+        }
       }
       toast.success(`${uploadedUrls.length} file(s) uploaded`)
       setHiddenDeletedUrls((prev) => prev.filter((url) => !uploadedUrls.includes(url)))
