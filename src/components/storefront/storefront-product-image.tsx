@@ -13,6 +13,9 @@ type StorefrontProductImageProps = {
   height?: number
   sizes: string
   priority?: boolean
+  /** Set "eager" for images already on screen when their container appears. */
+  loading?: "eager" | "lazy"
+  fetchPriority?: "high" | "low" | "auto"
 }
 
 export function StorefrontProductImage({
@@ -24,6 +27,8 @@ export function StorefrontProductImage({
   height,
   sizes,
   priority = false,
+  loading,
+  fetchPriority,
 }: StorefrontProductImageProps) {
   const sources = useMemo(() => {
     const normalized = safeImages(candidates)
@@ -43,6 +48,8 @@ export function StorefrontProductImage({
     })
   }
 
+  const loadingProps = priority ? {} : { loading, fetchPriority }
+
   if (fill) {
     return (
       <Image
@@ -52,6 +59,7 @@ export function StorefrontProductImage({
         sizes={sizes}
         className={className}
         priority={priority}
+        {...loadingProps}
         quality={75}
         style={{ objectFit: "contain", objectPosition: "center" }}
         unoptimized={src.startsWith("/uploads/") || src === PLACEHOLDER_IMAGE_URL || /^https?:\/\//i.test(src)}
@@ -69,6 +77,7 @@ export function StorefrontProductImage({
       sizes={sizes}
       className={className}
       priority={priority}
+      {...loadingProps}
       quality={75}
       style={{ width: "100%", height: "auto", objectFit: "contain", objectPosition: "center" }}
       unoptimized={src.startsWith("/uploads/") || src === PLACEHOLDER_IMAGE_URL || /^https?:\/\//i.test(src)}

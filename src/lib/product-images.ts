@@ -237,6 +237,26 @@ export function getPrimaryProductImageCandidates(
   ])
 }
 
+// Small cards (mega menu, thumbnail strips) render around 180-260 CSS px wide.
+// The `thumb` derivative is 480px on its long edge, which still covers a 2x
+// retina card, while `large` is 1400px and roughly 5-6x the bytes for no visible
+// gain. Ordered thumb -> large -> master so a missing derivative still falls back
+// to a real image instead of the placeholder.
+export function getCardProductImageCandidates(
+  value: unknown,
+  featuredImage?: string | null | undefined
+) {
+  const featuredRecord = parseProductImageRecords(featuredImage)[0]
+  const record = featuredRecord || parseProductImageRecords(value)[0]
+  if (!record) return [PLACEHOLDER_IMAGE_URL]
+
+  return uniqueNormalized([
+    ...getProductImageUrlCandidates(record, "thumb"),
+    ...getProductImageUrlCandidates(record, "large"),
+    ...getProductImageUrlCandidates(record, "master"),
+  ])
+}
+
 export function getPrimaryProductImage(
   value: unknown,
   featuredImage?: string | null | undefined

@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { ChevronRight } from "lucide-react"
 import { StorefrontProductImage } from "@/components/storefront/storefront-product-image"
-import { buildProductImageAlt, getPrimaryProductImageCandidates } from "@/lib/product-images"
+import { buildProductImageAlt, getCardProductImageCandidates } from "@/lib/product-images"
 import { formatCurrency } from "@/lib/storefront/currency"
 import { cn } from "@/lib/utils"
 
@@ -16,6 +16,10 @@ interface SharedMegaPanelProps {
     onMouseLeave: () => void
     onLinkClick: () => void
 }
+
+// Only the first row of preview cards is on screen when the panel opens; the
+// rest stay lazy so opening the menu never becomes a request storm.
+const EAGER_PREVIEW_IMAGE_COUNT = 3
 
 type MenuNode = {
     id: string
@@ -48,7 +52,10 @@ type PreviewProduct = {
     slug: string
     title: string
     price: number
-    images: string
+    /** Card image URLs resolved server-side, smallest suitable derivative first. */
+    imageCandidates?: string[]
+    /** Legacy shape: raw image JSON. Kept so a cached old bundle still renders. */
+    images?: string
 }
 
 type CollectionPreviewCategory = {
@@ -93,14 +100,16 @@ export function SharedMegaPanel({
                 setCategoriesLoading(false)
                 return
             }
-            const shouldShowLoading = !Array.isArray(initialCategoryItems) || initialCategoryItems.length === 0
-            if (shouldShowLoading) {
-                setCategoriesLoading(true)
-            } else {
+            // categoryNodes prefers the server-rendered menu, so when it is present
+            // the fetched tree is never read. Skip the request instead of paying a
+            // round trip on every open for a result that is discarded.
+            if (Array.isArray(initialCategoryItems) && initialCategoryItems.length > 0) {
                 setCategoriesLoading(false)
+                return
             }
+            setCategoriesLoading(true)
             try {
-                const response = await fetch("/api/categories?tree=true", { cache: "no-store" })
+                const response = await fetch("/api/categories?tree=true")
                 if (!response.ok) {
                     setCategoryTree([])
                     return
@@ -204,7 +213,7 @@ export function SharedMegaPanel({
 
         const load = async () => {
             try {
-                const response = await fetch(`/api/categories/previews?path=${encodeURIComponent(href)}`, { cache: "no-store" })
+                const response = await fetch(`/api/categories/previews?path=${encodeURIComponent(href)}`)
                 const data = await response.json().catch(() => ({ products: [] })) as { products?: PreviewProduct[] }
                 if (cancelled) return
                 setPreviewByHref((current) => ({ ...current, [href]: Array.isArray(data.products) ? data.products : [] }))
@@ -235,12 +244,10 @@ export function SharedMegaPanel({
 
         const loadCollectionsChildren = async () => {
             try {
-                const response = await fetch("/api/categories/collections", { cache: "no-store" })
+                const response = await fetch("/api/categories/collections")
                 const data = await response.json().catch(() => ({ children: [] })) as CollectionsResponse
                 if (cancelled) return
                 const nextItems = Array.isArray(data.children) ? data.children : []
-                console.info("[Collections Mega Menu UI] raw API response", data)
-                console.info("[Collections Mega Menu UI] parsed category array length", nextItems.length)
                 setCollectionsItems(nextItems)
             } catch {
                 if (cancelled) return
@@ -649,13 +656,6 @@ function CollectionsCategoryGrid({
     const visibleItems = items.slice(0, 15)
     const isEmpty = !loading && visibleItems.length === 0
 
-    console.info("[Collections Mega Menu UI] state value used by render", {
-        itemsLength: items.length,
-        visibleItemsLength: visibleItems.length,
-    })
-    console.info("[Collections Mega Menu UI] empty-state boolean condition", isEmpty)
-    console.info("[Collections Mega Menu UI] final rendered card count", visibleItems.length)
-
     if (loading) {
         return (
             <div className="grid grid-cols-5 gap-x-4 gap-y-5">
@@ -764,9 +764,16 @@ function ProductPreviewGrid({
 
     return (
         <div className={cn("grid gap-3", visibleProducts.length === 1 ? "grid-cols-1" : gridClass)}>
-            {visibleProducts.map((product) => {
-                const candidates = getPrimaryProductImageCandidates(product.images)
+            {visibleProducts.map((product, index) => {
+                const candidates = product.imageCandidates?.length
+                    ? product.imageCandidates
+                    : getCardProductImageCandidates(product.images)
                 const imageAlt = buildProductImageAlt({ title: product.title })
+                // The panel mounts only once it opens, so these cards are visible
+                // immediately. Lazy-loading them adds an intersection round trip
+                // before the first byte is requested. Eager-load the first row and
+                // leave the remainder lazy so this stays a handful of requests.
+                const isAboveTheFold = index < EAGER_PREVIEW_IMAGE_COUNT
                 return (
                     <Link
                         key={product.id}
@@ -784,6 +791,8 @@ function ProductPreviewGrid({
                                 fill
                                 sizes={columns === 3 ? "(max-width: 1280px) 180px, 220px" : "(max-width: 1280px) 220px, 260px"}
                                 className="transition-transform duration-500 group-hover:scale-105"
+                                loading={isAboveTheFold ? "eager" : "lazy"}
+                                fetchPriority={isAboveTheFold ? "high" : "auto"}
                             />
                         </div>
                         <div className={cn(compact ? "px-2.5 py-2.5" : "px-3 py-3")}>
