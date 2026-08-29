@@ -73,9 +73,12 @@ export type AnalyticsSnapshot = {
   categories: AnalyticsCategoryRow[]
 }
 
-const CANCELLED_ORDER_STATUSES = new Set(["CANCELLED", "TRASHED"])
-const REFUNDED_ORDER_STATUSES = new Set(["REFUNDED"])
-const PAID_ORDER_STATUSES = new Set(["PAID", "PROCESSING", "SHIPPED", "DELIVERED", "COMPLETED", "REFUNDED"])
+// Exported so the admin dashboard aggregates in SQL against exactly the same
+// status vocabulary these in-memory helpers use. Keeping one source of truth is
+// what stops the dashboard and the analytics pages from quietly disagreeing.
+export const CANCELLED_ORDER_STATUSES = new Set(["CANCELLED", "TRASHED"])
+export const REFUNDED_ORDER_STATUSES = new Set(["REFUNDED"])
+export const PAID_ORDER_STATUSES = new Set(["PAID", "PROCESSING", "SHIPPED", "DELIVERED", "COMPLETED", "REFUNDED"])
 
 function startOfDay(value: Date) {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate())

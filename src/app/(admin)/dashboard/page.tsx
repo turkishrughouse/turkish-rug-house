@@ -1,13 +1,21 @@
 import { redirect } from "next/navigation"
 import { getSessionUser } from "@/lib/auth-server"
 import { requireAdminSection } from "@/lib/admin-guard"
-import LegacySuperuserDashboard from "@/components/admin/dashboard/legacy-superuser-dashboard"
+import { CommerceDashboard } from "@/components/admin/dashboard/commerce-dashboard"
 import { RoleBasedDashboard } from "@/components/admin/dashboard/role-based-dashboard"
 import { getRoleDashboardData } from "@/lib/admin-role-dashboard"
+import { getDashboardSnapshot, resolveDashboardRangeKey } from "@/lib/admin/dashboard-metrics"
 import { TasksDashboardCard } from "@/components/admin/tasks/task-dashboard-card"
 import { getTaskDashboardSummary, getTasksForViewer } from "@/lib/actions/task-actions"
 
-export default async function DashboardPage() {
+type DashboardPageProps = {
+  searchParams?: Promise<{ range?: string | string[] }>
+}
+
+// Metrics are read live on every request; caching them would show stale revenue.
+export const dynamic = "force-dynamic"
+
+export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   await requireAdminSection("dashboard")
   const user = await getSessionUser("admin")
   if (!user) {
@@ -25,9 +33,12 @@ export default async function DashboardPage() {
     </div>
   )
   if (user.role === "SUPER_USER") {
+    const params = (await searchParams) ?? {}
+    const rawRange = Array.isArray(params.range) ? params.range[0] : params.range
+    const snapshot = await getDashboardSnapshot(resolveDashboardRangeKey(rawRange))
     return (
       <>
-        <LegacySuperuserDashboard />
+        <CommerceDashboard snapshot={snapshot} />
         {tasksCard}
       </>
     )
