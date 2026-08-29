@@ -4,6 +4,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { BlogCard } from "@/components/storefront/blog-card"
 import { getLatestPublishedBlogPosts, getPublishedBlogPostBySlug } from "@/lib/blog"
+import { getBlogSectionLabel } from "@/lib/blog-section"
 import { formatBlogDate, stripBlogHtml } from "@/lib/blog-shared"
 import { normalizeRichTextHtml } from "@/lib/rich-text"
 import { getSiteUrl, toAbsoluteSiteUrl } from "@/lib/site-url"
@@ -54,7 +55,10 @@ export default async function BlogDetailPage({ params }: Props) {
   const post = await getPublishedBlogPostBySlug(slug)
   if (!post) notFound()
 
-  const relatedPosts = await getLatestPublishedBlogPosts(slug, 3)
+  const [relatedPosts, sectionLabel] = await Promise.all([
+    getLatestPublishedBlogPosts(slug, 3),
+    getBlogSectionLabel(slug),
+  ])
   const articleSchema = {
     "@context": "https://schema.org",
     "@type": "Article",
@@ -80,22 +84,25 @@ export default async function BlogDetailPage({ params }: Props) {
 
       <article className="container mx-auto px-4 py-10 md:py-14">
         <div className="mx-auto max-w-4xl">
-          <Link href="/blog" className="text-sm font-medium text-slate-500 hover:text-[#0f766e]">
-            Journal
-          </Link>
-          <p className="mt-6 text-[11px] font-semibold uppercase tracking-[0.26em] text-[#0f766e]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-[#0f766e]">
+            <Link href="/blog" className="transition-colors hover:text-slate-900">
+              Journal
+            </Link>
+            {sectionLabel ? <span className="text-slate-400"> &middot; {sectionLabel}</span> : null}
+          </p>
+          <p className="mt-3 text-sm text-slate-500">
             {formatBlogDate(post.publishedAt || post.createdAt)}
           </p>
-          <h1 className="mt-4 font-serif text-4xl leading-[1.02] text-slate-900 md:text-6xl">
+          <h1 className="mt-5 max-w-3xl text-balance font-serif text-4xl leading-[1.06] text-slate-900 md:text-6xl md:leading-[1.02]">
             {post.title}
           </h1>
           {post.excerpt ? (
-            <p className="mt-5 max-w-3xl text-lg leading-8 text-slate-600">{post.excerpt}</p>
+            <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">{post.excerpt}</p>
           ) : null}
         </div>
 
         {post.featuredImage ? (
-          <div className="mx-auto mt-10 max-w-5xl overflow-hidden rounded-[30px] border border-[#dde6ef] bg-white shadow-[0_18px_48px_rgba(15,23,42,0.08)]">
+          <div className="mx-auto mt-10 max-w-5xl overflow-hidden rounded-[28px] border border-[#e6edf3] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_36px_rgba(15,23,42,0.06)]">
             <Image
               src={post.featuredImage}
               alt={post.title}
