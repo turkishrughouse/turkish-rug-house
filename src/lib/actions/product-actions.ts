@@ -820,31 +820,12 @@ async function buildProductListingContext(
 
     let idFilter = filters?.productIds?.length ? [...filters.productIds] : undefined
 
-    const trashScopedIds = await (filters?.trashOnly
-        ? db.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Product" WHERE "deletedAt" IS NOT NULL`
-        : db.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Product" WHERE "deletedAt" IS NULL`
-    ).then((rows) => rows.map((row) => row.id))
-    if (idFilter) {
-        const allowed = new Set(trashScopedIds)
-        idFilter = idFilter.filter((id) => allowed.has(id))
-    } else {
-        idFilter = trashScopedIds
-    }
-
-    if (filters?.featuredOnly) {
-        const featuredIds = await db.$queryRaw<Array<{ id: string }>>`
-            SELECT "id"
-            FROM "Product"
-            WHERE "isFeatured" IS TRUE
-              AND "deletedAt" IS NULL
-        `.then((rows) => rows.map((row) => row.id))
-        if (idFilter) {
-            const featuredIdSet = new Set(featuredIds)
-            idFilter = idFilter.filter((id) => featuredIdSet.has(id))
-        } else {
-            idFilter = featuredIds
-        }
-    }
+    // Trash scoping and the featured flag are plain column predicates, so let
+    // Postgres apply them. Previously both were resolved by SELECTing every
+    // matching Product id and passing the whole list back as `id IN (...)`,
+    // which put a full-table read plus a 1k+ parameter clause on every public
+    // listing request.
+    const deletedAtFilter = filters?.trashOnly ? { not: null } : null
 
     const activeAttributeFilters = filters?.attributeFilters
         ? Object.fromEntries(
@@ -855,8 +836,12 @@ async function buildProductListingContext(
     if (activeAttributeFilters && Object.keys(activeAttributeFilters).length > 0) {
         const attributeMatchedIds = await getProductIdsMatchingAttributeFilters(activeAttributeFilters)
         if (attributeMatchedIds) {
-            const allowedIds = new Set(attributeMatchedIds)
-            idFilter = (idFilter || []).filter((id) => allowedIds.has(id))
+            if (idFilter) {
+                const allowedIds = new Set(attributeMatchedIds)
+                idFilter = idFilter.filter((id) => allowedIds.has(id))
+            } else {
+                idFilter = attributeMatchedIds
+            }
         }
     }
 
@@ -891,6 +876,8 @@ async function buildProductListingContext(
             lte: filters.priceMax
         } : undefined,
         isStock: stockFilter,
+        isFeatured: filters?.featuredOnly ? true : undefined,
+        deletedAt: deletedAtFilter,
         id: idFilter ? { in: idFilter } : undefined,
         createdAt: scheduleDateRange
             ? {
@@ -1555,11 +1542,37 @@ export async function bulkPublishProducts(ids: string[], isPublished: boolean) {
     }
 }
 
+// The storefront reads the full option catalogue on every listing render, and
+// building it walks every category together with all of its products and their
+// six attribute relations. The catalogue only changes when an admin edits it, so
+// storefront reads share a short-lived snapshot instead of repeating that work
+// per request. Admin screens always pass `ensureDynamicAttributes` and therefore
+// always bypass the cache.
+const PRODUCT_OPTIONS_CACHE_TTL_MS = 60_000
+let productOptionsCache: { expiresAt: number; promise: ReturnType<typeof computeProductOptions> } | null = null
+
 export async function getProductOptions(input?: { ensureDynamicAttributes?: boolean }) {
     if (input?.ensureDynamicAttributes) {
         const { ensureDynamicAttributeTables } = await import("@/lib/product-attributes")
         await ensureDynamicAttributeTables()
+        productOptionsCache = null
+        return computeProductOptions()
     }
+
+    const now = Date.now()
+    if (productOptionsCache && productOptionsCache.expiresAt > now) {
+        return productOptionsCache.promise
+    }
+
+    const promise = computeProductOptions().catch((error) => {
+        productOptionsCache = null
+        throw error
+    })
+    productOptionsCache = { expiresAt: now + PRODUCT_OPTIONS_CACHE_TTL_MS, promise }
+    return promise
+}
+
+async function computeProductOptions() {
     const attributeGroupsPromise = getAttributeGroups({ activeOnly: true })
     const categoriesWithProductsPromise = db.category.findMany({
         select: {

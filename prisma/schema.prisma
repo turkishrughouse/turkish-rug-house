@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-	   provider = "sqlite"
+	   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -150,6 +150,10 @@ model Product {
   stockCount  Int      @default(1)
   isFeatured  Boolean  @default(false)
   isPublished Boolean  @default(false)
+  // Soft-delete marker. The column is created at runtime by addColumnIfMissing();
+  // declaring it here lets listing queries filter on it directly instead of
+  // materialising every Product id into an `id IN (...)` clause per request.
+  deletedAt   DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

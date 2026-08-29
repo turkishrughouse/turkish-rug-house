@@ -144,17 +144,6 @@ export function buildProductGallery(product: ProductDetailData): ProductGalleryI
           })
         )
       }
-
-      console.info(
-        "[ZOOM_DEBUG]",
-        JSON.stringify({
-          productSlug: product.slug,
-          selectedImageSrc,
-          candidateList: zoomSrcCandidates,
-          finalZoomSrc: zoomSrc,
-        })
-      )
-
       return {
         src: selectedImageSrc,
         srcCandidates: srcCandidates.length > 0 ? srcCandidates : [PLACEHOLDER_IMAGE_URL],

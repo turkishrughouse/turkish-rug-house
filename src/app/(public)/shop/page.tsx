@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { Grid3X3, LayoutGrid, Menu } from "lucide-react"
 
@@ -18,6 +19,38 @@ type ShopPageProps = {
 }
 
 export const revalidate = 300
+
+export async function generateMetadata({ searchParams }: ShopPageProps): Promise<Metadata> {
+  const resolved = await searchParams
+
+  const hasSearchParams = Object.values(resolved).some((value) => {
+    if (Array.isArray(value)) return value.length > 0
+    return typeof value === "string" && value.trim().length > 0
+  })
+
+  return {
+    title: "Shop Handmade Turkish Rugs | Turkish Rug House",
+    description:
+      "Explore one-of-a-kind handmade Turkish rugs, vintage Anatolian pieces, Oushak rugs, kilims, runners, and curated textiles.",
+    alternates: {
+      canonical: "/shop",
+    },
+    robots: hasSearchParams
+      ? {
+          index: false,
+          follow: true,
+          googleBot: {
+            index: false,
+            follow: true,
+          },
+        }
+      : {
+          index: true,
+          follow: true,
+        },
+  }
+}
+
 
 function getPositiveIntParam(value: string | null | undefined, fallback: number) {
   const parsed = Number(value)

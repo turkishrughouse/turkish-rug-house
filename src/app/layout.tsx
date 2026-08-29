@@ -1,7 +1,6 @@
 import type { Metadata } from "next"
 import "./globals.css"
 import { Toaster } from "@/components/ui/sonner"
-import { ensureCacheCleanerStarted } from "@/lib/cache-maintenance"
 import { getSiteSettings } from "@/lib/site-settings"
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -32,8 +31,6 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  ensureCacheCleanerStarted()
-
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="bg-white text-gray-900 antialiased">

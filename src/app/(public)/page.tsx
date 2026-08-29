@@ -197,25 +197,36 @@ export default async function HomePage() {
         }
       >()
 
-      for (const slug of candidateSlugs) {
-        const { products } = await getProducts(1, 24, "", "published", "latest", slug)
-        products.forEach((item) => {
-          if (productMap.has(item.id)) return
-          productMap.set(item.id, {
-            id: item.id,
-            title: item.title,
-            slug: item.slug,
-            price: Number(item.price),
-            images: item.images,
-            description: item.description,
-            compareAtPrice: item.compareAtPrice ?? null,
-            stockCount: item.stockCount,
-            isStock: item.isStock,
-            categories: item.categories,
-          })
+      const candidateSlugSet = new Set(candidateSlugs)
+      const candidateCategoryIds = allCategories
+        .filter((category) => candidateSlugSet.has(category.slug))
+        .map((category) => category.id)
+
+      const { products: candidateProducts } = await getProducts(
+        1,
+        24,
+        "",
+        "published",
+        "latest",
+        undefined,
+        { categoryIds: candidateCategoryIds }
+      )
+
+      candidateProducts.forEach((item) => {
+        if (productMap.has(item.id)) return
+        productMap.set(item.id, {
+          id: item.id,
+          title: item.title,
+          slug: item.slug,
+          price: Number(item.price),
+          images: item.images,
+          description: item.description,
+          compareAtPrice: item.compareAtPrice ?? null,
+          stockCount: item.stockCount,
+          isStock: item.isStock,
+          categories: item.categories,
         })
-        if (productMap.size >= 24) break
-      }
+      })
 
       const products = Array.from(productMap.values())
       dailyCategory = selectedPromoCategory
@@ -255,25 +266,36 @@ export default async function HomePage() {
         }
       >()
 
-      for (const slug of candidateSlugs) {
-        const { products } = await getProducts(1, 24, "", "published", "latest", slug)
-        products.forEach((item) => {
-          if (productMap.has(item.id)) return
-          productMap.set(item.id, {
-            id: item.id,
-            title: item.title,
-            slug: item.slug,
-            price: Number(item.price),
-            images: item.images,
-            description: item.description,
-            compareAtPrice: item.compareAtPrice ?? null,
-            stockCount: item.stockCount,
-            isStock: item.isStock,
-            categories: item.categories,
-          })
+      const candidateSlugSet = new Set(candidateSlugs)
+      const candidateCategoryIds = allCategories
+        .filter((category) => candidateSlugSet.has(category.slug))
+        .map((category) => category.id)
+
+      const { products: candidateProducts } = await getProducts(
+        1,
+        24,
+        "",
+        "published",
+        "latest",
+        undefined,
+        { categoryIds: candidateCategoryIds }
+      )
+
+      candidateProducts.forEach((item) => {
+        if (productMap.has(item.id)) return
+        productMap.set(item.id, {
+          id: item.id,
+          title: item.title,
+          slug: item.slug,
+          price: Number(item.price),
+          images: item.images,
+          description: item.description,
+          compareAtPrice: item.compareAtPrice ?? null,
+          stockCount: item.stockCount,
+          isStock: item.isStock,
+          categories: item.categories,
         })
-        if (productMap.size >= 24) break
-      }
+      })
 
       const products = Array.from(productMap.values())
       if (!products.length) continue

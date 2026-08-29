@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { getProducts } from "@/lib/actions/product-actions"
 import { ShopProductCardServer } from "@/components/storefront/shop-product-card-server"
@@ -10,6 +11,38 @@ import { buildListingPricePresets, buildProductSearchWhere, getMultiParam, getSi
 type ProductsPageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }
+
+export async function generateMetadata({ searchParams }: ProductsPageProps): Promise<Metadata> {
+  const resolved = await searchParams
+
+  const hasSearchParams = Object.values(resolved).some((value) => {
+    if (Array.isArray(value)) return value.length > 0
+    return typeof value === "string" && value.trim().length > 0
+  })
+
+  return {
+    title: "All Handmade Turkish Rugs | Turkish Rug House",
+    description:
+      "Browse our complete collection of handmade Turkish rugs, vintage Anatolian rugs, Oushak rugs, kilims, runners, and one-of-a-kind textiles.",
+    alternates: {
+      canonical: "/products",
+    },
+    robots: hasSearchParams
+      ? {
+          index: false,
+          follow: true,
+          googleBot: {
+            index: false,
+            follow: true,
+          },
+        }
+      : {
+          index: true,
+          follow: true,
+        },
+  }
+}
+
 
 export default async function ProductsPage({ searchParams }: ProductsPageProps) {
   const currencySnapshot = await getStorefrontCurrencySnapshot()

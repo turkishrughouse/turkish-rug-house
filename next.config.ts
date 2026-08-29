@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  reactCompiler: true,
+  // reactCompiler disabled: the Babel-based react-compiler loader under Turbopack
+  // (Next 16) makes `next build` hang for many minutes in the compile phase, which
+  // was the cause of the production build failures / crash loop. It is a build-time
+  // auto-memoization optimization only; disabling it does not change app behavior.
+  reactCompiler: false,
   distDir: process.env.PORT === "4000" ? ".next-api" : ".next",
   outputFileTracingRoot: process.cwd(),
   images: {
