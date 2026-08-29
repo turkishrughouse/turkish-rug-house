@@ -4,7 +4,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { BlogCard } from "@/components/storefront/blog-card"
 import { getLatestPublishedBlogPosts, getPublishedBlogPostBySlug } from "@/lib/blog"
-import { getBlogSectionLabel } from "@/lib/blog-section"
+import { getBlogHeroDimensions, getBlogSectionLabel } from "@/lib/blog-section"
 import { formatBlogDate, stripBlogHtml } from "@/lib/blog-shared"
 import { normalizeRichTextHtml } from "@/lib/rich-text"
 import { getSiteUrl, toAbsoluteSiteUrl } from "@/lib/site-url"
@@ -55,9 +55,10 @@ export default async function BlogDetailPage({ params }: Props) {
   const post = await getPublishedBlogPostBySlug(slug)
   if (!post) notFound()
 
-  const [relatedPosts, sectionLabel] = await Promise.all([
+  const [relatedPosts, sectionLabel, heroDimensions] = await Promise.all([
     getLatestPublishedBlogPosts(slug, 3),
     getBlogSectionLabel(slug),
+    getBlogHeroDimensions(post.featuredImage),
   ])
   const articleSchema = {
     "@context": "https://schema.org",
@@ -102,16 +103,19 @@ export default async function BlogDetailPage({ params }: Props) {
         </div>
 
         {post.featuredImage ? (
-          <div className="mx-auto mt-10 max-w-5xl overflow-hidden rounded-[28px] border border-[#e6edf3] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_36px_rgba(15,23,42,0.06)]">
-            <Image
-              src={post.featuredImage}
-              alt={post.title}
-              width={1600}
-              height={960}
-              sizes="(max-width: 1024px) 100vw, 1200px"
-              className="h-auto w-full object-cover"
-            />
-          </div>
+          <figure className="mt-6 md:mt-8">
+            <div className="-mx-4 overflow-hidden bg-[#eef3f7] sm:mx-auto sm:max-w-6xl sm:rounded-[10px] sm:shadow-[0_20px_44px_-28px_rgba(15,23,42,0.32)]">
+              <Image
+                src={post.featuredImage}
+                alt={post.title}
+                width={heroDimensions.width}
+                height={heroDimensions.height}
+                sizes="(max-width: 640px) 100vw, (max-width: 1280px) 92vw, 1152px"
+                priority
+                className="h-auto w-full"
+              />
+            </div>
+          </figure>
         ) : null}
 
         <div className="mx-auto mt-10 max-w-3xl rounded-[28px] border border-[#e2e8f0] bg-white px-5 py-8 shadow-[0_12px_34px_rgba(15,23,42,0.04)] md:px-10 md:py-12">
