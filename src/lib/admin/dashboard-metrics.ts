@@ -67,7 +67,7 @@ export type DashboardAbandonedCheckout = {
 export type DashboardSnapshot = {
     range: DashboardRange
     revenue: { gross: number; refunds: number; net: number }
-    orders: { total: number; paid: number; pending: number; cancelled: number }
+    orders: { total: number; paid: number; pending: number; cancelled: number; refunded: number }
     averageOrderValue: number
     customers: { total: number; new: number; returning: number }
     /** Deliberately NOT date filtered - this is an operational "act now" number. */
@@ -170,6 +170,7 @@ type HeadlineRow = {
     orders_paid: number
     orders_pending: number
     orders_cancelled: number
+    orders_refunded: number
     gross_revenue: number
     refunds: number
     net_revenue: number
@@ -190,6 +191,7 @@ function headlineQuery(from: Date, to: Date, refundExpr: Prisma.Sql) {
           COUNT(*) FILTER (WHERE upper(status) IN (${Prisma.join(PAID)}))::int AS orders_paid,
           COUNT(*) FILTER (WHERE upper(status) = 'PENDING')::int AS orders_pending,
           COUNT(*) FILTER (WHERE upper(status) IN (${Prisma.join(CANCELLED)}))::int AS orders_cancelled,
+          COUNT(*) FILTER (WHERE upper(status) = 'REFUNDED')::int AS orders_refunded,
           COALESCE(SUM(gross), 0)::float8 AS gross_revenue,
           COALESCE(SUM(refund), 0)::float8 AS refunds,
           COALESCE(SUM(GREATEST(gross - refund, 0)), 0)::float8 AS net_revenue
@@ -402,6 +404,7 @@ export async function getDashboardSnapshot(rangeKey: DashboardRangeKey): Promise
             paid: paidOrders,
             pending: toNumber(head?.orders_pending),
             cancelled: toNumber(head?.orders_cancelled),
+            refunded: toNumber(head?.orders_refunded),
         },
         // Denominator is paid orders, so unpaid carts never deflate the average.
         averageOrderValue: paidOrders > 0 ? netRevenue / paidOrders : 0,

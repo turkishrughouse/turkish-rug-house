@@ -147,6 +147,7 @@ export function CommerceDashboard({ snapshot }: { snapshot: DashboardSnapshot })
                         { label: "Paid", value: formatAnalyticsNumber(orders.paid) },
                         { label: "Pending", value: formatAnalyticsNumber(orders.pending) },
                         { label: "Cancelled", value: formatAnalyticsNumber(orders.cancelled) },
+                        { label: "Refunded", value: formatAnalyticsNumber(orders.refunded) },
                     ]}
                 />
                 <DashboardMetricCard

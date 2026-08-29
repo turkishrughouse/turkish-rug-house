@@ -1,20 +1,21 @@
 import type { LucideIcon } from "lucide-react"
-import { ChevronDown } from "lucide-react"
 
+import {
+    DashboardMetricBreakdown,
+    type MetricDetailRow,
+} from "@/components/admin/dashboard/dashboard-metric-breakdown"
 import { cn } from "@/lib/utils"
 
-export type MetricDetailRow = {
-    label: string
-    value: string
-}
+export type { MetricDetailRow }
 
 /**
  * Compact KPI tile for the admin dashboard.
  *
- * The optional disclosure uses a native <details>, so the card stays a server
- * component and the breakdown works without JavaScript. Pass `details` only when
- * there is genuinely useful secondary information - an empty chevron is worse
- * than no chevron.
+ * The tile itself stays a server component - only the breakdown disclosure is
+ * client-side, so the icon can still be passed straight through as a component
+ * reference. Pass `details` only when there is genuinely useful secondary
+ * information: with none, no trigger is rendered at all, because a chevron that
+ * opens nothing is worse than no chevron.
  */
 export function DashboardMetricCard({
     icon: Icon,
@@ -47,25 +48,7 @@ export function DashboardMetricCard({
             <p className="mt-1 text-[11px] leading-4 text-slate-500">{helper}</p>
 
             {details && details.length > 0 ? (
-                <details className="group mt-3 border-t border-[#eef2f7] pt-2">
-                    <summary className="flex cursor-pointer list-none items-center justify-between rounded-sm text-[11px] font-medium text-slate-500 transition-colors hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
-                        <span>Breakdown</span>
-                        <ChevronDown
-                            className="h-3.5 w-3.5 transition-transform duration-200 group-open:rotate-180"
-                            aria-hidden="true"
-                        />
-                    </summary>
-                    <dl className="mt-2 space-y-1">
-                        {details.map((row) => (
-                            <div key={row.label} className="flex items-baseline justify-between gap-3">
-                                <dt className="truncate text-[11px] text-slate-500">{row.label}</dt>
-                                <dd className="shrink-0 text-[11px] font-semibold tabular-nums text-slate-800">
-                                    {row.value}
-                                </dd>
-                            </div>
-                        ))}
-                    </dl>
-                </details>
+                <DashboardMetricBreakdown metricLabel={label} details={details} />
             ) : null}
         </div>
     )
