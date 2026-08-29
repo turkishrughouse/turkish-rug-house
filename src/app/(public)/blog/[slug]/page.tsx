@@ -1,11 +1,10 @@
 import type { Metadata } from "next"
 import Image from "next/image"
-import Link from "next/link"
 import { notFound } from "next/navigation"
 import { BlogCard } from "@/components/storefront/blog-card"
 import { getLatestPublishedBlogPosts, getPublishedBlogPostBySlug } from "@/lib/blog"
-import { getBlogHeroDimensions, getBlogSectionLabel } from "@/lib/blog-section"
-import { formatBlogDate, stripBlogHtml } from "@/lib/blog-shared"
+import { getBlogHeroFocal } from "@/lib/blog-section"
+import { stripBlogHtml } from "@/lib/blog-shared"
 import { normalizeRichTextHtml } from "@/lib/rich-text"
 import { getSiteUrl, toAbsoluteSiteUrl } from "@/lib/site-url"
 
@@ -55,11 +54,8 @@ export default async function BlogDetailPage({ params }: Props) {
   const post = await getPublishedBlogPostBySlug(slug)
   if (!post) notFound()
 
-  const [relatedPosts, sectionLabel, heroDimensions] = await Promise.all([
-    getLatestPublishedBlogPosts(slug, 3),
-    getBlogSectionLabel(slug),
-    getBlogHeroDimensions(post.featuredImage),
-  ])
+  const relatedPosts = await getLatestPublishedBlogPosts(slug, 3)
+  const heroFocal = getBlogHeroFocal(slug)
   const articleSchema = {
     "@context": "https://schema.org",
     "@type": "Article",
@@ -83,46 +79,47 @@ export default async function BlogDetailPage({ params }: Props) {
     <div className="bg-[#fcfdff]">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(articleSchema) }} />
 
-      <article className="container mx-auto px-4 py-10 md:py-14">
-        <div className="mx-auto max-w-4xl">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-[#0f766e]">
-            <Link href="/blog" className="transition-colors hover:text-slate-900">
-              Journal
-            </Link>
-            {sectionLabel ? <span className="text-slate-400"> &middot; {sectionLabel}</span> : null}
-          </p>
-          <p className="mt-3 text-sm text-slate-500">
-            {formatBlogDate(post.publishedAt || post.createdAt)}
-          </p>
-          <h1 className="mt-5 max-w-3xl text-balance font-serif text-4xl leading-[1.06] text-slate-900 md:text-6xl md:leading-[1.02]">
-            {post.title}
-          </h1>
-          {post.excerpt ? (
-            <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">{post.excerpt}</p>
-          ) : null}
-        </div>
-
+      <article>
         {post.featuredImage ? (
-          <figure className="mt-6 md:mt-8">
-            <div className="-mx-4 overflow-hidden bg-[#eef3f7] sm:mx-auto sm:max-w-6xl sm:rounded-[10px] sm:shadow-[0_20px_44px_-28px_rgba(15,23,42,0.32)]">
-              <Image
-                src={post.featuredImage}
-                alt={post.title}
-                width={heroDimensions.width}
-                height={heroDimensions.height}
-                sizes="(max-width: 640px) 100vw, (max-width: 1280px) 92vw, 1152px"
-                priority
-                className="h-auto w-full"
-              />
+          <header className="relative isolate h-[320px] w-full overflow-hidden bg-[#e8eef3] sm:h-[380px] lg:h-[460px] xl:h-[520px]">
+            <Image
+              src={post.featuredImage}
+              alt={post.title}
+              fill
+              priority
+              sizes="100vw"
+              style={{ objectPosition: heroFocal }}
+              className="object-cover"
+            />
+            {/* Weighted to the lower edge so the title stays legible while the upper
+                two thirds of the photograph keep their true colour. */}
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 bg-[linear-gradient(to_top,rgba(2,6,23,0.78)_0%,rgba(2,6,23,0.42)_26%,rgba(2,6,23,0.10)_52%,rgba(2,6,23,0)_78%)]"
+            />
+            <div className="absolute inset-x-0 bottom-0">
+              <div className="container mx-auto px-4 pb-8 md:pb-12">
+                <h1 className="max-w-4xl text-balance font-serif text-[1.75rem] leading-[1.12] text-white [text-shadow:0_1px_18px_rgba(2,6,23,0.45)] sm:text-4xl md:text-5xl md:leading-[1.06] xl:text-6xl">
+                  {post.title}
+                </h1>
+              </div>
             </div>
-          </figure>
-        ) : null}
+          </header>
+        ) : (
+          <header className="container mx-auto px-4 pt-10 md:pt-14">
+            <h1 className="mx-auto max-w-4xl text-balance font-serif text-4xl leading-[1.06] text-slate-900 md:text-6xl md:leading-[1.02]">
+              {post.title}
+            </h1>
+          </header>
+        )}
 
-        <div className="mx-auto mt-10 max-w-3xl rounded-[28px] border border-[#e2e8f0] bg-white px-5 py-8 shadow-[0_12px_34px_rgba(15,23,42,0.04)] md:px-10 md:py-12">
-          <div
-            className="prose prose-slate max-w-none prose-headings:font-serif prose-headings:text-slate-900 prose-h2:mt-10 prose-h2:text-3xl prose-h3:text-2xl prose-p:text-[1.03rem] prose-p:leading-8 prose-a:text-[#0f766e] prose-img:rounded-2xl prose-table:block prose-table:w-full prose-table:overflow-x-auto prose-td:break-words prose-th:break-words"
-            dangerouslySetInnerHTML={{ __html: normalizeRichTextHtml(post.content || "") }}
-          />
+        <div className="container mx-auto px-4 py-10 md:py-14">
+          <div className="mx-auto max-w-3xl rounded-[28px] border border-[#e2e8f0] bg-white px-5 py-8 shadow-[0_12px_34px_rgba(15,23,42,0.04)] md:px-10 md:py-12">
+            <div
+              className="prose prose-slate max-w-none prose-headings:font-serif prose-headings:text-slate-900 prose-h2:mt-10 prose-h2:text-3xl prose-h3:text-2xl prose-p:text-[1.03rem] prose-p:leading-8 prose-a:text-[#0f766e] prose-img:rounded-2xl prose-table:block prose-table:w-full prose-table:overflow-x-auto prose-td:break-words prose-th:break-words"
+              dangerouslySetInnerHTML={{ __html: normalizeRichTextHtml(post.content || "") }}
+            />
+          </div>
         </div>
       </article>
 
