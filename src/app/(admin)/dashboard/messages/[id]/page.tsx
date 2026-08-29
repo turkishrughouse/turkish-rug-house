@@ -16,6 +16,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ArrowLeft, Mail, MessageSquare, Phone, Calendar, User, FileText, Paperclip, Star } from "lucide-react"
 import { toast } from "sonner"
+import { ProductQuestionCard } from "@/components/admin/messages/product-question-card"
+import { getProductQuestionTitle, isProductQuestionMessage } from "@/lib/product-question-message"
 
 const statusColors = {
     NEW: "bg-blue-100 text-blue-700",
@@ -222,6 +224,10 @@ export default function MessageDetailPage() {
 
     const SourceIcon = sourceIcons[message.source as keyof typeof sourceIcons]
     const metadata = message.metadata || ({} as MessageMetadata)
+    // Storefront "Ask Question" submissions arrive as ordinary CONTACT messages;
+    // only these get the product-first layout, everything else is untouched.
+    const isProductQuestion = isProductQuestionMessage(message)
+    const productQuestionTitle = isProductQuestion ? getProductQuestionTitle(message.subject) : ""
 
     return (
         <div className="flex-1 p-8">
@@ -249,8 +255,12 @@ export default function MessageDetailPage() {
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                            {SourceIcon && <SourceIcon className="h-5 w-5" />}
-                            {message.source} Message
+                            {isProductQuestion ? (
+                                <User className="h-5 w-5" />
+                            ) : (
+                                SourceIcon && <SourceIcon className="h-5 w-5" />
+                            )}
+                            {isProductQuestion ? "Customer" : `${message.source} Message`}
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -293,7 +303,7 @@ export default function MessageDetailPage() {
                             </div>
                         </div>
 
-                        {metadata?.pageUrl && (
+                        {metadata?.pageUrl && !isProductQuestion && (
                             <div className="flex items-start gap-3">
                                 <FileText className="h-4 w-4 text-muted-foreground mt-0.5" />
                                 <div>
@@ -336,7 +346,13 @@ export default function MessageDetailPage() {
                 </Card>
 
                 {/* Message Content */}
-                {message.source !== "CUSTOMER" ? (
+                {isProductQuestion && messageId ? (
+                    <ProductQuestionCard
+                        messageId={messageId}
+                        subjectTitle={productQuestionTitle}
+                        content={message.content}
+                    />
+                ) : message.source !== "CUSTOMER" ? (
                     <Card>
                         <CardHeader>
                             <CardTitle>
