@@ -17,6 +17,49 @@ const nextConfig: NextConfig = {
       { protocol: "http", hostname: "**" },
     ],
   },
+  // The editorial content for these topics now lives as BlogPost articles under
+  // /blog/*. The old Page records are unpublished, so without these the historical
+  // URLs would 404. 301 preserves any link equity and keeps one canonical URL per topic.
+  async redirects() {
+    return [
+      { source: "/how-to-choose-the-right-rug-size-for-your-space", destination: "/blog/how-to-choose-rug-size", statusCode: 301 },
+      { source: "/info/how-to-choose-the-right-rug-size-for-your-space", destination: "/blog/how-to-choose-rug-size", statusCode: 301 },
+      { source: "/how-to-style-a-vintage-rug-in-modern-interiors", destination: "/blog/how-to-style-a-vintage-rug", statusCode: 301 },
+      { source: "/info/how-to-style-a-vintage-rug-in-modern-interiors", destination: "/blog/how-to-style-a-vintage-rug", statusCode: 301 },
+      { source: "/how-to-identify-a-hand-knotted-rug", destination: "/blog/how-to-identify-a-hand-knotted-rug", statusCode: 301 },
+      { source: "/info/how-to-identify-a-hand-knotted-rug", destination: "/blog/how-to-identify-a-hand-knotted-rug", statusCode: 301 },
+      { source: "/how-to-tell-if-a-rug-is-truly-handmade", destination: "/blog/how-to-identify-a-hand-knotted-rug", statusCode: 301 },
+      { source: "/info/how-to-tell-if-a-rug-is-truly-handmade", destination: "/blog/how-to-identify-a-hand-knotted-rug", statusCode: 301 },
+      { source: "/how-to-care-for-a-handmade-wool-rug", destination: "/info/rug-care", statusCode: 301 },
+      { source: "/info/how-to-care-for-a-handmade-wool-rug", destination: "/info/rug-care", statusCode: 301 },
+      { source: "/using-rugs-to-define-open-living-spaces", destination: "/blog/rugs-open-living-spaces", statusCode: 301 },
+      { source: "/info/using-rugs-to-define-open-living-spaces", destination: "/blog/rugs-open-living-spaces", statusCode: 301 },
+      { source: "/using-vintage-rugs-in-minimalist-homes", destination: "/blog/vintage-rugs-minimalist-interiors", statusCode: 301 },
+      { source: "/info/using-vintage-rugs-in-minimalist-homes", destination: "/blog/vintage-rugs-minimalist-interiors", statusCode: 301 },
+      { source: "/using-colorful-rugs-without-overwhelming-a-room", destination: "/blog/colorful-rugs-interior-design", statusCode: 301 },
+      { source: "/info/using-colorful-rugs-without-overwhelming-a-room", destination: "/blog/colorful-rugs-interior-design", statusCode: 301 },
+      { source: "/using-small-rugs-for-layered-interiors", destination: "/blog/layering-rugs-small-spaces", statusCode: 301 },
+      { source: "/info/using-small-rugs-for-layered-interiors", destination: "/blog/layering-rugs-small-spaces", statusCode: 301 },
+      { source: "/using-antique-rugs-as-statement-pieces", destination: "/blog/statement-rugs", statusCode: 301 },
+      { source: "/info/using-antique-rugs-as-statement-pieces", destination: "/blog/statement-rugs", statusCode: 301 },
+      { source: "/what-is-an-oushak-rug", destination: "/blog/what-is-an-oushak-rug", statusCode: 301 },
+      { source: "/info/what-is-an-oushak-rug", destination: "/blog/what-is-an-oushak-rug", statusCode: 301 },
+      { source: "/what-is-the-difference-between-kilim-and-carpet", destination: "/blog/kilim-vs-carpet", statusCode: 301 },
+      { source: "/info/what-is-the-difference-between-kilim-and-carpet", destination: "/blog/kilim-vs-carpet", statusCode: 301 },
+      { source: "/what-is-hand-knotted-vs-machine-made-rug", destination: "/blog/hand-knotted-vs-machine-made-rugs", statusCode: 301 },
+      { source: "/info/what-is-hand-knotted-vs-machine-made-rug", destination: "/blog/hand-knotted-vs-machine-made-rugs", statusCode: 301 },
+      { source: "/what-is-vegetable-dye-in-rugs", destination: "/blog/what-is-vegetable-dye", statusCode: 301 },
+      { source: "/info/what-is-vegetable-dye-in-rugs", destination: "/blog/what-is-vegetable-dye", statusCode: 301 },
+      { source: "/what-makes-anatolian-rugs-unique", destination: "/blog/what-makes-anatolian-rugs-unique", statusCode: 301 },
+      { source: "/info/what-makes-anatolian-rugs-unique", destination: "/blog/what-makes-anatolian-rugs-unique", statusCode: 301 },
+      { source: "/how", destination: "/blog", statusCode: 301 },
+      { source: "/info/how", destination: "/blog", statusCode: 301 },
+      { source: "/using", destination: "/blog", statusCode: 301 },
+      { source: "/info/using", destination: "/blog", statusCode: 301 },
+      { source: "/what-is", destination: "/blog", statusCode: 301 },
+      { source: "/info/what-is", destination: "/blog", statusCode: 301 },
+    ]
+  },
   async headers() {
     return [
       {
